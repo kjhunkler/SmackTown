@@ -88,6 +88,54 @@ export function sanitizeHat(raw) {
   return raw;
 }
 
+// ---------- hat library ----------
+// Hats live in their own store, each under a unique id. The profile and any
+// saved build reference their 'selected hat' by id instead of owning the art.
+
+const HATS_KEY = 'smacktown.hats.v1';
+export const MAX_HATS = 40;
+
+export function loadHats() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HATS_KEY));
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(h => h && typeof h.id === 'string' && sanitizeHat(h.art))
+      .slice(0, MAX_HATS)
+      .map(h => ({ id: h.id, art: sanitizeHat(h.art) }));
+  } catch (_) { return []; }
+}
+
+// Resolve a hat id to its pixel art (null if unset or since deleted).
+export function hatArt(id) {
+  if (typeof id !== 'string') return null;
+  return loadHats().find(h => h.id === id)?.art ?? null;
+}
+
+// Update an existing hat (matched by id) or mint a new one (id = null).
+// Returns {ok, id} or {ok:false, error} with a message fit to show the player.
+export function saveHat(art, id = null) {
+  const a = sanitizeHat(art);
+  if (!a) return { ok: false, error: 'Paint at least one pixel first!' };
+  const list = loadHats();
+  const i = id ? list.findIndex(h => h.id === id) : -1;
+  if (i >= 0) {
+    list[i] = { id, art: a };
+  } else {
+    if (list.length >= MAX_HATS) {
+      return { ok: false, error: `You can keep up to ${MAX_HATS} hats — delete one first.` };
+    }
+    id = 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    list.push({ id, art: a });
+  }
+  localStorage.setItem(HATS_KEY, JSON.stringify(list));
+  return { ok: true, id };
+}
+
+export function deleteHat(id) {
+  localStorage.setItem(HATS_KEY, JSON.stringify(loadHats().filter(h => h.id !== id)));
+}
+
 export function emptyBuild() {
   return {
     stats: { power: 0, speed: 0, defense: 0, agility: 0 },
@@ -142,12 +190,19 @@ export function loadProfile() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY));
     if (raw && typeof raw.name === 'string' && raw.name.trim()) {
+      let hatId = typeof raw.hatId === 'string' ? raw.hatId : null;
+      if (!hatId && sanitizeHat(raw.hat)) {
+        const res = saveHat(raw.hat);        // migrate pre-library inline art
+        if (res.ok) hatId = res.id;
+      }
       profile = {
         name: String(raw.name).slice(0, 14),
         color: COLORS.includes(raw.color) ? raw.color : COLORS[0],
         build: sanitizeBuild(raw.build),
-        hat: sanitizeHat(raw.hat),
+        hatId,
+        hat: hatArt(hatId),                  // resolved art — what the room sees
       };
+      localStorage.setItem(KEY, JSON.stringify(profile));
       return profile;
     }
   } catch (_) { /* corrupted storage — treat as first run */ }
@@ -155,11 +210,13 @@ export function loadProfile() {
 }
 
 export function saveProfile(p) {
+  const hatId = hatArt(p.hatId) ? p.hatId : null;
   profile = {
     name: String(p.name).trim().slice(0, 14),
     color: COLORS.includes(p.color) ? p.color : COLORS[0],
     build: sanitizeBuild(p.build),
-    hat: sanitizeHat(p.hat),
+    hatId,
+    hat: hatArt(hatId),
   };
   localStorage.setItem(KEY, JSON.stringify(profile));
   return profile;
@@ -205,21 +262,31 @@ export function loadLoadouts() {
   try {
     const raw = JSON.parse(localStorage.getItem(LOADOUT_KEY));
     if (!Array.isArray(raw)) return [];
-    return raw
+    let migrated = false;
+    const list = raw
       .filter(l => l && validLoadoutName(l.name))
       .slice(0, MAX_LOADOUTS)
-      .map(l => ({
-        name: String(l.name).trim().slice(0, 16),
-        color: COLORS.includes(l.color) ? l.color : COLORS[0],
-        build: sanitizeBuild(l.build),
-        hat: sanitizeHat(l.hat),
-      }));
+      .map(l => {
+        let hatId = typeof l.hatId === 'string' ? l.hatId : null;
+        if (!hatId && sanitizeHat(l.hat)) {
+          const res = saveHat(l.hat);        // migrate pre-library inline art
+          if (res.ok) { hatId = res.id; migrated = true; }
+        }
+        return {
+          name: String(l.name).trim().slice(0, 16),
+          color: COLORS.includes(l.color) ? l.color : COLORS[0],
+          build: sanitizeBuild(l.build),
+          hatId,
+        };
+      });
+    if (migrated) localStorage.setItem(LOADOUT_KEY, JSON.stringify(list));
+    return list;
   } catch (_) { return []; }
 }
 
 // Saves (or overwrites, matched by name) a loadout. Returns {ok} or
 // {ok:false, error} with a message fit to show the player.
-export function saveLoadout(name, color, build, hat = null) {
+export function saveLoadout(name, color, build, hatId = null) {
   if (!validLoadoutName(name)) {
     return { ok: false, error: 'Nicknames are 1–16 letters, numbers or basic punctuation.' };
   }
@@ -229,7 +296,7 @@ export function saveLoadout(name, color, build, hat = null) {
     name: n,
     color: COLORS.includes(color) ? color : COLORS[0],
     build: sanitizeBuild(build),
-    hat: sanitizeHat(hat),
+    hatId: hatArt(hatId) ? hatId : null,
   };
   const i = list.findIndex(l => l.name.toLowerCase() === n.toLowerCase());
   if (i >= 0) list[i] = entry;

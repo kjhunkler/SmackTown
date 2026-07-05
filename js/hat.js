@@ -57,15 +57,14 @@ export class HatStudio {
       this._syncTools();
     });
     $('#hat-clear').addEventListener('click', () => this.cells.fill('.'));
-    $('#hat-save').addEventListener('click', () => {
-      const s = this.cells.join('');
-      this.close();
-      this.cbs.onSave?.(sanitizeHat(s));       // all-transparent -> null
-    });
-    $('#hat-cancel').addEventListener('click', () => {
-      this.close();
-      this.cbs.onCancel?.();
-    });
+    // Closing is the caller's call — saving into the hat library can fail
+    // (library full), in which case the studio stays open.
+    $('#hat-save').addEventListener('click', () =>
+      this.cbs.onSave?.(sanitizeHat(this.cells.join(''))));   // all-transparent -> null
+    $('#hat-dup').addEventListener('click', () =>
+      this.cbs.onDuplicate?.(sanitizeHat(this.cells.join(''))));
+    $('#hat-load').addEventListener('click', () => this.cbs.onLoad?.());
+    $('#hat-cancel').addEventListener('click', () => this.cbs.onCancel?.());
 
     // paint with any pointer; drag to keep painting
     let painting = false;
@@ -98,6 +97,12 @@ export class HatStudio {
   close() {
     this.opened = false;
     cancelAnimationFrame(this.raf);
+  }
+
+  // Replace the canvas contents (used when loading a hat from the library).
+  setArt(hat) {
+    const s = sanitizeHat(hat);
+    this.cells = s ? s.split('') : new Array(HAT_W * HAT_H).fill('.');
   }
 
   _syncTools() {

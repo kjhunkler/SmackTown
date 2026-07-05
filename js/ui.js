@@ -3,7 +3,7 @@
 import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
-  loadLoadouts, deleteLoadout,
+  loadLoadouts, deleteLoadout, hatArt,
   HAT_W, HAT_H, HAT_CHARS, HAT_PALETTE, sanitizeHat,
 } from './profile.js';
 import { MAPS } from './game.js';
@@ -180,7 +180,7 @@ function renderLoadouts(work) {
         </span>
       </button>
       <button class="lo-del" aria-label="Delete ${esc(lo.name)}">✕</button>`;
-    const img = hatImage(lo.hat);
+    const img = hatImage(hatArt(lo.hatId));
     if (img) {
       const c = document.createElement('canvas');
       c.width = HAT_W;
@@ -192,7 +192,7 @@ function renderLoadouts(work) {
     row.querySelector('.lo-main').addEventListener('click', () => {
       work.color = lo.color;
       work.build = JSON.parse(JSON.stringify(lo.build));
-      work.hat = lo.hat;
+      work.hatId = lo.hatId;
       renderBuilder(work);
     });
     row.querySelector('.lo-del').addEventListener('click', () => {

@@ -301,6 +301,43 @@ input[type=text]:focus { border-color: var(--accent); }
 .hat-foot { display: flex; gap: 10px; }
 .hat-foot .btn { flex: 1; }
 
+/* saved hat picker (📂 My Hats) */
+.hat-picker {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  padding: 10px;
+  max-height: 152px;
+  overflow-y: auto;
+}
+.hat-picker-empty { font-size: 12px; color: var(--ink-dim); margin: 0; }
+.hat-chip { position: relative; }
+.hat-pick {
+  display: block;
+  width: 76px; height: 54px;
+  padding: 5px;
+  background: #10122a;
+  border: 2px solid rgba(255,255,255,.12);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.hat-chip.editing .hat-pick {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(255, 176, 46, .35);
+}
+.hat-pick canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+.hat-del {
+  position: absolute; top: -7px; right: -7px;
+  width: 20px; height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: #39406b;
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 /* ============ lobby ============ */
 .room-code { color: var(--accent); letter-spacing: 5px; font-weight: 900; }
 .btn.invite { border-color: var(--accent); color: var(--accent); }
@@ -420,8 +457,9 @@ input[type=text]:focus { border-color: var(--accent); }
       "canvas tag"
       "canvas palette"
       "canvas tools"
+      "canvas picker"
       "canvas foot";
-    grid-template-rows: auto auto auto 1fr auto;
+    grid-template-rows: auto auto auto auto 1fr auto;
     column-gap: 16px;
     row-gap: 8px;
     align-items: start;
@@ -431,6 +469,7 @@ input[type=text]:focus { border-color: var(--accent); }
   #hat-canvas { grid-area: canvas; height: 100%; min-height: 0; align-self: stretch; }
   .hat-palette { grid-area: palette; }
   .hat-tools { grid-area: tools; }
+  .hat-picker { grid-area: picker; align-self: stretch; max-height: none; }
   .hat-foot { grid-area: foot; align-self: end; }
 }
 

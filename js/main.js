@@ -2,6 +2,7 @@
 
 import {
   loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout, sanitizeHat,
+  loadHats, hatArt, saveHat, deleteHat,
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
@@ -179,7 +180,7 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
   builderWork = {
     color: profile.color,
     build: JSON.parse(JSON.stringify(profile.build)),
-    hat: profile.hat,
+    hatId: profile.hatId,
   };
   UI.renderBuilder(builderWork);
   UI.showScreen('builder');
@@ -193,7 +194,7 @@ $('#builder-reset').addEventListener('click', () => {
 $('#loadout-save').addEventListener('click', () => {
   const nameEl = $('#loadout-name');
   const err = $('#loadout-error');
-  const res = saveLoadout(nameEl.value, builderWork.color, builderWork.build, builderWork.hat);
+  const res = saveLoadout(nameEl.value, builderWork.color, builderWork.build, builderWork.hatId);
   if (res.ok) {
     nameEl.value = '';
     err.classList.add('hidden');
@@ -205,7 +206,7 @@ $('#loadout-save').addEventListener('click', () => {
 });
 
 $('#builder-save').addEventListener('click', () => {
-  profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build, hat: builderWork.hat });
+  profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build, hatId: builderWork.hatId });
   UI.renderMenuCard(profile);
   if (builderReturn === 'lobby' && net?.roomCode) {
     net.updateProfile(profile);      // let the room see the new colors/build
@@ -224,19 +225,86 @@ $('#menu-builder').addEventListener('click', () => openBuilder());
 
 // ---------------- hat studio ----------------
 const hatStudio = new HatStudio();
+let editingHatId = null;           // library entry the studio canvas holds
+
+function closeHatStudio() {
+  $('#hat-picker').classList.add('hidden');
+  hatStudio.close();
+  UI.showScreen('builder');
+}
+
+// The picker: every saved hat as a tap-to-load thumbnail with a delete ✕.
+function renderHatPicker() {
+  const box = $('#hat-picker');
+  box.innerHTML = '';
+  const hats = loadHats();
+  if (!hats.length) {
+    box.innerHTML = '<p class="hat-picker-empty">No saved hats yet — paint one and hit Save!</p>';
+    return;
+  }
+  for (const h of hats) {
+    const chip = document.createElement('div');
+    chip.className = 'hat-chip' + (h.id === editingHatId ? ' editing' : '');
+    const pick = document.createElement('button');
+    pick.className = 'hat-pick';
+    pick.title = 'Load this hat';
+    const img = UI.hatImage(h.art);
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    pick.appendChild(c);
+    pick.addEventListener('click', () => {
+      editingHatId = h.id;
+      hatStudio.setArt(h.art);
+      renderHatPicker();
+    });
+    const del = document.createElement('button');
+    del.className = 'hat-del';
+    del.setAttribute('aria-label', 'Delete hat');
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      deleteHat(h.id);
+      if (editingHatId === h.id) editingHatId = null;   // next Save mints a new hat
+      if (builderWork.hatId === h.id) builderWork.hatId = null;
+      renderHatPicker();
+    });
+    chip.append(pick, del);
+    box.appendChild(chip);
+  }
+}
 
 $('#builder-hat').addEventListener('click', () => {
   UI.showScreen('hat');                 // show first so the canvas has a size
-  hatStudio.open(builderWork.color, builderWork.hat, {
-    onSave: hat => {
-      builderWork.hat = hat;
-      profile = saveProfile({ ...profile, hat });
-      UI.renderMenuCard(profile);
-      if (net?.roomCode) net.updateProfile(profile);   // room sees the new hat
-      UI.showScreen('builder');
-      UI.banner(hat ? 'Hat saved! 🎩' : 'Hat removed — bare-headed brawling', 'good');
+  $('#hat-picker').classList.add('hidden');
+  editingHatId = builderWork.hatId;
+  hatStudio.open(builderWork.color, hatArt(editingHatId), {
+    onSave: art => {
+      if (!art) {                       // cleared canvas — go bare-headed
+        builderWork.hatId = null;
+        closeHatStudio();
+        UI.banner('Hat removed — bare-headed brawling', 'good');
+        return;
+      }
+      const res = saveHat(art, editingHatId);
+      if (!res.ok) { UI.banner(res.error, 'bad'); return; }
+      builderWork.hatId = res.id;
+      closeHatStudio();
+      UI.banner('Hat saved! 🎩', 'good');
     },
-    onCancel: () => UI.showScreen('builder'),
+    onDuplicate: art => {
+      const res = saveHat(art, null);   // always mints a new hat
+      if (!res.ok) { UI.banner(res.error, 'bad'); return; }
+      builderWork.hatId = res.id;
+      closeHatStudio();
+      UI.banner('Saved as a new hat! 🎩', 'good');
+    },
+    onLoad: () => {
+      const box = $('#hat-picker');
+      box.classList.toggle('hidden');
+      if (!box.classList.contains('hidden')) renderHatPicker();
+    },
+    onCancel: () => closeHatStudio(),
   });
 });
 
