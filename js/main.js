@@ -192,6 +192,8 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
     build: JSON.parse(JSON.stringify(profile.build)),
     hatId: profile.hatId,
   };
+  $('#builder-name').value = profile.name;
+  $('#builder-name-error').classList.add('hidden');
   $('#loadout-name').value = selectedLoadout() || '';
   UI.renderBuilder(builderWork);
   UI.showScreen('builder');
@@ -218,7 +220,16 @@ $('#loadout-save').addEventListener('click', () => {
 });
 
 $('#builder-save').addEventListener('click', () => {
-  profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build, hatId: builderWork.hatId });
+  const nameEl = $('#builder-name');
+  const nameErr = $('#builder-name-error');
+  if (!validName(nameEl.value)) {
+    nameErr.textContent = '2–14 letters, numbers or basic punctuation, please!';
+    nameErr.classList.remove('hidden');
+    nameEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  nameErr.classList.add('hidden');
+  profile = saveProfile({ name: nameEl.value, color: builderWork.color, build: builderWork.build, hatId: builderWork.hatId });
   const sel = selectedLoadout();
   if (sel) saveLoadout(sel, builderWork.color, builderWork.build, builderWork.hatId);   // edits stick to the character
   UI.renderMenuCard(profile);

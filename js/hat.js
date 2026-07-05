@@ -100,12 +100,6 @@ export class HatStudio {
     cancelAnimationFrame(this.raf);
   }
 
-  // Replace the canvas contents (used when loading a hat from the Hat Library).
-  setArt(hat) {
-    const s = sanitizeHat(hat);
-    this.cells = s ? s.split('') : new Array(HAT_W * HAT_H).fill('.');
-  }
-
   _syncTools() {
     $('#hat-eraser').classList.toggle('tool-on', this.erasing);
     document.querySelectorAll('.hat-swatch').forEach((el, i) =>
