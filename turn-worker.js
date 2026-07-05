@@ -1,4 +1,4 @@
-const ALLOWED_ORIGIN = 'https://smacktown.simpleraingames.com';
+const ALLOWED_ORIGIN = 'https://smacktownarena.com';
 const TURN_TTL_SECONDS = 86400;
 
 function corsHeaders(origin) {
