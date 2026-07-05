@@ -1,9 +1,11 @@
 // Touch controls tuned for one-thumb-per-side play:
 //   left zone  — drag = virtual stick · flick up = jump · flick down = fast-fall/drop
-//   right zone — tap = jab · swipe = smash attack in swipe direction
+//   right zone — tap = quick attack aimed by the movement stick (8-way)
+//                swipe = smash attack in the swipe direction (8-way)
 //   two floating buttons — equipped abilities
 // Keyboard fallback (desktop testing): arrows/WASD move, space jump,
-// J = jab, K/L = abilities, arrows+J = directional smash.
+// J = tap attack, K = swipe attack (both aimed by held direction, 8-way),
+// L and ; = abilities. Z/X/C/V mirror J/K/L/; for left-hand play.
 
 const FLICK_SPEED = 0.55;    // px/ms — how fast a move must be to be a flick
 const SWIPE_MIN = 24;        // px before a right-zone gesture becomes a swipe
@@ -96,13 +98,11 @@ export class TouchInput {
         const dist = Math.hypot(dx, dy);
         const dur = e.timeStamp - rec.t0;
         if (dist < SWIPE_MIN && dur < TAP_MAX_MS) {
-          this.queue.push({ atk: { kind: 'tap' } });
+          // tap: quick attack aimed by the movement stick (neutral = facing)
+          this.queue.push({ atk: { kind: 'tap', ...octant(this.state.mx, this.state.my, 0.35) } });
         } else if (dist >= SWIPE_MIN) {
-          if (Math.abs(dy) > Math.abs(dx)) {
-            this.queue.push({ atk: { kind: dy < 0 ? 'up' : 'down' } });
-          } else {
-            this.queue.push({ atk: { kind: 'side', dir: Math.sign(dx) } });
-          }
+          // swipe: smash attack in the swipe direction
+          this.queue.push({ atk: { kind: 'swipe', ...octant(dx, dy) } });
         }
       }
     };
@@ -123,14 +123,11 @@ export class TouchInput {
     if (!down) return;
     if (k === ' ' || k === 'arrowup' || k === 'w') this.queue.push({ jump: true });
     if (k === 'arrowdown' || k === 's') this.queue.push({ ff: true, drop: true });
-    if (k === 'j' || k === 'z') {
-      this.queue.push({
-        atk: dn ? { kind: 'down' } : up ? { kind: 'up' }
-          : dir ? { kind: 'side', dir } : { kind: 'tap' },
-      });
-    }
-    if (k === 'k' || k === 'x') this.queue.push({ ab0: true });
-    if (k === 'l' || k === 'c') this.queue.push({ ab1: true });
+    const aim = { dx: dir, dy: dn ? 1 : up ? -1 : 0 };
+    if (k === 'j' || k === 'z') this.queue.push({ atk: { kind: 'tap', ...aim } });
+    if (k === 'k' || k === 'x') this.queue.push({ atk: { kind: 'swipe', ...aim } });
+    if (k === 'l' || k === 'c') this.queue.push({ ab0: true });
+    if (k === ';' || k === 'v') this.queue.push({ ab1: true });
   }
 
   // Drain into a single input frame for the sim/network.
@@ -150,4 +147,12 @@ export class TouchInput {
       this.stickBase.classList.add('hidden');
     }
   }
+}
+
+// Snap a vector to one of 8 directions — {dx, dy} each in {-1, 0, 1} —
+// or neutral {0, 0} inside the deadzone.
+function octant(x, y, dead = 0) {
+  if (Math.hypot(x, y) <= dead) return { dx: 0, dy: 0 };
+  const s = Math.round(Math.atan2(y, x) / (Math.PI / 4)) * (Math.PI / 4);
+  return { dx: Math.round(Math.cos(s)), dy: Math.round(Math.sin(s)) };
 }

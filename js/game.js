@@ -81,6 +81,7 @@ export class Game {
       state: 'idle',                // idle|run|air|attack|hitstun|ledge|roll|dead|respawn
       stateT: 0,
       atk: null,                    // active attack name
+      atkDir: null,                 // 8-way aim at attack start {x,y} or null
       atkHit: new Set(),
       invuln: 0, counterT: 0, dashT: 0,
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
@@ -224,7 +225,7 @@ export class Game {
     if (inAttack) {
       const a = ATTACKS[f.atk];
       const total = a.startup + a.active + a.rec;
-      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkHit.clear(); }
+      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.atkHit.clear(); }
     }
     if (inHitstun && f.stateT >= f.hitstunFor) { f.state = 'air'; }
 
@@ -358,17 +359,38 @@ export class Game {
   }
 
   _startAttack(f, atk) {
+    // Aimed commands: {kind:'tap'|'swipe', dx, dy} with dx/dy in {-1,0,1}
+    // (8-way). Legacy shapes {kind:'up'|'down'|'side'} from older peers
+    // still convert. Taps are quick jabs aimed by movement; swipes are
+    // smashes aimed by the swipe itself.
+    let dx = atk.dx | 0, dy = atk.dy | 0;
+    if (atk.kind === 'up') { dx = 0; dy = -1; }
+    else if (atk.kind === 'down') { dx = 0; dy = 1; }
+    else if (atk.kind === 'side') { dx = atk.dir || 1; dy = 0; }
+    const swipe = atk.kind !== 'tap';
+
     let name;
-    if (atk.kind === 'tap') name = 'jab';
-    else if (atk.kind === 'up') name = 'usmash';
-    else if (atk.kind === 'down') name = f.grounded ? 'dsmash' : 'dair';
-    else { name = 'fsmash'; if (atk.dir) f.facing = atk.dir; }
+    if (!swipe) {
+      name = 'jab';
+      // grounded straight-down tap: angle it forward so it isn't in the floor
+      if (dy > 0 && !dx && f.grounded) dx = f.facing;
+    } else if (dy < 0 && !dx) name = 'usmash';
+    else if (dy > 0 && !dx) name = f.grounded ? 'dsmash' : 'dair';
+    else name = 'fsmash';
+
+    if (dx) f.facing = dx;
     f.state = 'attack';
     f.stateT = 0;
     f.atk = name;
+    f.atkDir = (dx || dy) ? { x: dx, y: dy } : null;
     f.atkHit.clear();
     if (f.grounded) f.vx *= 0.35;
-    this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y });
+    // upward swipe in the air boosts you like an air jump — and costs none
+    if (swipe && dy < 0 && !f.grounded) {
+      f.vy = Math.min(f.vy, -JUMP2_V * f.st.jumpMult * (dx ? 0.75 : 1));
+      f.fastfall = false;
+    }
+    this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy });
   }
 
   _useAbility(f, slot) {
@@ -467,7 +489,7 @@ export class Game {
     if (f.state === 'attack' && f.atk) {
       const a = ATTACKS[f.atk];
       if (f.stateT <= a.startup + a.active) {
-        return { ...meleeHitbox(f, a), active: f.stateT >= a.startup };
+        return { ...meleeHitbox(f, a, f.atkDir), active: f.stateT >= a.startup };
       }
     }
     if (f.melee && this.tick <= f.melee.until) {
@@ -487,7 +509,7 @@ export class Game {
       if (f.state === 'attack' && f.atk) {
         const a = ATTACKS[f.atk];
         if (f.stateT >= a.startup && f.stateT <= a.startup + a.active) {
-          this._meleeHit(f, a, f.atkHit, a.ang);
+          this._meleeHit(f, a, f.atkHit, a.ang, f.atkDir);
         }
       }
 
@@ -513,9 +535,10 @@ export class Game {
     }
   }
 
-  _meleeHit(f, spec, hitSet, angDeg) {
-    const hb = meleeHitbox(f, spec);
+  _meleeHit(f, spec, hitSet, angDeg, aim = null) {
+    const hb = meleeHitbox(f, spec, aim);
     const cx = f.x + hb.dx, cy = f.y + hb.dy;
+    const a = aim && (aim.x || aim.y) ? aim : null;
     for (const o of this.fighters) {
       if (o.id === f.id || o.dead || o.invuln > 0 || hitSet.has(o.id)) continue;
       const pos = this._rewound(o, f.id);
@@ -527,8 +550,16 @@ export class Game {
           this._applyHit(o, f, { dmg: spec.dmg * 1.2, kb: 240, ks: 16 }, deg(-45), Math.sign(f.x - o.x) || 1);
           continue;
         }
-        const dirX = spec.both ? (Math.sign(o.x - f.x) || 1) : f.facing;
-        this._applyHit(f, o, spec, deg(angDeg), dirX, spec.spike);
+        // launch direction follows the aim (8-way); neutral keeps archetype
+        let ang = deg(angDeg), spike = !!spec.spike;
+        let dirX = spec.both ? (Math.sign(o.x - f.x) || 1) : f.facing;
+        if (a) {
+          dirX = a.x || Math.sign(o.x - f.x) || f.facing;
+          if (a.y > 0 && !f.grounded) spike = true;          // airborne down attacks spike
+          else if (a.y > 0 && a.x) ang = deg(-18);           // grounded down-diag: semi-spike
+          else if (a.y < 0 && a.x) ang = deg(-45);           // up-diag: diagonal launch
+        }
+        this._applyHit(f, o, spec, ang, dirX, spike);
       }
     }
   }
@@ -562,6 +593,7 @@ export class Game {
     vic.stateT = 0;
     vic.hitstunFor = Math.min(1.1, 0.08 + kb / 2600);
     vic.atk = null;
+    vic.atkDir = null;
     vic.melee = null;
 
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
@@ -634,9 +666,9 @@ export class Game {
       if (Math.abs(dx) > 60) inp.mx = Math.sign(dx) * (0.6 + 0.4 * this.rng());
       if (dy < -90 && f.grounded && this.rng() < 0.06) inp.jump = true;
       if (Math.abs(dx) < 85 && Math.abs(dy) < 70 && this.rng() < 0.10) {
-        inp.atk = this.rng() < 0.55 ? { kind: 'tap' }
-          : this.rng() < 0.5 ? { kind: 'side', dir: Math.sign(dx) || 1 }
-          : { kind: dy < -30 ? 'up' : 'down' };
+        inp.atk = this.rng() < 0.55 ? { kind: 'tap', dx: 0, dy: 0 }
+          : this.rng() < 0.5 ? { kind: 'swipe', dx: Math.sign(dx) || 1, dy: 0 }
+          : { kind: 'swipe', dx: 0, dy: dy < -30 ? -1 : 1 };
       }
       if (f.pct > 70 && this.rng() < 0.02) inp.ab0 = true;
     }
@@ -675,6 +707,7 @@ export class Game {
           f.grounded ? 1 : 0, f.jumps, r2(f.stateT), f.ledge,
           r2(f.regrabT), f.rollDir, r2(f.invuln), r2(f.dropT),
           f.fastfall ? 1 : 0, r2(f.dashT), r2(f.counterT),
+          f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -712,6 +745,7 @@ export function restoreFighter(f, row) {
     f.regrabT = row[19] || 0; f.rollDir = row[20] || 0;
     f.invuln = row[21] || 0; f.dropT = row[22] || 0;
     f.fastfall = !!row[23]; f.dashT = row[24] || 0; f.counterT = row[25] || 0;
+    f.atkDir = (row[26] || row[27]) ? { x: row[26] | 0, y: row[27] | 0 } : null;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.
@@ -719,6 +753,7 @@ export function restoreFighter(f, row) {
     f.grounded = false;
   }
   if (f.atk && f.state !== 'attack') f.atk = null;
+  if (!f.atk) f.atkDir = null;
 }
 
 export function blankInput() {
@@ -732,8 +767,19 @@ export function blankInput() {
 
 // Axis-aligned melee hitbox for a spec, as offsets from the fighter's center
 // plus half-extents. Shared by combat resolution and the renderer so the
-// hitbox players see is exactly the one the sim tests.
-export function meleeHitbox(f, spec) {
+// hitbox players see is exactly the one the sim tests. An 8-way aim places
+// the box along that direction; 'both' boxes stay centered on the fighter.
+export function meleeHitbox(f, spec, aim = null) {
+  const a = !spec.both && aim && (aim.x || aim.y) ? aim : null;
+  if (a) {
+    const n = Math.hypot(a.x, a.y);
+    return {
+      dx: (a.x / n) * (F_W / 2 + spec.rx / 2),
+      dy: (a.y / n) * (F_H / 2 + spec.ry / 2),
+      hw: spec.rx / 2 + 14,
+      hh: spec.ry,
+    };
+  }
   return {
     dx: spec.both || spec.up || spec.down ? 0 : f.facing * (F_W / 2 + spec.rx / 2),
     dy: spec.up ? -F_H / 2 - spec.ry / 2 : spec.down ? F_H / 2 + spec.ry / 2 : 0,
