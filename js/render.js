@@ -408,7 +408,7 @@ export class Renderer {
         ctx.scale(f.facing || 1, 1);
         if (duck) ctx.translate(0, F_H - bh);  // hat rides the lowered head
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(hat, HAT_X, HAT_Y, HAT_BW, HAT_BH);
+        ctx.drawImage(hat, HAT_X, HAT_Y, HAT_BW, HAT_BH + 7); // box bottom sits 7px lower on the brow
         ctx.restore();
       }
     }
