@@ -5,7 +5,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, blankInput, TICK, SNAP_RATE } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE } from './game.js';
 import { TouchInput } from './input.js';
 import { Renderer } from './render.js';
 import * as UI from './ui.js';
@@ -265,7 +265,7 @@ function enterRoom(joinCode) {
       seed: msg.seed,
     });
   });
-  net.on('game:input', (msg, pid) => session?.onRemoteInput(pid, msg.inp));
+  net.on('game:input', (msg, pid) => session?.onRemoteInput(pid, msg.inp, msg.seq));
   net.on('game:snap', (msg, pid) => session?.onSnapshot(msg.s, pid));
 
   if (joinCode) net.join(joinCode); else net.host();
@@ -320,6 +320,10 @@ function startSession(cfg) {
   presence?.update();
 }
 
+// Cosmetic events the client already plays locally via prediction; the
+// host's copies are dropped for our own fighter to avoid double effects.
+const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'ability', 'shockwave']);
+
 class Session {
   constructor({ mode, myId, players, seed = 1 }) {
     this.mode = mode;               // 'solo' | 'host' | 'client'
@@ -334,6 +338,12 @@ class Session {
     this.acc = 0;
     this.lastT = 0;
     this.lastInputSend = 0;
+    this.pred = null;               // client: local mirror sim (prediction)
+    this.inputSeq = 0;              // client: monotonically increasing per tick
+    this.tickLog = [];              // client: per-tick inputs awaiting host ack
+    this.corr = { x: 0, y: 0 };     // client: reconciliation smoothing offset
+    this.pendActs = {};             // client: actions waiting for a sim tick
+    this.acks = new Map();          // host: last input seq processed per client
     this.running = false;
     this.ended = false;
     this.raf = 0;
@@ -341,6 +351,7 @@ class Session {
 
   start() {
     if (this.mode !== 'client') this.game = new Game(this.players, this.seed);
+    else this.pred = new Game(this.players, this.seed);
     const me = this.meta.get(this.myId);
     UI.showScreen('game');
     UI.buildHud(this.players);
@@ -392,7 +403,16 @@ class Session {
           (this.game.tick % SNAP_RATE === 0 || this.game.over)) {
         const s = this.game.snapshot();
         s.ev = this.pendingEv.splice(0);
+        s.ack = Object.fromEntries(this.acks);
         net.broadcast({ t: 'snap', s });
+      }
+      // Refresh lag compensation ~1/s from measured pings: victims are
+      // rewound by each attacker's one-way latency + interp delay.
+      if (this.mode === 'host' && net && this.game.tick % 60 === 0) {
+        for (const [pid, m] of net.members) {
+          if (pid === this.myId || !this.meta.has(pid)) continue;
+          this.game.setLag(pid, Math.round((m.ping / 2 + 130) / 1000 / TICK));
+        }
       }
       if (this.game.over) break;
     }
@@ -409,15 +429,39 @@ class Session {
     if (this.game.over && !this.ended) this.finish(this.game.winner?.id ?? null, view.fighters);
   }
 
-  // ----- spectating loop (client) -----
+  // ----- predicted loop (client) -----
   clientFrame(t, dt) {
-    // ship inputs to the host (fresh actions immediately, stick at ~30 Hz)
     const inp = touch.poll();
+
+    // Predict our own fighter locally at the sim rate so controls feel
+    // instant; the host remains authoritative and corrects us via snapshots.
+    // Edge actions are carried until a tick consumes them — render frames
+    // can outpace sim ticks.
+    for (const k of ['jump', 'ff', 'drop', 'ab0', 'ab1']) if (inp[k]) this.pendActs[k] = true;
+    if (inp.atk) this.pendActs.atk = inp.atk;
+    this.acc += dt;
+    while (this.acc >= TICK) {
+      this.acc -= TICK;
+      this.inputSeq++;
+      const tin = { mx: inp.mx, my: inp.my, ...this.pendActs };
+      this.pendActs = {};
+      this.pred.setInput(this.myId, tin);
+      this.tickLog.push({ seq: this.inputSeq, inp: tin });
+      if (this.tickLog.length > 180) this.tickLog.shift();
+      const ev = this.pred.predictStep(this.myId);
+      if (ev.length) renderer.onEvents(ev.filter(e => e.id === this.myId));
+    }
+
+    // ship inputs to the host (fresh actions immediately, stick at ~30 Hz)
     const hasAction = inp.jump || inp.ff || inp.atk || inp.ab0 || inp.ab1 || inp.drop;
     if (hasAction || t - this.lastInputSend > 33) {
       this.lastInputSend = t;
-      net?.sendToHost({ t: 'input', inp });
+      net?.sendToHost({ t: 'input', inp, seq: this.inputSeq });
     }
+
+    // bleed off any reconciliation correction so fixes never pop
+    const decay = Math.pow(0.002, dt);
+    this.corr.x *= decay; this.corr.y *= decay;
 
     const view = this.interpolate(performance.now() - 130);
     if (view) this.renderView(view, dt);
@@ -436,8 +480,11 @@ class Session {
   }
 
   // ----- network callbacks -----
-  onRemoteInput(pid, inp) {
-    if (this.game && this.meta.has(pid)) this.game.setInput(pid, inp || blankInput());
+  onRemoteInput(pid, inp, seq) {
+    if (this.game && this.meta.has(pid)) {
+      this.game.setInput(pid, inp || blankInput());
+      if (seq) this.acks.set(pid, seq);
+    }
   }
 
   onSnapshot(s, pid) {
@@ -446,9 +493,38 @@ class Session {
     this.snaps.push({ rt: performance.now(), s });
     if (this.snaps.length > 40) this.snaps.shift();
     if (s.ev?.length) {
-      renderer.onEvents(s.ev);
+      // our own movement cosmetics already fired locally via prediction
+      const evs = s.ev.filter(e => !(e.id === this.myId && PREDICTED_EV.has(e.e)));
+      if (evs.length) renderer.onEvents(evs);
       this.gameEvents(s.ev);
     }
+    this.reconcile(s);
+  }
+
+  // Reconciliation: overwrite our predicted fighter with the authoritative
+  // row, replay inputs the host hasn't processed yet, then fold whatever
+  // error remains into a decaying render offset so corrections are seamless.
+  reconcile(s) {
+    if (!this.pred) return;
+    this.pred.projectiles.length = 0; // authoritative ones come via snapshots
+    const row = (s.f || []).find(r => r[0] === this.myId);
+    const mine = this.pred.fighters.find(f => f.id === this.myId);
+    if (!row || !mine) return;
+    const px = mine.x, py = mine.y;
+    restoreFighter(mine, row);
+    const ack = (s.ack && s.ack[this.myId]) || 0;
+    if (this.tickLog.length && ack) {
+      this.tickLog = this.tickLog.filter(e => e.seq > ack);
+    }
+    for (const e of this.tickLog) {
+      this.pred.setInput(this.myId, e.inp);
+      this.pred.predictStep(this.myId); // replay: events discarded
+    }
+    const ex = px - mine.x + this.corr.x, ey = py - mine.y + this.corr.y;
+    // small error: smooth it; big error (KO, teleport): snap
+    const big = Math.hypot(ex, ey) > 150;
+    this.corr.x = big ? 0 : ex;
+    this.corr.y = big ? 0 : ey;
   }
 
   onHostChanged() {
@@ -458,6 +534,8 @@ class Session {
       // from the freshest snapshot and carry on as the authority.
       this.mode = 'host';
       this.game = gameFromSnapshot(this.players, this.lastSnap, this.seed + 1);
+      this.pred = null;
+      this.tickLog = [];
       this.acc = 0;
       this.pendingEv = [];
       // Drop the departed host's fighter if they're no longer around.
@@ -511,6 +589,19 @@ class Session {
       const f1 = fa.find(x => x.id === f2.id) || f2;
       return { ...f2, x: f1.x + (f2.x - f1.x) * k, y: f1.y + (f2.y - f1.y) * k };
     });
+    // our own fighter comes from the predicted sim, not the (delayed) buffer
+    const mine = this.pred?.fighters.find(f => f.id === this.myId);
+    if (mine) {
+      const pv = {
+        id: mine.id, x: mine.x + this.corr.x, y: mine.y + this.corr.y,
+        vx: mine.vx, vy: mine.vy, facing: mine.facing,
+        pct: mine.pct, stocks: mine.stocks, state: mine.state, dead: mine.dead,
+        invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
+        cds: mine.cds, color: this.meta.get(mine.id)?.color,
+      };
+      const i = fighters.findIndex(f => f.id === this.myId);
+      if (i >= 0) fighters[i] = pv; else fighters.push(pv);
+    }
     const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3] }));
     return { fighters, projectiles };
   }

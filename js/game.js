@@ -66,6 +66,8 @@ export class Game {
     this.fighters = players.map((p, i) => this._spawnFighter(p, i));
     this.inputs = new Map();        // id -> latest input
     for (const f of this.fighters) this.inputs.set(f.id, blankInput());
+    this.hist = [];                 // recent positions per tick (lag compensation)
+    this.lagComp = new Map();       // attacker id -> ticks to rewind their victims
   }
 
   _spawnFighter(p, i) {
@@ -108,6 +110,12 @@ export class Game {
     if (inp.ab1) { cur.ab1 = true; cur.buf1 = BUFFER; }
   }
 
+  // How far back (in ticks) this peer's victims are rewound when their
+  // attacks resolve. Host sets it from measured RTT; capped at 400 ms.
+  setLag(id, ticks) {
+    this.lagComp.set(id, clamp(ticks | 0, 0, 24));
+  }
+
   step() {
     if (this.over) return;
     this.tick++;
@@ -120,6 +128,7 @@ export class Game {
       this._stepFighter(f, this.inputs.get(f.id));
     }
     this._stepProjectiles();
+    this._recordHistory();
     this._resolveAttacks();
     this._checkBlast();
 
@@ -184,7 +193,7 @@ export class Game {
       f.fastfall = false;
       f.state = 'air';
       inp.jump = false;
-      this.events.push({ e: 'jump', x: f.x, y: f.y + F_H / 2 });
+      this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
     }
     if (inp.ff && !f.grounded && f.vy > -200) f.fastfall = true;
     if (inp.drop && f.grounded) f.dropT = 0.25;    // fall through platforms
@@ -252,7 +261,7 @@ export class Game {
       f.jumps = f.st.maxJumps;
       f.fastfall = false;
       if (f.state === 'air' || f.state === 'hitstun') f.state = 'idle';
-      this.events.push({ e: 'land', x: f.x, y: f.y + F_H / 2 });
+      this.events.push({ e: 'land', id: f.id, x: f.x, y: f.y + F_H / 2 });
     }
   }
 
@@ -278,7 +287,7 @@ export class Game {
         f.fastfall = false;
         f.atk = null; f.melee = null;
         f.invuln = Math.max(f.invuln, LEDGE_INVULN);
-        this.events.push({ e: 'ledge', x: lipX, y: m.y });
+        this.events.push({ e: 'ledge', id: f.id, x: lipX, y: m.y });
         return;
       }
     }
@@ -300,7 +309,7 @@ export class Game {
       f.vx = -f.ledge * 60;
       f.regrabT = REGRAB_CD;
       inp.jump = false; inp.bufJ = 0;
-      this.events.push({ e: 'jump', x: f.x, y: f.y + F_H / 2 });
+      this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
     } else if (inp.atk) {
       // getup roll: pop onto the stage and tumble inward, briefly invulnerable
       f.state = 'roll'; f.stateT = 0;
@@ -310,7 +319,7 @@ export class Game {
       f.invuln = Math.max(f.invuln, ROLL_TIME + 0.1);
       f.regrabT = REGRAB_CD;
       inp.atk = null; inp.bufA = 0;
-      this.events.push({ e: 'roll', x: f.x, y: f.y });
+      this.events.push({ e: 'roll', id: f.id, x: f.x, y: f.y });
     } else if (inp.ff || inp.drop || inp.my > 0.6 || f.ledge * inp.mx > 0.7
         || f.stateT > LEDGE_MAX_HANG) {
       // let go: down input, push away from the stage, or hang timeout
@@ -396,18 +405,43 @@ export class Game {
 
   _shockwave(f) {
     f.pendingShock = false;
-    this.events.push({ e: 'shockwave', x: f.x, y: f.y + F_H / 2 });
+    this.events.push({ e: 'shockwave', id: f.id, x: f.x, y: f.y + F_H / 2 });
     for (const o of this.fighters) {
       if (o.id === f.id || o.dead || o.invuln > 0) continue;
-      const d = Math.hypot(o.x - f.x, o.y - f.y);
+      const pos = this._rewound(o, f.id);
+      const d = Math.hypot(pos.x - f.x, pos.y - f.y);
       if (d < 190) {
         this._applyHit(f, o, { dmg: 10, kb: 280, ks: 18 },
-          Math.atan2(o.y - f.y, o.x - f.x) * 0.3 - Math.PI / 2.4, Math.sign(o.x - f.x) || 1);
+          Math.atan2(pos.y - f.y, pos.x - f.x) * 0.3 - Math.PI / 2.4, Math.sign(pos.x - f.x) || 1);
       }
     }
   }
 
   // ---------- combat resolution ----------
+
+  // Lag compensation: the host remembers where everyone stood for the last
+  // ~30 ticks. When an attack resolves, victims are tested at the position
+  // the *attacker* saw (one-way latency + interpolation delay ago), so what
+  // you see on your screen is what you hit.
+  _recordHistory() {
+    const p = new Map();
+    for (const f of this.fighters) p.set(f.id, [f.x, f.y]);
+    this.hist.push({ tk: this.tick, p });
+    if (this.hist.length > 30) this.hist.shift();
+  }
+
+  _rewound(victim, attackerId) {
+    const rw = this.lagComp.get(attackerId) | 0;
+    if (rw <= 0) return victim;
+    const want = this.tick - rw;
+    for (let i = this.hist.length - 1; i >= 0; i--) {
+      if (this.hist[i].tk <= want) {
+        const p = this.hist[i].p.get(victim.id);
+        return p ? { x: p[0], y: p[1] } : victim;
+      }
+    }
+    return victim;
+  }
 
   // Current melee hitbox for a fighter (offsets relative to its center), or
   // null when nothing threatens. active=false marks the windup telegraph
@@ -452,7 +486,8 @@ export class Game {
     for (const pr of this.projectiles) {
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
-        if (Math.abs(o.x - pr.x) < F_W / 2 + pr.r && Math.abs(o.y - pr.y) < F_H / 2 + pr.r) {
+        const pos = this._rewound(o, pr.owner);
+        if (Math.abs(pos.x - pr.x) < F_W / 2 + pr.r && Math.abs(pos.y - pr.y) < F_H / 2 + pr.r) {
           const att = this.fighters.find(x => x.id === pr.owner);
           if (o.counterT > 0) { pr.vx *= -1; pr.owner = o.id; this.events.push({ e: 'counter', x: o.x, y: o.y }); continue; }
           if (att) this._applyHit(att, o, pr, deg(-40), Math.sign(pr.vx) || 1);
@@ -467,7 +502,8 @@ export class Game {
     const cx = f.x + hb.dx, cy = f.y + hb.dy;
     for (const o of this.fighters) {
       if (o.id === f.id || o.dead || o.invuln > 0 || hitSet.has(o.id)) continue;
-      if (Math.abs(o.x - cx) < hb.hw + F_W / 2 && Math.abs(o.y - cy) < hb.hh + F_H / 2) {
+      const pos = this._rewound(o, f.id);
+      if (Math.abs(pos.x - cx) < hb.hw + F_W / 2 && Math.abs(pos.y - cy) < hb.hh + F_H / 2) {
         hitSet.add(o.id);
         if (o.counterT > 0) {
           // countered: attacker eats a reversal hit
@@ -590,6 +626,21 @@ export class Game {
     }
   }
 
+  // ---------- client-side prediction ----------
+
+  // Step ONLY the given fighter — movement, ledges, attack states — with no
+  // combat resolution, projectiles, or KOs. Clients run this on a local
+  // mirror sim so their own fighter responds instantly; the host stays
+  // authoritative and corrections arrive via snapshots + reconciliation.
+  predictStep(id) {
+    this.events.length = 0;
+    if (this.over) return this.events;
+    this.tick++;
+    const f = this.fighters.find(x => x.id === id);
+    if (f && !f.dead) this._stepFighter(f, this.inputs.get(id));
+    return this.events;
+  }
+
   // ---------- snapshots (host <-> clients) ----------
 
   snapshot() {
@@ -604,6 +655,10 @@ export class Game {
           r1(f.pct), f.stocks, f.state, f.dead ? 1 : 0,
           f.invuln > 0 ? 1 : 0, f.atk || '', r1(f.cds[0]), r1(f.cds[1]),
           hb ? [r1(hb.dx), r1(hb.dy), hb.hw, hb.hh, hb.active ? 1 : 0] : 0,
+          // Appended for client prediction/reconciliation + host handoff:
+          f.grounded ? 1 : 0, f.jumps, r2(f.stateT), f.ledge,
+          r2(f.regrabT), f.rollDir, r2(f.invuln), r2(f.dropT),
+          f.fastfall ? 1 : 0, r2(f.dashT), r2(f.counterT),
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -621,16 +676,33 @@ export function gameFromSnapshot(players, snap, seed = 2) {
   for (const row of snap.f || []) {
     const f = g.fighters.find(x => x.id === row[0]);
     if (!f) continue;
-    [, f.x, f.y, f.vx, f.vy, f.facing] = row;
-    f.pct = row[6]; f.stocks = row[7];
-    f.dead = !!row[9];
-    // Mid-swing/hitstun details (timers, hit sets) aren't in snapshots;
-    // resuming in a neutral state costs at most a dropped attack frame.
-    f.state = f.dead ? 'dead' : 'air';
-    f.grounded = false;
-    f.cds = [row[12] || 0, row[13] || 0];
+    restoreFighter(f, row);
   }
   return g;
+}
+
+// Overwrite a fighter with an authoritative snapshot row. Used by clients
+// before replaying unacked inputs (reconciliation) and by host handoff.
+export function restoreFighter(f, row) {
+  [, f.x, f.y, f.vx, f.vy, f.facing] = row;
+  f.pct = row[6]; f.stocks = row[7];
+  f.dead = !!row[9];
+  f.atk = row[11] || null;
+  f.cds = [row[12] || 0, row[13] || 0];
+  if (row.length > 15) {
+    f.state = row[8];
+    f.grounded = !!row[15]; f.jumps = row[16] | 0;
+    f.stateT = row[17] || 0; f.ledge = row[18] || 0;
+    f.regrabT = row[19] || 0; f.rollDir = row[20] || 0;
+    f.invuln = row[21] || 0; f.dropT = row[22] || 0;
+    f.fastfall = !!row[23]; f.dashT = row[24] || 0; f.counterT = row[25] || 0;
+  } else {
+    // Old-format row: mid-swing/hitstun details aren't included; resuming
+    // in a neutral state costs at most a dropped attack frame.
+    f.state = f.dead ? 'dead' : 'air';
+    f.grounded = false;
+  }
+  if (f.atk && f.state !== 'attack') f.atk = null;
 }
 
 export function blankInput() {
@@ -660,6 +732,7 @@ function approach(v, target, amt) {
 }
 function deg(d) { return d * Math.PI / 180; }
 function r1(v) { return Math.round(v * 10) / 10; }
+function r2(v) { return Math.round(v * 100) / 100; }
 function mulberry32(a) {
   return function () {
     a |= 0; a = a + 0x6D2B79F5 | 0;
