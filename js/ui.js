@@ -12,11 +12,14 @@ export function showScreen(name) {
   $('#screen-' + name).classList.remove('hidden');
 }
 
-export function banner(text, kind = 'warn', ms = 3000) {
+export function banner(text, kind = 'warn', ms = 3000, onClick = null) {
   const el = $('#net-banner');
   el.textContent = text;
-  el.className = kind;   // warn (default style) | bad | good
+  el.className = kind + (onClick ? ' tappable' : '');   // warn (default style) | bad | good
   el.classList.remove('hidden');
+  if (el._click) el.removeEventListener('click', el._click);
+  el._click = onClick ? () => { el.classList.add('hidden'); onClick(); } : null;
+  if (el._click) el.addEventListener('click', el._click, { once: true });
   clearTimeout(el._t);
   el._t = setTimeout(() => el.classList.add('hidden'), ms);
 }
@@ -147,6 +150,43 @@ export function renderMenuCard(profile) {
   $('#menu-name').textContent = profile.name;
   $('#menu-build').textContent = buildSummary(profile.build);
   drawPreview($('#menu-preview'), profile.color);
+}
+
+// ---------- main-menu presence ----------
+
+export function renderOnline(entries, ready, { onJoin, onInvite } = {}) {
+  const list = $('#menu-online-list');
+  const empty = $('#menu-online-empty');
+  $('#menu-online-count').textContent = entries.length ? `${entries.length} in town` : '';
+  empty.classList.toggle('hidden', entries.length > 0);
+  empty.textContent = ready
+    ? 'No one else is in town — send someone an invite link!'
+    : 'Looking for fighters…';
+  list.innerHTML = '';
+  for (const e of entries) {
+    const li = document.createElement('li');
+    const where = e.status === 'fighting' ? 'in a fight'
+      : e.status === 'lobby' ? 'in room ' + esc(e.code || '????')
+      : 'in the menu';
+    li.innerHTML = `
+      <span class="presence-dot online"></span>
+      <span class="r-swatch" style="background:${esc(e.color || '#f5f5f5')}"></span>
+      <span class="r-name">${esc(e.name)}<span class="r-where">${where}</span></span>`;
+    if (e.status === 'lobby' && e.open && e.code) {
+      const b = document.createElement('button');
+      b.className = 'btn tiny';
+      b.textContent = 'Join';
+      b.addEventListener('click', () => onJoin?.(e));
+      li.appendChild(b);
+    } else if (e.status === 'menu') {
+      const b = document.createElement('button');
+      b.className = 'btn tiny ghost';
+      b.textContent = 'Invite';
+      b.addEventListener('click', () => onInvite?.(e));
+      li.appendChild(b);
+    }
+    list.appendChild(li);
+  }
 }
 
 // ---------- lobby ----------

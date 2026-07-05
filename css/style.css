@@ -155,6 +155,15 @@ input[type=text]:focus { border-color: var(--accent); }
 .join-row input { flex: 1; text-transform: uppercase; letter-spacing: 6px; text-align: center; font-weight: 800; }
 .join-row .btn { min-width: 90px; }
 
+/* fighters online (town-square presence) */
+.online-box { text-align: left; }
+.online-box .section-title { margin: 0 0 8px; }
+.online-list { max-height: 190px; overflow-y: auto; }
+.online-list li { padding: 8px 10px; }
+.online-list .r-name { line-height: 1.2; }
+.online-list .r-where { display: block; font-size: 11px; color: var(--ink-dim); font-weight: 400; }
+.online-empty { font-size: 12px; color: var(--ink-dim); text-align: center; margin: 0; }
+
 /* ============ builder ============ */
 .builder-head { display: flex; align-items: center; justify-content: space-between; }
 .builder-head h2 { font-size: 22px; }
@@ -378,3 +387,4 @@ input[type=text]:focus { border-color: var(--accent); }
 }
 #net-banner.bad { background: var(--bad); color: #fff; }
 #net-banner.good { background: var(--good); color: #06210f; }
+#net-banner.tappable { cursor: pointer; box-shadow: 0 6px 22px rgba(0,0,0,.45); }

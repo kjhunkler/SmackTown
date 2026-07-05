@@ -4,6 +4,7 @@ import {
   loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild,
 } from './profile.js';
 import { Net } from './net.js';
+import { Presence } from './presence.js';
 import { Game, gameFromSnapshot, blankInput, TICK, SNAP_RATE } from './game.js';
 import { TouchInput } from './input.js';
 import { Renderer } from './render.js';
@@ -15,6 +16,8 @@ const $ = s => document.querySelector(s);
 let profile = null;
 let net = null;             // Net instance while in a room
 let session = null;         // active game session
+let presence = null;        // town-square presence (menu roster + invites)
+let pendingInvite = null;   // {id, name} to ping once our fresh room opens
 const touch = new TouchInput(document);
 const renderer = new Renderer($('#game-canvas'));
 
@@ -89,10 +92,49 @@ profile = loadProfile();
 if (profile) {
   UI.renderMenuCard(profile);
   UI.showScreen('menu');
+  startPresence();
   if (pendingJoinCode) { enterRoom(pendingJoinCode); pendingJoinCode = null; }
 } else {
   initLogin();
   UI.showScreen('login');
+}
+
+// ---------------- town-square presence ----------------
+function presenceState() {
+  if (session) return { status: 'fighting', code: net?.roomCode || null, open: false };
+  if (net?.roomCode) return { status: 'lobby', code: net.roomCode, open: true };
+  return { status: 'menu', code: null, open: false };
+}
+
+function startPresence() {
+  if (presence || !profile) return;
+  presence = new Presence(profile, presenceState);
+  presence.on('roster', refreshOnline);
+  presence.on('invite', inv => {
+    if (!inv.code) return;
+    if (session) { UI.banner(`${inv.from.name} invited you — room ${inv.code}`, 'warn', 6000); return; }
+    UI.banner(`⚔️ ${inv.from.name} challenged you! Tap to join room ${inv.code}`, 'good', 12000,
+      () => enterRoom(inv.code));
+  });
+  presence.start();
+  refreshOnline();
+}
+
+function refreshOnline() {
+  if (!presence) return;
+  UI.renderOnline(presence.list(), presence.ready, {
+    onJoin: e => enterRoom(e.code),
+    onInvite: e => {
+      if (net?.roomCode) {
+        presence.invite(e.id, net.roomCode);
+        UI.banner(`Challenge sent to ${e.name}!`, 'good');
+      } else {
+        // No room yet: open one, then ping them once the code exists.
+        pendingInvite = { id: e.id, name: e.name };
+        enterRoom(null);
+      }
+    },
+  });
 }
 
 // ---------------- login (first run) ----------------
@@ -139,6 +181,8 @@ $('#builder-save').addEventListener('click', () => {
   profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build });
   UI.renderMenuCard(profile);
   UI.showScreen('menu');
+  startPresence();
+  presence?.setProfile(profile);
   if (builderFirstRun) UI.banner(`Welcome to SmackTown, ${profile.name}!`, 'good');
   if (builderFirstRun && pendingJoinCode) { enterRoom(pendingJoinCode); pendingJoinCode = null; }
 });
@@ -180,7 +224,16 @@ function enterRoom(joinCode) {
   if (net) { net.leave(); net = null; }
   net = new Net(profile);
 
-  net.on('room', () => { UI.renderLobby(net); UI.showScreen('lobby'); });
+  net.on('room', () => {
+    UI.renderLobby(net);
+    UI.showScreen('lobby');
+    presence?.update();               // advertise the joinable room
+    if (pendingInvite && net.isHost) {
+      presence?.invite(pendingInvite.id, net.roomCode);
+      UI.banner(`Challenge sent to ${pendingInvite.name}!`, 'good');
+      pendingInvite = null;
+    }
+  });
   net.on('roster', () => {
     if (!$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
     session?.onRoster();
@@ -190,6 +243,8 @@ function enterRoom(joinCode) {
     UI.showScreen('menu');
     menuError(text);
     net?.leave(); net = null;
+    pendingInvite = null;
+    presence?.update();
   });
   net.on('banner', (text, kind) => UI.banner(text, kind));
   net.on('join-request', req => {
@@ -236,7 +291,9 @@ $('#lobby-start').addEventListener('click', () => {
 
 $('#lobby-leave').addEventListener('click', () => {
   net?.leave(); net = null;
+  pendingInvite = null;
   UI.showScreen('menu');
+  presence?.update();
 });
 
 $('#lobby-invite').addEventListener('click', async () => {
@@ -260,6 +317,7 @@ function startSession(cfg) {
   session?.stop();
   session = new Session(cfg);
   session.start();
+  presence?.update();
 }
 
 class Session {
@@ -480,6 +538,7 @@ class Session {
       $('#results-again').textContent = this.mode === 'solo' ? 'Rematch' : 'Back to Lobby';
       UI.showScreen('results');
       session = null;
+      presence?.update();
       if (net) {
         // reset ready states for the next round
         net.setReady(false);
@@ -505,6 +564,7 @@ $('#game-quit').addEventListener('click', () => {
   } else {
     UI.showScreen('menu');
   }
+  presence?.update();
 });
 
 $('#results-again').addEventListener('click', () => {
@@ -519,10 +579,12 @@ $('#results-again').addEventListener('click', () => {
 $('#results-menu').addEventListener('click', () => {
   net?.leave(); net = null;
   UI.showScreen('menu');
+  presence?.update();
 });
 
 // Leaving the page: tell peers instead of ghosting them.
-addEventListener('pagehide', () => { net?.leave(); });
+addEventListener('pagehide', () => { net?.leave(); presence?.stop(); });
+addEventListener('pageshow', e => { if (e.persisted) presence?.start(); });
 
 // Debug/testing handle (read-only peek at live state).
-window.__smack = () => ({ session, net, profile });
+window.__smack = () => ({ session, net, profile, presence });
