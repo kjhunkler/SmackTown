@@ -306,7 +306,10 @@ $('#builder-hat').addEventListener('click', () => {
     onLoad: () => {
       const box = $('#hat-picker');
       box.classList.toggle('hidden');
-      if (!box.classList.contains('hidden')) renderHatPicker();
+      if (!box.classList.contains('hidden')) {
+        renderHatPicker();
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     },
     onCancel: () => closeHatStudio(),
   });

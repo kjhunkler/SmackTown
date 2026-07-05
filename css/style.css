@@ -307,6 +307,7 @@ input[type=text]:focus { border-color: var(--accent); }
   background: var(--panel-2);
   border-radius: var(--radius);
   padding: 10px;
+  flex-shrink: 0;      /* don't let the flex column squash the library on small screens */
   max-height: 260px;   /* three rows of hat chips before scrolling */
   overflow-y: auto;
 }
