@@ -209,7 +209,7 @@ input[type=text]:focus { border-color: var(--accent); }
 .loadout-chip .lo-hat {
   position: absolute;
   left: 50%; top: -15px;
-  width: 30px; height: 20px;
+  width: 30px; height: 29px;   /* 24x23 grid; face rows overlap the swatch */
   transform: translateX(-50%);
   image-rendering: pixelated;
   pointer-events: none;
@@ -307,14 +307,14 @@ input[type=text]:focus { border-color: var(--accent); }
   background: var(--panel-2);
   border-radius: var(--radius);
   padding: 10px;
-  max-height: 216px;   /* three rows of hat chips before scrolling */
+  max-height: 260px;   /* three rows of hat chips before scrolling */
   overflow-y: auto;
 }
 .hat-picker-empty { font-size: 12px; color: var(--ink-dim); margin: 0; }
 .hat-chip { position: relative; }
 .hat-pick {
   display: block;
-  width: 76px; height: 54px;
+  width: 76px; height: 73px;   /* content tracks the 24x23 hat grid */
   padding: 5px;
   background: #10122a;
   border: 2px solid rgba(255,255,255,.12);

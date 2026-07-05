@@ -3,13 +3,15 @@
 // and glancing around — so hats are painted exactly where they'll sit in a
 // fight. The grid maps 1:1 onto the in-game hat box (see profile.js).
 
-import { HAT_W, HAT_H, HAT_PX, HAT_CHARS, HAT_PALETTE, sanitizeHat } from './profile.js';
+import { HAT_W, HAT_H, HAT_PX, HAT_FACE_ROWS, HAT_CHARS, HAT_PALETTE, sanitizeHat } from './profile.js';
 
 const $ = s => document.querySelector(s);
 
 const F_W = 46, F_H = 64;                 // fighter body (matches render.js)
 const BOX_X = -(HAT_W * HAT_PX) / 2;      // hat box in fighter-local units
-const BOX_Y = -F_H / 2 - HAT_H * HAT_PX + 16; // brim overlaps the forehead
+// Anchored at the brim (y = -16, brim overlaps the forehead): crown rows
+// stack above it, HAT_FACE_ROWS rows hang below it over the face.
+const BOX_Y = -F_H / 2 + 16 - (HAT_H - HAT_FACE_ROWS) * HAT_PX;
 const BOX_W = HAT_W * HAT_PX;
 const BOX_H = HAT_H * HAT_PX;
 

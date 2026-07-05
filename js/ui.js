@@ -4,7 +4,7 @@ import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
   loadLoadouts, deleteLoadout, hatArt,
-  HAT_W, HAT_H, HAT_CHARS, HAT_PALETTE, sanitizeHat,
+  HAT_W, HAT_H, HAT_PX, HAT_FACE_ROWS, HAT_CHARS, HAT_PALETTE, sanitizeHat,
 } from './profile.js';
 import { MAPS } from './game.js';
 
@@ -92,10 +92,13 @@ export function drawPreview(canvas, color, hat = null) {
   ctx.beginPath(); ctx.arc(15, -12, 3.6, 0, 7); ctx.fill();
   const img = hatImage(hat);
   if (img) {
-    // preview body is 52x68 vs the in-game 46x64 — scale the hat to match
+    // preview body is 52x68 vs the in-game 46x64 — scale the hat to match.
+    // Same brim-anchored box as hat.js: crown rows above y=-16, face rows below.
     const s = 68 / 64;
+    const bw = HAT_W * HAT_PX, bh = HAT_H * HAT_PX;
+    const by = -32 + 16 - (HAT_H - HAT_FACE_ROWS) * HAT_PX;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, -36 * s, -64 * s, 72 * s, 48 * s);
+    ctx.drawImage(img, (-bw / 2) * s, by * s, bw * s, bh * s);
   }
   ctx.restore();
 }

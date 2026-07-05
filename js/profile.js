@@ -69,9 +69,13 @@ export const MAX_AUGMENTS = 2;
 // A hat is a HAT_W x HAT_H pixel grid drawn in the Hat Studio, worn above
 // the fighter's head. Encoded as one string, row-major: '.' = transparent,
 // '0'-'f' = an index into HAT_PALETTE. HAT_PX is world units per hat pixel;
-// the box is centered on the head (x: ±36) with its brim at y = -16.
+// the box is centered on the head (x: ±36) with its brim at y = -16. The
+// bottom HAT_FACE_ROWS rows hang below the brim, over the face — room for
+// glasses, sideburns, masks. Hats saved before the face rows existed are
+// zero-padded at the bottom by sanitizeHat, so old art keeps its position.
 export const HAT_W = 24;
-export const HAT_H = 16;
+export const HAT_H = 23;
+export const HAT_FACE_ROWS = 7;   // rows of the grid below the brim line
 export const HAT_PX = 3;
 export const HAT_CHARS = '0123456789abcdef';
 export const HAT_PALETTE = [
@@ -82,8 +86,13 @@ export const HAT_PALETTE = [
 ];
 
 // Valid hat string or null (malformed, wrong size, or fully transparent).
+// Legacy hats from before the face rows are padded up to the new height.
 export function sanitizeHat(raw) {
-  if (typeof raw !== 'string' || raw.length !== HAT_W * HAT_H) return null;
+  if (typeof raw !== 'string') return null;
+  if (raw.length === HAT_W * (HAT_H - HAT_FACE_ROWS)) {
+    raw += '.'.repeat(HAT_W * HAT_FACE_ROWS);
+  }
+  if (raw.length !== HAT_W * HAT_H) return null;
   if (!/^[.0-9a-f]+$/.test(raw) || !/[0-9a-f]/.test(raw)) return null;
   return raw;
 }
