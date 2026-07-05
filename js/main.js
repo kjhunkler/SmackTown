@@ -21,6 +21,10 @@ let session = null;         // active game session
 let presence = null;        // town-square presence (menu roster + invites)
 let pendingInvite = null;   // {id, name} to ping once our fresh room opens
 const touch = new TouchInput(document);
+touch.onPad = on => UI.banner(
+  on ? '🎮 Controller connected — stick moves · A jumps · X quick · B/Y smash · bumpers = abilities'
+     : '🎮 Controller disconnected',
+  on ? 'good' : 'warn', on ? 4500 : 2500);
 const renderer = new Renderer($('#game-canvas'));
 
 // ---------------- boot ----------------
