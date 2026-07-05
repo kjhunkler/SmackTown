@@ -406,7 +406,15 @@ export class Renderer {
       if (hat) {
         ctx.save();
         ctx.scale(f.facing || 1, 1);
-        if (duck) ctx.translate(0, F_H - bh);  // hat rides the lowered head
+        if (duck) {
+          ctx.translate(0, F_H - bh);  // hat rides the lowered head
+          // smush: squash the hat vertically (anchored at its top) so the
+          // face rows stop at the ground line instead of sinking into it
+          const squish = (bh - F_H / 2 - HAT_Y) / HAT_BH;
+          ctx.translate(0, HAT_Y);
+          ctx.scale(1, squish);
+          ctx.translate(0, -HAT_Y);
+        }
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(hat, HAT_X, HAT_Y, HAT_BW, HAT_BH);
         ctx.restore();
