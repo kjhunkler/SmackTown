@@ -5,6 +5,7 @@ import {
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
   loadLoadouts, deleteLoadout,
 } from './profile.js';
+import { MAPS } from './game.js';
 
 const $ = s => document.querySelector(s);
 
@@ -228,7 +229,7 @@ export function renderOnline(entries, ready, { onJoin, onInvite } = {}) {
 
 // ---------- lobby ----------
 
-export function renderLobby(net) {
+export function renderLobby(net, onVote = null) {
   $('#lobby-code').textContent = net.roomCode || '····';
   const list = $('#lobby-roster');
   list.innerHTML = '';
@@ -245,12 +246,28 @@ export function renderLobby(net) {
     list.appendChild(li);
   }
 
+  // map vote grid: tap to vote, tap again to clear
+  const grid = $('#lobby-maps');
+  grid.innerHTML = '';
+  const active = roster.filter(m => m.status !== 'gone');
+  const myVote = net.members.get(net.myId)?.vote || null;
+  for (const [id, map] of Object.entries(MAPS)) {
+    const votes = active.filter(m => m.vote === id).length;
+    const card = document.createElement('button');
+    card.className = 'map-card' + (myVote === id ? ' voted' : '');
+    card.innerHTML = `
+      <span class="map-thumb map-thumb-${id}"></span>
+      <span class="map-name">${esc(map.name)}</span>
+      <span class="map-votes${votes ? '' : ' none'}">${votes ? '🗳️ ' + votes : '—'}</span>`;
+    card.addEventListener('click', () => onVote?.(id));
+    grid.appendChild(card);
+  }
+
   const me = net.members.get(net.myId);
   const readyBtn = $('#lobby-ready');
   readyBtn.textContent = me?.ready ? 'Ready ✓' : "I'm Ready";
   readyBtn.classList.toggle('ready-on', !!me?.ready);
 
-  const active = roster.filter(m => m.status !== 'gone');
   const allReady = active.length >= 2 && active.every(m => m.ready);
   const startBtn = $('#lobby-start');
   startBtn.classList.toggle('hidden', !net.isHost);

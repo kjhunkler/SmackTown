@@ -290,6 +290,49 @@ input[type=text]:focus { border-color: var(--accent); }
 .roster .r-score { font-weight: 900; font-size: 18px; color: var(--accent); }
 .lobby-status { text-align: center; font-size: 13px; color: var(--ink-dim); min-height: 18px; }
 
+/* map vote grid */
+.map-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.map-card {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  background: var(--panel-2);
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  padding: 8px 6px;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.map-card.voted { border-color: var(--accent); box-shadow: 0 0 10px rgba(255, 176, 46, .35); }
+.map-card .map-name { font-weight: 800; font-size: 12px; }
+.map-card .map-votes { font-size: 11px; color: var(--accent); font-weight: 700; min-height: 15px; }
+.map-card .map-votes.none { color: var(--ink-dim); font-weight: 400; }
+.map-thumb {
+  width: 100%; max-width: 84px; height: 44px;
+  border-radius: 7px;
+  position: relative;
+  overflow: hidden;
+}
+.map-thumb::after {           /* main floor silhouette */
+  content: '';
+  position: absolute; left: 18%; right: 18%; bottom: 6px; height: 7px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .75);
+}
+.map-thumb::before {          /* platform hints */
+  content: '';
+  position: absolute; left: 30%; right: 30%; top: 12px; height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .45);
+}
+.map-thumb-battlefield { background: linear-gradient(#141a38, #1c1430); }
+.map-thumb-flatlands { background: linear-gradient(#2c1a3e, #e8703a); }
+.map-thumb-flatlands::after { left: 8%; right: 8%; }
+.map-thumb-flatlands::before { display: none; }
+.map-thumb-skyline { background: linear-gradient(#04141c, #0a2a30); }
+.map-thumb-skyline::after { left: 28%; right: 28%; }
+.map-thumb-skyline::before { top: 8px; }
+
 /* Landscape phones: short viewport — compact the chrome and lay the lobby
    out in two columns (room info + roster left, actions right) so nothing
    important sits below the fold. */
@@ -311,9 +354,10 @@ input[type=text]:focus { border-color: var(--accent); }
       "tag    start"
       "invite edit"
       "roster leave"
-      "roster ."
+      "roster maptitle"
+      "roster maps"
       "status status";
-    grid-template-rows: auto auto auto auto 1fr auto;
+    grid-template-rows: auto auto auto auto auto 1fr auto;
     column-gap: 16px;
     row-gap: 8px;
     align-items: start;
@@ -327,6 +371,9 @@ input[type=text]:focus { border-color: var(--accent); }
   #lobby-start  { grid-area: start; }
   #lobby-edit   { grid-area: edit; }
   #lobby-leave  { grid-area: leave; }
+  .lobby-panel .section-title { grid-area: maptitle; margin: 0; }
+  #lobby-maps { grid-area: maps; align-self: start; }
+  .map-thumb { height: 34px; }
 }
 
 /* ============ game ============ */

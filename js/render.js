@@ -1,9 +1,35 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { STAGE } from './game.js';
+import { MAPS, DEFAULT_MAP } from './game.js';
 
 const F_W = 46, F_H = 64;
+
+// Per-map look: background gradient, celestial motif, star behavior, and
+// stage palette. Geometry comes from MAPS in game.js; looks live here.
+const THEMES = {
+  battlefield: {
+    sky: ['#141a38', '#1c1430', '#090a14'],
+    motif: 'moon',
+    stars: 1,
+    deck: '#2a3154', lip: '#3b4573', trim: '#ffb02e',
+    plat: '#3b4573', platTop: '#556099',
+  },
+  flatlands: {
+    sky: ['#2c1a3e', '#83303c', '#e8703a'],
+    motif: 'sun',
+    stars: 0.25,
+    deck: '#4a2b33', lip: '#6b3a40', trim: '#ffd23e',
+    plat: '#6b3a40', platTop: '#8a4f52',
+  },
+  skyline: {
+    sky: ['#04141c', '#0a2a30', '#071018'],
+    motif: 'aurora',
+    stars: 1,
+    deck: '#173a42', lip: '#20545c', trim: '#3ddca4',
+    plat: '#20545c', platTop: '#2e7880',
+  },
+};
 
 export class Renderer {
   constructor(canvas) {
@@ -14,6 +40,7 @@ export class Renderer {
     this.particles = [];
     this.dmgPops = [];               // floating damage numbers
     this.flash = new Map();          // fighter id -> hit-flash time left
+    this.setMap(DEFAULT_MAP);
     this.stars = Array.from({ length: 90 }, () => ({
       x: Math.random() * 2900 - 1450,
       y: Math.random() * 1300 - 1050,
@@ -22,6 +49,12 @@ export class Renderer {
     }));
     this._resize();
     addEventListener('resize', () => this._resize());
+  }
+
+  setMap(id) {
+    this.mapId = MAPS[id] ? id : DEFAULT_MAP;
+    this.stage = MAPS[this.mapId];
+    this.theme = THEMES[this.mapId] || THEMES[DEFAULT_MAP];
   }
 
   _resize() {
@@ -121,21 +154,24 @@ export class Renderer {
     const shx = (Math.random() - 0.5) * this.shake * this.dpr;
     const shy = (Math.random() - 0.5) * this.shake * this.dpr;
 
-    // --- background ---
+    // --- background (themed per map) ---
+    const th = this.theme;
     const grd = ctx.createLinearGradient(0, 0, 0, H);
-    grd.addColorStop(0, '#141a38');
-    grd.addColorStop(0.6, '#1c1430');
-    grd.addColorStop(1, '#090a14');
+    grd.addColorStop(0, th.sky[0]);
+    grd.addColorStop(0.6, th.sky[1]);
+    grd.addColorStop(1, th.sky[2]);
     ctx.fillStyle = grd;
     ctx.fillRect(0, 0, W, H);
 
     const t = performance.now() / 1000;
+    this._motif(ctx, W, H, t);
+
     ctx.fillStyle = '#ffffff';
     for (const s of this.stars) {
       const px = W / 2 + (s.x - this.cam.x * 0.15) * this.dpr * 0.5;
       const py = H / 2 + (s.y - this.cam.y * 0.15) * this.dpr * 0.5;
       if (px < 0 || px > W || py < 0 || py > H) continue;
-      ctx.globalAlpha = 0.3 + 0.3 * Math.sin(t * 2 + s.tw);
+      ctx.globalAlpha = (0.3 + 0.3 * Math.sin(t * 2 + s.tw)) * th.stars;
       ctx.fillRect(px, py, s.s * this.dpr, s.s * this.dpr);
     }
     ctx.globalAlpha = 1;
@@ -219,20 +255,61 @@ export class Renderer {
     ctx.restore();
   }
 
+  // Sky centerpiece per theme: parallaxes gently with the camera.
+  _motif(ctx, W, H, t) {
+    const px = W * 0.72 - this.cam.x * 0.05 * this.dpr;
+    const py = H * 0.26 - this.cam.y * 0.05 * this.dpr;
+    const r = Math.min(W, H) * 0.09;
+    if (this.theme.motif === 'moon') {
+      ctx.fillStyle = '#e8ecff';
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.arc(px, py, r, 0, 7); ctx.fill();
+      ctx.fillStyle = this.theme.sky[0];               // bite = crescent
+      ctx.beginPath(); ctx.arc(px + r * 0.45, py - r * 0.18, r * 0.85, 0, 7); ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (this.theme.motif === 'sun') {
+      const sy = H * 0.52 - this.cam.y * 0.05 * this.dpr;
+      const g = ctx.createRadialGradient(px, sy, 0, px, sy, r * 3);
+      g.addColorStop(0, 'rgba(255, 210, 62, .95)');
+      g.addColorStop(0.35, 'rgba(255, 138, 46, .55)');
+      g.addColorStop(1, 'rgba(255, 138, 46, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - r * 3, sy - r * 3, r * 6, r * 6);
+      ctx.fillStyle = '#ffd23e';
+      ctx.beginPath(); ctx.arc(px, sy, r * 1.15, 0, 7); ctx.fill();
+    } else if (this.theme.motif === 'aurora') {
+      ctx.lineWidth = Math.max(8, H * 0.045);
+      ctx.lineCap = 'round';
+      for (let b = 0; b < 3; b++) {
+        ctx.strokeStyle = b === 1 ? 'rgba(61, 220, 164, .16)' : 'rgba(56, 182, 255, .12)';
+        ctx.beginPath();
+        for (let i = 0; i <= 8; i++) {
+          const x = (W / 8) * i;
+          const y = H * (0.16 + b * 0.07)
+            + Math.sin(t * 0.35 + i * 0.9 + b * 2.1) * H * 0.05
+            - this.cam.y * 0.04 * this.dpr;
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        }
+        ctx.stroke();
+      }
+    }
+  }
+
   _stage(ctx) {
-    const m = STAGE.main;
-    // main platform with grass-ish top
-    ctx.fillStyle = '#2a3154';
+    const th = this.theme;
+    const m = this.stage.main;
+    // main platform with themed deck & lip
+    ctx.fillStyle = th.deck;
     roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
-    ctx.fillStyle = '#3b4573';
+    ctx.fillStyle = th.lip;
     roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
-    ctx.fillStyle = '#ffb02e';
+    ctx.fillStyle = th.trim;
     ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
 
-    for (const p of STAGE.plats) {
-      ctx.fillStyle = '#3b4573';
+    for (const p of this.stage.plats) {
+      ctx.fillStyle = th.plat;
       roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();
-      ctx.fillStyle = '#556099';
+      ctx.fillStyle = th.platTop;
       ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
     }
   }
