@@ -34,12 +34,19 @@
 <section id="screen-menu" class="screen hidden">
   <div class="panel narrow">
     <h1 class="logo small">SMACK<span>TOWN</span></h1>
-    <div id="menu-card" class="fighter-card">
-      <canvas id="menu-preview" width="120" height="120"></canvas>
-      <div class="fighter-card-info">
-        <div id="menu-name" class="fighter-name"></div>
-        <div id="menu-build" class="fighter-build"></div>
+    <div class="menu-char-row">
+      <button id="menu-char-prev" class="hat-arrow" aria-label="Previous character">◀</button>
+      <div id="menu-card" class="fighter-card" role="button" tabindex="0"
+           aria-label="Edit this character" title="Tap to edit">
+        <canvas id="menu-preview" width="120" height="120"></canvas>
+        <div class="fighter-card-info">
+          <div id="menu-name" class="fighter-name"></div>
+          <div id="menu-loadout" class="fighter-loadout"></div>
+          <div id="menu-build" class="fighter-build"></div>
+        </div>
+        <span class="fighter-card-edit" aria-hidden="true">✏️</span>
       </div>
+      <button id="menu-char-next" class="hat-arrow" aria-label="Next character">▶</button>
     </div>
     <button id="menu-solo"    class="btn primary big">Practice vs Bot</button>
     <div class="join-row">
@@ -67,7 +74,10 @@
 <section id="screen-builder" class="screen hidden">
   <div class="panel wide">
     <header class="builder-head">
-      <h2>Fighter Workshop</h2>
+      <div class="builder-title">
+        <h2>Fighter Workshop</h2>
+        <div id="builder-editing" class="builder-editing"></div>
+      </div>
       <div class="credits-pill">
         <span id="builder-credits">0</span><span class="credits-label">cr left</span>
       </div>

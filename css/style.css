@@ -139,18 +139,37 @@ input[type=text]:focus { border-color: var(--accent); }
 }
 .color-swatch.sel { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.25); }
 
-/* fighter card on menu */
+/* fighter card on menu — tap to edit, arrows swap characters */
+.menu-char-row { display: flex; align-items: stretch; gap: 8px; }
+.menu-char-row .hat-arrow { height: auto; flex: none; }
 .fighter-card {
+  flex: 1;
+  min-width: 0;
+  position: relative;
   display: flex;
   gap: 14px;
   align-items: center;
   background: var(--panel-2);
+  border: 2px solid transparent;
   border-radius: var(--radius);
   padding: 10px 14px;
+  cursor: pointer;
+  text-align: left;
 }
-.fighter-card canvas { width: 84px; height: 84px; }
+.fighter-card:active { border-color: var(--accent); }
+.fighter-card canvas { width: 84px; height: 84px; flex: none; }
+.fighter-card-info { min-width: 0; }
+.fighter-card-edit {
+  position: absolute;
+  top: 8px; right: 10px;
+  font-size: 13px;
+  opacity: .55;
+}
 .fighter-name { font-size: 20px; font-weight: 800; }
+.fighter-loadout { font-size: 11px; color: var(--accent); font-weight: 800; min-height: 13px; }
 .fighter-build { font-size: 12px; color: var(--ink-dim); line-height: 1.5; }
+.hat-arrow:disabled { opacity: .3; cursor: default; }
+.hat-arrow:disabled:active { transform: none; border-color: #39406b; }
 
 .join-row { display: flex; gap: 10px; }
 .join-row input { flex: 1; text-transform: uppercase; letter-spacing: 6px; text-align: center; font-weight: 800; }
@@ -169,6 +188,13 @@ input[type=text]:focus { border-color: var(--accent); }
 /* ============ builder ============ */
 .builder-head { display: flex; align-items: center; justify-content: space-between; }
 .builder-head h2 { font-size: 22px; }
+.builder-title { min-width: 0; }
+.builder-editing {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .credits-pill {
   background: var(--panel-2);
   border: 2px solid var(--accent);
@@ -203,6 +229,10 @@ input[type=text]:focus { border-color: var(--accent); }
   min-width: 0;
 }
 .loadout-chip .lo-main:active { border-color: var(--accent); }
+.loadout-chip.selected .lo-main {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(255, 176, 46, .25);
+}
 .loadout-chip .r-swatch { width: 20px; height: 20px; border-radius: 6px; flex: none; }
 .loadout-chip .lo-fig { position: relative; flex: none; width: 20px; height: 20px; }
 .loadout-chip .lo-fig .r-swatch { display: block; }

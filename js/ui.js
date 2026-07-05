@@ -3,7 +3,7 @@
 import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
-  loadLoadouts, deleteLoadout, hatArt, loadHats,
+  loadLoadouts, deleteLoadout, hatArt, loadHats, selectedLoadout, selectLoadout,
   HAT_W, HAT_H, HAT_PX, HAT_FACE_ROWS, HAT_CHARS, HAT_PALETTE, sanitizeHat,
 } from './profile.js';
 import { MAPS } from './game.js';
@@ -121,6 +121,7 @@ export function renderBuilder(work) {
   $('#builder-credits').textContent = left;
 
   renderBuilderPreview(work);
+  renderEditingBadge();
   renderLoadouts(work);
 
   renderColorGrid($('#builder-colors'), work.color, c => {
@@ -172,6 +173,12 @@ export function renderBuilderPreview(work) {
     : hats.length ? 'No hat' : 'No hat — draw one in the library!';
 }
 
+// Which character the workshop is editing, mirrored in the header badge.
+function renderEditingBadge() {
+  const sel = selectedLoadout();
+  $('#builder-editing').textContent = sel ? `editing \u201c${sel}\u201d` : 'unsaved fighter';
+}
+
 // Saved builds: tap a chip to load it into the workshop, ✕ to forget it.
 function renderLoadouts(work) {
   const box = $('#builder-loadouts');
@@ -181,9 +188,10 @@ function renderLoadouts(work) {
     box.innerHTML = '<p class="loadout-empty">No saved builds yet — tune a build below and stash it with a nickname.</p>';
     return;
   }
+  const sel = selectedLoadout();
   for (const lo of list) {
     const row = document.createElement('div');
-    row.className = 'loadout-chip';
+    row.className = 'loadout-chip' + (lo.name === sel ? ' selected' : '');
     row.innerHTML = `
       <button class="lo-main">
         <span class="lo-fig">
@@ -208,6 +216,8 @@ function renderLoadouts(work) {
       work.color = lo.color;
       work.build = JSON.parse(JSON.stringify(lo.build));
       work.hatId = lo.hatId;
+      selectLoadout(lo.name);
+      $('#loadout-name').value = lo.name;
       renderBuilder(work);
     });
     row.querySelector('.lo-del').addEventListener('click', () => {
@@ -246,6 +256,16 @@ export function renderMenuCard(profile) {
   $('#menu-name').textContent = profile.name;
   $('#menu-build').textContent = buildSummary(profile.build);
   drawPreview($('#menu-preview'), profile.color, profile.hat);
+  // Selected character label + arrow availability. The arrows cycle saved
+  // builds; from an unsaved fighter the first tap lands on a saved one.
+  const list = loadLoadouts();
+  const sel = selectedLoadout();
+  const i = sel ? list.findIndex(l => l.name === sel) : -1;
+  $('#menu-loadout').textContent = i >= 0 ? `${sel} · ${i + 1} of ${list.length}`
+    : list.length ? 'unsaved fighter' : '';
+  const lock = !list.length || (list.length === 1 && i >= 0);
+  $('#menu-char-prev').disabled = lock;
+  $('#menu-char-next').disabled = lock;
 }
 
 // ---------- main-menu presence ----------

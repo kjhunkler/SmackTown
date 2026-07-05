@@ -2,7 +2,7 @@
 
 import {
   loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout, sanitizeHat,
-  loadHats, hatArt, saveHat, deleteHat,
+  loadHats, hatArt, saveHat, deleteHat, loadLoadouts, selectedLoadout, selectLoadout,
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
@@ -192,6 +192,7 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
     build: JSON.parse(JSON.stringify(profile.build)),
     hatId: profile.hatId,
   };
+  $('#loadout-name').value = selectedLoadout() || '';
   UI.renderBuilder(builderWork);
   UI.showScreen('builder');
 }
@@ -206,7 +207,8 @@ $('#loadout-save').addEventListener('click', () => {
   const err = $('#loadout-error');
   const res = saveLoadout(nameEl.value, builderWork.color, builderWork.build, builderWork.hatId);
   if (res.ok) {
-    nameEl.value = '';
+    selectLoadout(nameEl.value);           // the freshly saved build is now "me"
+    nameEl.value = selectedLoadout() || '';
     err.classList.add('hidden');
     UI.renderBuilder(builderWork);
   } else {
@@ -217,6 +219,8 @@ $('#loadout-save').addEventListener('click', () => {
 
 $('#builder-save').addEventListener('click', () => {
   profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build, hatId: builderWork.hatId });
+  const sel = selectedLoadout();
+  if (sel) saveLoadout(sel, builderWork.color, builderWork.build, builderWork.hatId);   // edits stick to the character
   UI.renderMenuCard(profile);
   if (builderReturn === 'lobby' && net?.roomCode) {
     net.updateProfile(profile);      // let the room see the new colors/build
@@ -232,6 +236,28 @@ $('#builder-save').addEventListener('click', () => {
 });
 
 $('#menu-builder').addEventListener('click', () => openBuilder());
+
+// ----- menu character switching -----
+// The fighter card is the "edit me" button; the arrows swap which saved
+// build (character) is active — applied to the profile on the spot.
+$('#menu-card').addEventListener('click', () => openBuilder());
+$('#menu-card').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBuilder(); }
+});
+
+function cycleCharacter(dir) {
+  const list = loadLoadouts();
+  if (!list.length) return;
+  const sel = selectedLoadout();
+  const i = sel ? list.findIndex(l => l.name === sel) : -1;
+  const next = list[i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length];
+  selectLoadout(next.name);
+  profile = saveProfile({ name: profile.name, color: next.color, build: next.build, hatId: next.hatId });
+  UI.renderMenuCard(profile);
+  presence?.setProfile(profile);            // town roster shows the new colors
+}
+$('#menu-char-prev').addEventListener('click', () => cycleCharacter(-1));
+$('#menu-char-next').addEventListener('click', () => cycleCharacter(1));
 
 // ---------------- hats: builder arrows, library modal, studio ----------------
 const hatStudio = new HatStudio();

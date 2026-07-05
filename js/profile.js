@@ -320,6 +320,27 @@ export function deleteLoadout(name) {
   const n = String(name || '').trim().toLowerCase();
   const list = loadLoadouts().filter(l => l.name.toLowerCase() !== n);
   localStorage.setItem(LOADOUT_KEY, JSON.stringify(list));
+  const sel = selectedLoadout();
+  if (sel && sel.toLowerCase() === n) selectLoadout(null);
+}
+
+// ---------- selected character ----------
+// Which saved build the player is currently "being". Tracked by nickname;
+// the menu arrows cycle it and the workshop saves back into it.
+
+const SEL_KEY = 'smacktown.loadout.sel.v1';
+
+// Canonical name of the selected loadout, or null if none / since deleted.
+export function selectedLoadout() {
+  const raw = localStorage.getItem(SEL_KEY);
+  if (!raw) return null;
+  const hit = loadLoadouts().find(l => l.name.toLowerCase() === raw.toLowerCase());
+  return hit ? hit.name : null;
+}
+
+export function selectLoadout(name) {
+  if (name) localStorage.setItem(SEL_KEY, String(name).trim().slice(0, 16));
+  else localStorage.removeItem(SEL_KEY);
 }
 
 export function buildSummary(build) {
