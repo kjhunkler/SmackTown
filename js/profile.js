@@ -27,6 +27,16 @@ export const ABILITIES = [
     desc: 'Brief parry — negate a hit and strike back' },
   { id: 'blink',     icon: '✨', name: 'Blink',       cost: 260, cd: 4.0,
     desc: 'Teleport a short distance in any direction' },
+  { id: 'boomerang', icon: '🪃', name: 'Boomerang',   cost: 230, cd: 4.0,
+    desc: 'Bladed rang that flies out, then whips back' },
+  { id: 'volley',    icon: '🎇', name: 'Fire Volley', cost: 250, cd: 5.0,
+    desc: 'Loose a fan of three fire bolts' },
+  { id: 'gale',      icon: '💨', name: 'Gale Burst',  cost: 220, cd: 5.0,
+    desc: 'Blast of wind that flings everyone near you' },
+  { id: 'bubble',    icon: '🫧', name: 'Bubble Shield', cost: 240, cd: 7.0,
+    desc: 'Pop a shield — 1s of invulnerability' },
+  { id: 'mend',      icon: '💚', name: 'Mend',        cost: 260, cd: 8.0,
+    desc: 'Patch yourself up — instantly heal 15%' },
 ];
 
 export const AUGMENTS = [
@@ -42,6 +52,14 @@ export const AUGMENTS = [
     desc: '+25% damage while your own percent is 80+' },
   { id: 'secondwind',  icon: '💫', name: 'Second Wind',  cost: 200,
     desc: 'Once per stock: heal 30% when you pass 100%' },
+  { id: 'glasscannon', icon: '💎', name: 'Glass Cannon', cost: 170,
+    desc: '+20% damage & knockback dealt, +15% knockback taken' },
+  { id: 'quickhands',  icon: '⏱️', name: 'Quick Hands',  cost: 180,
+    desc: 'Ability cooldowns recover 25% faster' },
+  { id: 'acrobat',     icon: '🤸', name: 'Acrobat',      cost: 150,
+    desc: 'Landing a hit refreshes your air jumps' },
+  { id: 'sniper',      icon: '🎯', name: 'Sniper',       cost: 160,
+    desc: 'Your projectiles deal +30% damage' },
 ];
 
 export const MAX_ABILITIES = 2;
@@ -131,17 +149,74 @@ export function validName(name) {
 export function derivedStats(build) {
   const b = sanitizeBuild(build);
   const has = id => b.augments.includes(id);
+  const glass = has('glasscannon');
   return {
-    dmgMult:   1 + 0.07 * b.stats.power,
-    kbMult:    1 + 0.07 * b.stats.power,
+    dmgMult:   (1 + 0.07 * b.stats.power) * (glass ? 1.2 : 1),
+    kbMult:    (1 + 0.07 * b.stats.power) * (glass ? 1.2 : 1),
     speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.92 : 1),
-    kbTaken:   (1 - 0.05 * b.stats.defense) * (has('heavy') ? 0.88 : 1) * (has('feather') ? 1.08 : 1),
+    kbTaken:   (1 - 0.05 * b.stats.defense) * (has('heavy') ? 0.88 : 1)
+      * (has('feather') ? 1.08 : 1) * (glass ? 1.15 : 1),
     jumpMult:  1 + 0.05 * b.stats.agility,
     airMult:   1 + 0.08 * b.stats.agility,
     maxJumps:  2 + (has('feather') ? 1 : 0),
+    cdMult:    has('quickhands') ? 0.75 : 1,
     abilities: b.abilities,
     augments:  b.augments,
   };
+}
+
+// ---------- saved builds (loadouts) ----------
+// Nicknamed presets the player can stash and swap between in the workshop.
+
+const LOADOUT_KEY = 'smacktown.loadouts.v1';
+export const MAX_LOADOUTS = 8;
+
+export function validLoadoutName(name) {
+  const n = String(name || '').trim();
+  return n.length >= 1 && n.length <= 16 && /^[\w \-'!.]+$/.test(n);
+}
+
+export function loadLoadouts() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LOADOUT_KEY));
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(l => l && validLoadoutName(l.name))
+      .slice(0, MAX_LOADOUTS)
+      .map(l => ({
+        name: String(l.name).trim().slice(0, 16),
+        color: COLORS.includes(l.color) ? l.color : COLORS[0],
+        build: sanitizeBuild(l.build),
+      }));
+  } catch (_) { return []; }
+}
+
+// Saves (or overwrites, matched by name) a loadout. Returns {ok} or
+// {ok:false, error} with a message fit to show the player.
+export function saveLoadout(name, color, build) {
+  if (!validLoadoutName(name)) {
+    return { ok: false, error: 'Nicknames are 1–16 letters, numbers or basic punctuation.' };
+  }
+  const n = String(name).trim().slice(0, 16);
+  const list = loadLoadouts();
+  const entry = {
+    name: n,
+    color: COLORS.includes(color) ? color : COLORS[0],
+    build: sanitizeBuild(build),
+  };
+  const i = list.findIndex(l => l.name.toLowerCase() === n.toLowerCase());
+  if (i >= 0) list[i] = entry;
+  else if (list.length >= MAX_LOADOUTS) {
+    return { ok: false, error: `You can keep up to ${MAX_LOADOUTS} builds — delete one first.` };
+  } else list.push(entry);
+  localStorage.setItem(LOADOUT_KEY, JSON.stringify(list));
+  return { ok: true };
+}
+
+export function deleteLoadout(name) {
+  const n = String(name || '').trim().toLowerCase();
+  const list = loadLoadouts().filter(l => l.name.toLowerCase() !== n);
+  localStorage.setItem(LOADOUT_KEY, JSON.stringify(list));
 }
 
 export function buildSummary(build) {

@@ -1,7 +1,7 @@
 // App orchestration: boot, screens, room flow, and the game session driver.
 
 import {
-  loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild,
+  loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout,
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
@@ -186,6 +186,20 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
 $('#builder-reset').addEventListener('click', () => {
   builderWork.build = emptyBuild();
   UI.renderBuilder(builderWork);
+});
+
+$('#loadout-save').addEventListener('click', () => {
+  const nameEl = $('#loadout-name');
+  const err = $('#loadout-error');
+  const res = saveLoadout(nameEl.value, builderWork.color, builderWork.build);
+  if (res.ok) {
+    nameEl.value = '';
+    err.classList.add('hidden');
+    UI.renderBuilder(builderWork);
+  } else {
+    err.textContent = res.error;
+    err.classList.remove('hidden');
+  }
 });
 
 $('#builder-save').addEventListener('click', () => {
@@ -385,7 +399,7 @@ function startSession(cfg) {
 
 // Cosmetic events the client already plays locally via prediction; the
 // host's copies are dropped for our own fighter to avoid double effects.
-const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'ability', 'shockwave']);
+const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'ability', 'shockwave', 'gale', 'mend']);
 
 class Session {
   constructor({ mode, myId, players, seed = 1 }) {

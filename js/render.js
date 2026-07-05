@@ -59,6 +59,13 @@ export class Renderer {
         case 'secondwind':
           this.burst(ev.x, ev.y, 16, '#3ddc84', 260);
           break;
+        case 'gale':
+          this.burst(ev.x, ev.y, 24, '#bfe3ff', 560);
+          this.shake = Math.max(this.shake, 7);
+          break;
+        case 'mend':
+          this.burst(ev.x, ev.y, 14, '#3ddc84', 220);
+          break;
         case 'land':
           this.burst(ev.x, ev.y, 4, '#8899cc', 90);
           break;
@@ -150,11 +157,21 @@ export class Renderer {
     for (const p of view.projectiles || []) {
       ctx.save();
       ctx.translate(p.x, p.y);
-      const flick = 1 + Math.sin(t * 30 + p.eid) * 0.2;
-      ctx.fillStyle = '#ff8a2e';
-      ctx.beginPath(); ctx.arc(0, 0, 13 * flick, 0, 7); ctx.fill();
-      ctx.fillStyle = '#ffd23e';
-      ctx.beginPath(); ctx.arc(0, 0, 7 * flick, 0, 7); ctx.fill();
+      if (p.kind === 'boomerang') {
+        ctx.rotate(t * 18 + p.eid);
+        ctx.fillStyle = '#8fd3ff';
+        roundRect(ctx, -17, -5, 34, 10, 5); ctx.fill();
+        roundRect(ctx, -5, -17, 10, 34, 5); ctx.fill();
+        ctx.fillStyle = '#eaf7ff';
+        ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, 7); ctx.fill();
+      } else {
+        const bolt = p.kind === 'bolt';
+        const flick = 1 + Math.sin(t * 30 + p.eid) * 0.2;
+        ctx.fillStyle = '#ff8a2e';
+        ctx.beginPath(); ctx.arc(0, 0, (bolt ? 9 : 13) * flick, 0, 7); ctx.fill();
+        ctx.fillStyle = '#ffd23e';
+        ctx.beginPath(); ctx.arc(0, 0, (bolt ? 4.5 : 7) * flick, 0, 7); ctx.fill();
+      }
       ctx.restore();
     }
 

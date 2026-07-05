@@ -3,6 +3,7 @@
 import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
+  loadLoadouts, deleteLoadout,
 } from './profile.js';
 
 const $ = s => document.querySelector(s);
@@ -84,6 +85,8 @@ export function renderBuilder(work) {
   const left = TOTAL_CREDITS - spent;
   $('#builder-credits').textContent = left;
 
+  renderLoadouts(work);
+
   renderColorGrid($('#builder-colors'), work.color, c => {
     work.color = c;
     renderBuilder(work);
@@ -120,6 +123,40 @@ export function renderBuilder(work) {
 
   renderShop($('#builder-abilities'), ABILITIES, work.build.abilities, MAX_ABILITIES, left, work);
   renderShop($('#builder-augments'), AUGMENTS, work.build.augments, MAX_AUGMENTS, left, work);
+}
+
+// Saved builds: tap a chip to load it into the workshop, ✕ to forget it.
+function renderLoadouts(work) {
+  const box = $('#builder-loadouts');
+  const list = loadLoadouts();
+  box.innerHTML = '';
+  if (!list.length) {
+    box.innerHTML = '<p class="loadout-empty">No saved builds yet — tune a build below and stash it with a nickname.</p>';
+    return;
+  }
+  for (const lo of list) {
+    const row = document.createElement('div');
+    row.className = 'loadout-chip';
+    row.innerHTML = `
+      <button class="lo-main">
+        <span class="r-swatch" style="background:${esc(lo.color)}"></span>
+        <span class="lo-text">
+          <span class="lo-name">${esc(lo.name)}</span>
+          <span class="lo-sum">${esc(buildSummary(lo.build).replace(/\n/g, ' · '))}</span>
+        </span>
+      </button>
+      <button class="lo-del" aria-label="Delete ${esc(lo.name)}">✕</button>`;
+    row.querySelector('.lo-main').addEventListener('click', () => {
+      work.color = lo.color;
+      work.build = JSON.parse(JSON.stringify(lo.build));
+      renderBuilder(work);
+    });
+    row.querySelector('.lo-del').addEventListener('click', () => {
+      deleteLoadout(lo.name);
+      renderBuilder(work);
+    });
+    box.appendChild(row);
+  }
 }
 
 function renderShop(box, defs, owned, maxOwned, left, work) {

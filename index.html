@@ -73,6 +73,15 @@
       </div>
     </header>
     <div class="builder-scroll">
+      <h3 class="section-title">Saved Builds <span class="hint">stash setups by nickname, tap to load</span></h3>
+      <div id="builder-loadouts" class="loadout-list"></div>
+      <div class="loadout-save-row">
+        <input id="loadout-name" type="text" maxlength="16" placeholder="Nickname this build"
+               autocomplete="off" spellcheck="false">
+        <button id="loadout-save" class="btn">💾 Save</button>
+      </div>
+      <p id="loadout-error" class="error hidden"></p>
+
       <h3 class="section-title">Color</h3>
       <div id="builder-colors" class="color-grid"></div>
 

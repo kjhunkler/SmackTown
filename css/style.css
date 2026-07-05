@@ -186,6 +186,43 @@ input[type=text]:focus { border-color: var(--accent); }
 .section-title { font-size: 15px; margin-top: 10px; }
 .section-title .hint { font-size: 11px; color: var(--ink-dim); font-weight: 400; }
 
+/* saved builds (loadouts) */
+.loadout-list { display: flex; flex-direction: column; gap: 6px; }
+.loadout-empty { font-size: 12px; color: var(--ink-dim); margin: 0; }
+.loadout-chip { display: flex; gap: 6px; align-items: stretch; }
+.loadout-chip .lo-main {
+  flex: 1;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel-2);
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.loadout-chip .lo-main:active { border-color: var(--accent); }
+.loadout-chip .r-swatch { width: 20px; height: 20px; border-radius: 6px; flex: none; }
+.loadout-chip .lo-text { min-width: 0; }
+.loadout-chip .lo-name { display: block; font-weight: 800; font-size: 14px; }
+.loadout-chip .lo-sum {
+  display: block; font-size: 11px; color: var(--ink-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.loadout-chip .lo-del {
+  width: 40px;
+  border: 2px solid #39406b;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-dim);
+  font-size: 15px;
+  cursor: pointer;
+}
+.loadout-save-row { display: flex; gap: 8px; }
+.loadout-save-row input { flex: 1; padding: 10px 12px; font-size: 15px; }
+.loadout-save-row .btn { padding: 10px 14px; font-size: 14px; }
+
 .stat-row {
   display: flex; align-items: center; gap: 10px;
   background: var(--panel-2);

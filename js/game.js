@@ -49,6 +49,11 @@ const ABILITY_DEFS = {
   uppercut:  { cd: 5.0 },
   counter:   { cd: 5.0 },
   blink:     { cd: 4.0 },
+  boomerang: { cd: 4.0 },
+  volley:    { cd: 5.0 },
+  gale:      { cd: 5.0 },
+  bubble:    { cd: 7.0 },
+  mend:      { cd: 8.0 },
 };
 
 let nextEid = 1;
@@ -397,7 +402,7 @@ export class Game {
     const id = f.st.abilities[slot];
     if (!id || f.cds[slot] > 0) return;
     const def = ABILITY_DEFS[id];
-    f.cds[slot] = def.cd;
+    f.cds[slot] = def.cd * (f.st.cdMult || 1);
     const dir = f.lastDir;
     switch (id) {
       case 'fireball':
@@ -437,6 +442,45 @@ export class Game {
         f.vy = Math.min(f.vy, 0);
         break;
       }
+      case 'boomerang':
+        this.projectiles.push({
+          eid: nextEid++, kind: 'boomerang', owner: f.id,
+          x: f.x + f.facing * 40, y: f.y - 8,
+          vx: f.facing * 560, vy: 0, ttl: 1.5,
+          ret: -f.facing * 1400,   // constant pull back toward the throw point
+          dmg: 5, kb: 150, ks: 11, r: 15,
+        });
+        break;
+      case 'volley':
+        for (const vy of [-150, 0, 150]) {
+          this.projectiles.push({
+            eid: nextEid++, kind: 'bolt', owner: f.id,
+            x: f.x + f.facing * 40, y: f.y - 8,
+            vx: f.facing * 580, vy, ttl: 1.1,
+            dmg: 4, kb: 140, ks: 10, r: 11,
+          });
+        }
+        break;
+      case 'gale':
+        // radial windbox: little damage, lots of shove; works midair
+        this.events.push({ e: 'gale', id: f.id, x: f.x, y: f.y });
+        for (const o of this.fighters) {
+          if (o.id === f.id || o.dead || o.invuln > 0) continue;
+          const pos = this._rewound(o, f.id);
+          const d = Math.hypot(pos.x - f.x, pos.y - f.y);
+          if (d < 200) {
+            this._applyHit(f, o, { dmg: 3, kb: 420, ks: 6 },
+              Math.atan2(pos.y - f.y, pos.x - f.x) * 0.25 - Math.PI / 6, Math.sign(pos.x - f.x) || 1);
+          }
+        }
+        break;
+      case 'bubble':
+        f.invuln = Math.max(f.invuln, 1.0);
+        break;
+      case 'mend':
+        f.pct = Math.max(0, f.pct - 15);
+        this.events.push({ e: 'mend', id: f.id, x: f.x, y: f.y });
+        break;
     }
     this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y });
   }
@@ -567,7 +611,11 @@ export class Game {
   _applyHit(att, vic, spec, angRad, dirX, spike = false) {
     let dmg = spec.dmg * att.st.dmgMult;
     if (att.st.augments.includes('berserker') && att.pct >= 80) dmg *= 1.25;
+    if (att.st.augments.includes('sniper') && spec.r) dmg *= 1.3; // projectile hit
     vic.pct = Math.min(999, vic.pct + dmg);
+
+    // acrobat: connecting resets your air jumps, enabling aerial chases
+    if (att.st.augments.includes('acrobat')) att.jumps = att.st.maxJumps;
 
     // vampiric heal & second wind
     if (att.st.augments.includes('vampiric')) att.pct = Math.max(0, att.pct - dmg * 0.15);
@@ -605,6 +653,7 @@ export class Game {
 
   _stepProjectiles() {
     for (const pr of this.projectiles) {
+      if (pr.ret) pr.vx += pr.ret * TICK;    // boomerang: decelerate, then return
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
