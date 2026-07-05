@@ -267,6 +267,30 @@ input[type=text]:focus { border-color: var(--accent); }
 }
 .shop-item.owned .si-cost { color: var(--good); }
 
+/* ============ hat studio ============ */
+#hat-canvas {
+  width: 100%;
+  height: min(48vh, 400px);
+  touch-action: none;
+  background:
+    radial-gradient(500px 260px at 50% 20%, #232a55 0%, transparent 70%),
+    var(--panel-2);
+  border-radius: var(--radius);
+  border: 1px solid #2c3457;
+}
+.hat-palette { display: flex; flex-wrap: wrap; gap: 8px; }
+.hat-swatch {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  border: 2px solid rgba(255,255,255,.12);
+  cursor: pointer;
+}
+.hat-swatch.sel { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.25); }
+.hat-tools { display: flex; gap: 8px; }
+.hat-tools .btn.tool-on { border-color: var(--accent); color: var(--accent); }
+.hat-foot { display: flex; gap: 10px; }
+.hat-foot .btn { flex: 1; }
+
 /* ============ lobby ============ */
 .room-code { color: var(--accent); letter-spacing: 5px; font-weight: 900; }
 .btn.invite { border-color: var(--accent); color: var(--accent); }
@@ -374,6 +398,30 @@ input[type=text]:focus { border-color: var(--accent); }
   .lobby-panel .section-title { grid-area: maptitle; margin: 0; }
   #lobby-maps { grid-area: maps; align-self: start; }
   .map-thumb { height: 34px; }
+
+  /* hat studio: canvas left, palette & controls right */
+  .hat-panel {
+    display: grid;
+    max-width: 680px;
+    height: 100%;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-areas:
+      "canvas head"
+      "canvas tag"
+      "canvas palette"
+      "canvas tools"
+      "canvas foot";
+    grid-template-rows: auto auto auto 1fr auto;
+    column-gap: 16px;
+    row-gap: 8px;
+    align-items: start;
+  }
+  .hat-head { grid-area: head; }
+  .hat-tag { grid-area: tag; margin-top: 0; text-align: left; }
+  #hat-canvas { grid-area: canvas; height: 100%; min-height: 0; align-self: stretch; }
+  .hat-palette { grid-area: palette; }
+  .hat-tools { grid-area: tools; }
+  .hat-foot { grid-area: foot; align-self: end; }
 }
 
 /* ============ game ============ */

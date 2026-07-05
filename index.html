@@ -85,6 +85,9 @@
       <h3 class="section-title">Color</h3>
       <div id="builder-colors" class="color-grid"></div>
 
+      <h3 class="section-title">Hat <span class="hint">pixel millinery, worn in battle</span></h3>
+      <button id="builder-hat" class="btn ghost">🎩 Open Hat Studio</button>
+
       <h3 class="section-title">Upgrades <span class="hint">raise your core stats</span></h3>
       <div id="builder-stats"></div>
 
@@ -98,6 +101,24 @@
       <button id="builder-reset" class="btn ghost">Reset</button>
       <button id="builder-save" class="btn primary">Save &amp; Back</button>
     </footer>
+  </div>
+</section>
+
+<!-- ============ HAT STUDIO ============ -->
+<section id="screen-hat" class="screen hidden">
+  <div class="panel narrow hat-panel">
+    <h2 class="hat-head">Hat Studio</h2>
+    <p class="tagline hat-tag">draw in the box — your fighter wears it</p>
+    <canvas id="hat-canvas"></canvas>
+    <div id="hat-palette" class="hat-palette"></div>
+    <div class="hat-tools">
+      <button id="hat-eraser" class="btn tiny ghost">🧽 Eraser</button>
+      <button id="hat-clear"  class="btn tiny ghost">🗑 Clear</button>
+    </div>
+    <div class="hat-foot">
+      <button id="hat-cancel" class="btn ghost">Cancel</button>
+      <button id="hat-save"   class="btn primary">Save Hat</button>
+    </div>
   </div>
 </section>
 

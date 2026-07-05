@@ -2,6 +2,8 @@
 // (particles, screen shake, KO bursts) from interpolated view state.
 
 import { MAPS, DEFAULT_MAP } from './game.js';
+import { hatImage } from './ui.js';
+import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 
 const F_W = 46, F_H = 64;
 
@@ -372,6 +374,19 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(ex + 6, -F_H / 6, 3.4, 0, 7); ctx.fill();
       if (attacking) { // gritted mouth
         ctx.fillRect(ex - 6, -F_H / 6 + 10, 12, 3);
+      }
+    }
+
+    // pixel hat: rides the head through squash/stretch and rolls, and
+    // mirrors with the fighter's facing so it always points the right way
+    if (f.hat) {
+      const hat = hatImage(f.hat);
+      if (hat) {
+        ctx.save();
+        ctx.scale(f.facing || 1, 1);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(hat, HAT_X, HAT_Y, HAT_BW, HAT_BH);
+        ctx.restore();
       }
     }
 

@@ -62,6 +62,7 @@ export class Net {
       name: this.profile.name,
       color: this.profile.color,
       build: this.profile.build,
+      hat: this.profile.hat || null,
       joinOrder,
       ready: false,
       vote: null,
@@ -213,6 +214,7 @@ export class Net {
         rec.name = String(msg.profile?.name || 'Fighter').slice(0, 14);
         rec.color = msg.profile?.color || '#f5f5f5';
         rec.build = msg.profile?.build || null;
+        rec.hat = msg.profile?.hat || null;
         this.members.set(pid, rec);
         this.send(pid, {
           t: 'welcome',
@@ -270,6 +272,7 @@ export class Net {
             name: String(msg.profile?.name || 'Fighter').slice(0, 14),
             color: msg.profile?.color || '#f5f5f5',
             build: msg.profile?.build || null,
+            hat: msg.profile?.hat || null,
             joinOrder: msg.joinOrder ?? 999,
             ready: false, vote: null, status: 'online', ping: 0, lastSeen: Date.now(),
           });
@@ -316,6 +319,7 @@ export class Net {
           m.name = String(msg.profile?.name || m.name || 'Fighter').slice(0, 14);
           m.color = msg.profile?.color || m.color;
           m.build = msg.profile?.build || m.build;
+          m.hat = msg.profile?.hat ?? m.hat ?? null;
           this.emit('roster');
           if (this.isHost) this._broadcastRoster();
         }
@@ -368,8 +372,9 @@ export class Net {
       me.name = profile.name;
       me.color = profile.color;
       me.build = profile.build;
+      me.hat = profile.hat || null;
     }
-    this.broadcast({ t: 'profile', profile: { name: profile.name, color: profile.color, build: profile.build } });
+    this.broadcast({ t: 'profile', profile: { name: profile.name, color: profile.color, build: profile.build, hat: profile.hat || null } });
     if (this.isHost) this._broadcastRoster();
     this.emit('roster');
   }
@@ -379,7 +384,7 @@ export class Net {
   _rosterWire() {
     return this.rosterList().map(r => ({
       peerId: r.peerId, name: r.name, color: r.color,
-      build: r.build, joinOrder: r.joinOrder, ready: r.ready,
+      build: r.build, hat: r.hat || null, joinOrder: r.joinOrder, ready: r.ready,
       vote: r.vote || null, status: r.status,
     }));
   }
@@ -391,7 +396,7 @@ export class Net {
       seen.add(w.peerId);
       const cur = this.members.get(w.peerId);
       if (cur) {
-        Object.assign(cur, { name: w.name, color: w.color, build: w.build, joinOrder: w.joinOrder, ready: w.ready, vote: w.vote || null });
+        Object.assign(cur, { name: w.name, color: w.color, build: w.build, hat: w.hat || null, joinOrder: w.joinOrder, ready: w.ready, vote: w.vote || null });
       } else {
         this.members.set(w.peerId, { ...w, ping: 0, lastSeen: Date.now(), status: w.status || 'online' });
       }

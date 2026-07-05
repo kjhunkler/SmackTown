@@ -4,8 +4,32 @@ import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
   loadLoadouts, deleteLoadout,
+  HAT_W, HAT_H, HAT_CHARS, HAT_PALETTE, sanitizeHat,
 } from './profile.js';
 import { MAPS } from './game.js';
+
+// ---------- pixel hats ----------
+// Rasterize a hat string once to a tiny offscreen canvas; scaled draws stay
+// pixel-crisp with imageSmoothing off. Shared by the renderer and previews.
+const hatCache = new Map();
+export function hatImage(hat) {
+  const s = sanitizeHat(hat);
+  if (!s) return null;
+  let img = hatCache.get(s);
+  if (img) return img;
+  img = document.createElement('canvas');
+  img.width = HAT_W;
+  img.height = HAT_H;
+  const x = img.getContext('2d');
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '.') continue;
+    x.fillStyle = HAT_PALETTE[HAT_CHARS.indexOf(s[i])] || '#fff';
+    x.fillRect(i % HAT_W, (i / HAT_W) | 0, 1, 1);
+  }
+  if (hatCache.size > 64) hatCache.clear();   // hats are tiny; cap anyway
+  hatCache.set(s, img);
+  return img;
+}
 
 const $ = s => document.querySelector(s);
 
@@ -52,7 +76,7 @@ export function renderColorGrid(container, selected, onPick) {
 
 // ---------- fighter preview (menu card) ----------
 
-export function drawPreview(canvas, color) {
+export function drawPreview(canvas, color, hat = null) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
@@ -66,6 +90,13 @@ export function drawPreview(canvas, color) {
   ctx.fillStyle = '#10122a';
   ctx.beginPath(); ctx.arc(2, -12, 3.6, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.arc(15, -12, 3.6, 0, 7); ctx.fill();
+  const img = hatImage(hat);
+  if (img) {
+    // preview body is 52x68 vs the in-game 46x64 — scale the hat to match
+    const s = 68 / 64;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, -36 * s, -64 * s, 72 * s, 48 * s);
+  }
   ctx.restore();
 }
 function rr(ctx, x, y, w, h, r) {
@@ -187,7 +218,7 @@ function renderShop(box, defs, owned, maxOwned, left, work) {
 export function renderMenuCard(profile) {
   $('#menu-name').textContent = profile.name;
   $('#menu-build').textContent = buildSummary(profile.build);
-  drawPreview($('#menu-preview'), profile.color);
+  drawPreview($('#menu-preview'), profile.color, profile.hat);
 }
 
 // ---------- main-menu presence ----------

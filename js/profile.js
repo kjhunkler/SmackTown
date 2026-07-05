@@ -65,6 +65,29 @@ export const AUGMENTS = [
 export const MAX_ABILITIES = 2;
 export const MAX_AUGMENTS = 2;
 
+// ---------- pixel hats ----------
+// A hat is a HAT_W x HAT_H pixel grid drawn in the Hat Studio, worn above
+// the fighter's head. Encoded as one string, row-major: '.' = transparent,
+// '0'-'f' = an index into HAT_PALETTE. HAT_PX is world units per hat pixel;
+// the box is centered on the head (x: ±36) with its brim at y = -16.
+export const HAT_W = 24;
+export const HAT_H = 16;
+export const HAT_PX = 3;
+export const HAT_CHARS = '0123456789abcdef';
+export const HAT_PALETTE = [
+  '#10122a', '#ffffff', '#9aa3c7', '#4a2c14',
+  '#8a5a2b', '#ff5470', '#ffb02e', '#f5d76e',
+  '#3ddc84', '#1e7a4a', '#38b6ff', '#2a5fd0',
+  '#b388ff', '#ff8a5c', '#00e5c3', '#ff2e63',
+];
+
+// Valid hat string or null (malformed, wrong size, or fully transparent).
+export function sanitizeHat(raw) {
+  if (typeof raw !== 'string' || raw.length !== HAT_W * HAT_H) return null;
+  if (!/^[.0-9a-f]+$/.test(raw) || !/[0-9a-f]/.test(raw)) return null;
+  return raw;
+}
+
 export function emptyBuild() {
   return {
     stats: { power: 0, speed: 0, defense: 0, agility: 0 },
@@ -123,6 +146,7 @@ export function loadProfile() {
         name: String(raw.name).slice(0, 14),
         color: COLORS.includes(raw.color) ? raw.color : COLORS[0],
         build: sanitizeBuild(raw.build),
+        hat: sanitizeHat(raw.hat),
       };
       return profile;
     }
@@ -135,6 +159,7 @@ export function saveProfile(p) {
     name: String(p.name).trim().slice(0, 14),
     color: COLORS.includes(p.color) ? p.color : COLORS[0],
     build: sanitizeBuild(p.build),
+    hat: sanitizeHat(p.hat),
   };
   localStorage.setItem(KEY, JSON.stringify(profile));
   return profile;

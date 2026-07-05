@@ -1,12 +1,13 @@
 // App orchestration: boot, screens, room flow, and the game session driver.
 
 import {
-  loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout,
+  loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout, sanitizeHat,
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
 import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAP_IDS, DEFAULT_MAP } from './game.js';
 import { TouchInput } from './input.js';
+import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
 import * as UI from './ui.js';
 
@@ -203,7 +204,7 @@ $('#loadout-save').addEventListener('click', () => {
 });
 
 $('#builder-save').addEventListener('click', () => {
-  profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build });
+  profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build, hat: profile.hat });
   UI.renderMenuCard(profile);
   if (builderReturn === 'lobby' && net?.roomCode) {
     net.updateProfile(profile);      // let the room see the new colors/build
@@ -220,6 +221,23 @@ $('#builder-save').addEventListener('click', () => {
 
 $('#menu-builder').addEventListener('click', () => openBuilder());
 
+// ---------------- hat studio ----------------
+const hatStudio = new HatStudio();
+
+$('#builder-hat').addEventListener('click', () => {
+  UI.showScreen('hat');                 // show first so the canvas has a size
+  hatStudio.open(builderWork.color, profile.hat, {
+    onSave: hat => {
+      profile = saveProfile({ ...profile, hat });
+      UI.renderMenuCard(profile);
+      if (net?.roomCode) net.updateProfile(profile);   // room sees the new hat
+      UI.showScreen('builder');
+      UI.banner(hat ? 'Hat saved! 🎩' : 'Hat removed — bare-headed brawling', 'good');
+    },
+    onCancel: () => UI.showScreen('builder'),
+  });
+});
+
 // ---------------- menu actions ----------------
 $('#menu-solo').addEventListener('click', () => {
   startSession({
@@ -227,7 +245,7 @@ $('#menu-solo').addEventListener('click', () => {
     myId: 'me',
     map: MAP_IDS[(Math.random() * MAP_IDS.length) | 0],
     players: [
-      { id: 'me', name: profile.name, color: profile.color, build: profile.build },
+      { id: 'me', name: profile.name, color: profile.color, build: profile.build, hat: profile.hat },
       {
         id: 'bot', name: 'Trainer Bot', isBot: true,
         color: COLORS.find(c => c !== profile.color) || '#38b6ff',
@@ -284,7 +302,7 @@ function enterRoom(joinCode) {
     // A player walked in while a fight is running: as host, drop them into
     // the live game and re-broadcast the player list so everyone syncs up.
     if (!session || session.ended || !net.isHost || session.mode === 'solo') return;
-    session.addPlayer({ id: rec.peerId, name: rec.name, color: rec.color, build: sanitizeBuild(rec.build) });
+    session.addPlayer({ id: rec.peerId, name: rec.name, color: rec.color, build: sanitizeBuild(rec.build), hat: sanitizeHat(rec.hat) });
     net.broadcast({ t: 'start', players: session.players, seed: session.seed, map: session.map });
     UI.banner(`${rec.name} joined the fight!`, 'good');
   });
@@ -295,7 +313,7 @@ function enterRoom(joinCode) {
   });
   net.on('game:start', (msg, pid) => {
     if (pid !== net.hostId) return;
-    const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build) }));
+    const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) }));
     if (session) { session.syncPlayers(players); return; }  // mid-game roster update
     startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed, map: msg.map });
   });
@@ -376,7 +394,7 @@ function startFight() {
   const active = net.rosterList().filter(m => m.status !== 'gone');
   if (active.length < 2) return;
   const players = active.map(m => ({
-    id: m.peerId, name: m.name, color: m.color, build: sanitizeBuild(m.build),
+    id: m.peerId, name: m.name, color: m.color, build: sanitizeBuild(m.build), hat: sanitizeHat(m.hat),
   }));
   const seed = (Math.random() * 1e9) | 0;
   const map = tallyMapVotes(active);
@@ -527,7 +545,7 @@ class Session {
         id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, facing: f.facing,
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f),
-        color: this.meta.get(f.id)?.color, cds: f.cds,
+        color: this.meta.get(f.id)?.color, hat: this.meta.get(f.id)?.hat, cds: f.cds,
       })),
       projectiles: this.game.projectiles,
     };
@@ -698,7 +716,7 @@ class Session {
       pct: r[6], stocks: r[7], state: r[8], dead: !!r[9],
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
       hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4] } : null,
-      color: this.meta.get(r[0])?.color,
+      color: this.meta.get(r[0])?.color, hat: this.meta.get(r[0])?.hat,
     }));
   }
 
@@ -728,7 +746,7 @@ class Session {
         vx: mine.vx, vy: mine.vy, facing: mine.facing,
         pct: mine.pct, stocks: mine.stocks, state: mine.state, dead: mine.dead,
         invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
-        cds: mine.cds, color: this.meta.get(mine.id)?.color,
+        cds: mine.cds, color: this.meta.get(mine.id)?.color, hat: this.meta.get(mine.id)?.hat,
       };
       const i = fighters.findIndex(f => f.id === this.myId);
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
