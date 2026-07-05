@@ -61,6 +61,23 @@ const RESPAWN_INVULN = 2.0;
 const HIT_PAUSE = 0.045;
 const BUFFER = 0.15;                 // edge-input buffer window (s)
 
+// Ducking: hold down while grounded to squat behind a guard. Straight
+// projectiles sail clean over a ducked head; melee that connects deals
+// chip damage and a shove instead of a launch, but the guard meter
+// drains while held and eats the full raw damage of every blocked hit.
+// At zero the guard crushes: a crumple stun that takes bonus knockback.
+// Down-aimed attacks (dair/dsmash/spikes/aimed-down) pierce the duck.
+const DUCK_H = 24;                   // ducked hurtbox height (stands 64)
+const DUCK_DMG_TAKEN = 0.5;          // chip damage multiplier while ducking
+const DUCK_KB_TAKEN = 0.3;           // knockback multiplier while ducking
+const DUCK_STANDUP = 0.07;           // delay before attacking after release
+const GUARD_MAX = 100;
+const GUARD_DRAIN = 12;              // per second while holding duck
+const GUARD_REGEN = 20;              // per second while not ducking
+const GUARD_REDUCK = 25;             // min guard needed to start a duck
+const CRUSH_STUN = 1.0;              // crumple duration at guard zero
+const CRUSH_KB_TAKEN = 1.3;         // knockback penalty while crushed
+
 // attack archetypes: [damage, baseKb, kbScale, startup, active, recover, reach, angle]
 const ATTACKS = {
   jab:    { dmg: 4,  kb: 130, ks: 9,  startup: .05, active: .09, rec: .12, rx: 52, ry: 26, ang: -10 },
@@ -119,6 +136,7 @@ export class Game {
       atkDir: null,                 // 8-way aim at attack start {x,y} or null
       atkHit: new Set(),
       invuln: 0, counterT: 0, dashT: 0,
+      guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
       usedSecondWind: false,
       dropT: 0,                     // drop-through timer
@@ -201,6 +219,7 @@ export class Game {
     f.dashT = Math.max(0, f.dashT - TICK);
     f.dropT = Math.max(0, f.dropT - TICK);
     f.regrabT = Math.max(0, f.regrabT - TICK);
+    f.standT = Math.max(0, f.standT - TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
 
@@ -213,21 +232,43 @@ export class Game {
 
     const inHitstun = f.state === 'hitstun';
     const inAttack = f.state === 'attack';
-    const canAct = !inHitstun && !inAttack;
+    const inDuck = f.state === 'duck';
+    const inCrush = f.state === 'crush';
+    const canAct = !inHitstun && !inAttack && !inCrush;
 
     if (Math.abs(inp.mx) > 0.15) f.lastDir = { x: Math.sign(inp.mx), y: inp.my };
 
+    // --- ducking (hold the stick mostly-down while grounded) ---
+    const wantDuck = f.grounded && inp.my > 0.6 && inp.my >= Math.abs(inp.mx);
+    if (inDuck) {
+      f.guard = Math.max(0, f.guard - GUARD_DRAIN * TICK);
+      if (f.guard <= 0) this._crushGuard(f);
+      else if (!wantDuck) {
+        f.state = f.grounded ? 'idle' : 'air';
+        f.stateT = 0;
+        f.standT = DUCK_STANDUP;   // brief stand-up before attacks come out
+      }
+    } else {
+      f.guard = Math.min(GUARD_MAX, f.guard + GUARD_REGEN * TICK);
+      if (wantDuck && canAct && f.guard >= GUARD_REDUCK) {
+        f.state = 'duck';
+        f.stateT = 0;
+        this.events.push({ e: 'duck', id: f.id, x: f.x, y: f.y + F_H / 2 });
+      }
+    }
+    const ducking = f.state === 'duck';
+
     // --- horizontal movement ---
-    if (!inHitstun && f.dashT <= 0) {
+    if (!inHitstun && !inCrush && f.dashT <= 0) {
       const want = inp.mx * RUN * f.st.speedMult;
       if (f.grounded) {
-        if (Math.abs(inp.mx) > 0.15 && canAct) {
+        if (Math.abs(inp.mx) > 0.15 && canAct && !ducking) {
           f.vx = approach(f.vx, want, GROUND_ACCEL * TICK);
           f.facing = Math.sign(inp.mx) || f.facing;
           f.state = 'run';
         } else {
           f.vx = approach(f.vx, 0, FRICTION * TICK);
-          if (canAct) f.state = 'idle';
+          if (canAct && !ducking) f.state = 'idle';
         }
       } else {
         if (Math.abs(inp.mx) > 0.15) {
@@ -244,6 +285,7 @@ export class Game {
       f.grounded = false;
       f.fastfall = false;
       f.state = 'air';
+      f.standT = 0;
       inp.jump = false;
       this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
     }
@@ -251,10 +293,11 @@ export class Game {
     if (inp.drop && f.grounded) f.dropT = 0.25;    // fall through platforms
     inp.ff = inp.drop = false;
 
-    // --- attacks & abilities ---
-    if (canAct && inp.atk) { this._startAttack(f, inp.atk); inp.atk = null; }
-    if (canAct && inp.ab0) { this._useAbility(f, 0); inp.ab0 = false; }
-    if (canAct && inp.ab1) { this._useAbility(f, 1); inp.ab1 = false; }
+    // --- attacks & abilities (locked while ducking / standing up / crushed) ---
+    const mayAct = canAct && f.state !== 'duck' && f.standT <= 0;
+    if (mayAct && inp.atk) { this._startAttack(f, inp.atk); inp.atk = null; }
+    if (mayAct && inp.ab0) { this._useAbility(f, 0); inp.ab0 = false; }
+    if (mayAct && inp.ab1) { this._useAbility(f, 1); inp.ab1 = false; }
 
     // attack state machine
     if (inAttack) {
@@ -263,6 +306,7 @@ export class Game {
       if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.atkHit.clear(); }
     }
     if (inHitstun && f.stateT >= f.hitstunFor) { f.state = 'air'; }
+    if (inCrush && f.stateT >= CRUSH_STUN) { f.state = f.grounded ? 'idle' : 'air'; }
 
     // --- gravity & integration ---
     if (!f.grounded) {
@@ -391,6 +435,19 @@ export class Game {
     f.grounded = true;
     if (f.stateT >= ROLL_TIME) { f.state = 'idle'; f.facing = f.rollDir; }
     this._decayInput(inp);
+  }
+
+  // Guard meter hit zero: crumple stun. Pops the fighter up a touch and
+  // leaves them taking bonus knockback until the stun runs out.
+  _crushGuard(f) {
+    f.guard = 0;
+    f.state = 'crush';
+    f.stateT = 0;
+    f.standT = 0;
+    f.vy = Math.min(f.vy, -300);
+    f.grounded = false;
+    f.atk = null; f.atkDir = null; f.melee = null;
+    this.events.push({ e: 'crush', id: f.id, x: f.x, y: f.y });
   }
 
   _startAttack(f, atk) {
@@ -599,7 +656,8 @@ export class Game {
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
         const pos = this._rewound(o, pr.owner);
-        if (Math.abs(pos.x - pr.x) < F_W / 2 + pr.r && Math.abs(pos.y - pr.y) < F_H / 2 + pr.r) {
+        const ob = hurtBox(o);
+        if (Math.abs(pos.x - pr.x) < F_W / 2 + pr.r && Math.abs(pos.y + ob.dy - pr.y) < ob.hh + pr.r) {
           const att = this.fighters.find(x => x.id === pr.owner);
           if (o.counterT > 0) { pr.vx *= -1; pr.owner = o.id; this.events.push({ e: 'counter', x: o.x, y: o.y }); continue; }
           if (att) this._applyHit(att, o, pr, deg(-40), Math.sign(pr.vx) || 1);
@@ -616,7 +674,8 @@ export class Game {
     for (const o of this.fighters) {
       if (o.id === f.id || o.dead || o.invuln > 0 || hitSet.has(o.id)) continue;
       const pos = this._rewound(o, f.id);
-      if (Math.abs(pos.x - cx) < hb.hw + F_W / 2 && Math.abs(pos.y - cy) < hb.hh + F_H / 2) {
+      const ob = hurtBox(o);
+      if (Math.abs(pos.x - cx) < hb.hw + F_W / 2 && Math.abs(pos.y + ob.dy - cy) < hb.hh + ob.hh) {
         hitSet.add(o.id);
         if (o.counterT > 0) {
           // countered: attacker eats a reversal hit
@@ -633,15 +692,38 @@ export class Game {
           else if (a.y > 0 && a.x) ang = deg(-18);           // grounded down-diag: semi-spike
           else if (a.y < 0 && a.x) ang = deg(-45);           // up-diag: diagonal launch
         }
-        this._applyHit(f, o, spec, ang, dirX, spike);
+        // low hits pierce a duck: spikes, dair/dsmash, anything aimed down
+        const pierce = spike || !!spec.down || !!spec.both || !!(a && a.y > 0);
+        this._applyHit(f, o, spec, ang, dirX, spike, pierce);
       }
     }
   }
 
-  _applyHit(att, vic, spec, angRad, dirX, spike = false) {
+  _applyHit(att, vic, spec, angRad, dirX, spike = false, pierce = false) {
     let dmg = spec.dmg * att.st.dmgMult;
     if (att.st.augments.includes('berserker') && att.pct >= 80) dmg *= 1.25;
     if (att.st.augments.includes('sniper') && spec.r) dmg *= 1.3; // projectile hit
+
+    // ducked block: chip damage and a horizontal shove instead of a launch.
+    // The guard eats the hit's full raw damage and crushes at zero.
+    if (vic.state === 'duck' && !pierce) {
+      const raw = dmg;
+      dmg *= DUCK_DMG_TAKEN;
+      vic.pct = Math.min(999, vic.pct + dmg);
+      const kb = (spec.kb + spec.ks * dmg * (1 + vic.pct / 90))
+        * att.st.kbMult * vic.st.kbTaken * DUCK_KB_TAKEN;
+      vic.vx = Math.cos(angRad) * kb * dirX;
+      vic.guard -= raw;
+      if (vic.guard <= 0) this._crushGuard(vic);
+      this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
+      this.events.push({ e: 'block', x: vic.x, y: vic.y - F_H / 2 + DUCK_H / 2, vic: vic.id });
+      this.events.push({
+        e: 'hit', x: vic.x, y: vic.y, dmg: Math.round(dmg),
+        heavy: false, vic: vic.id, att: att.id,
+      });
+      return;
+    }
+
     vic.pct = Math.min(999, vic.pct + dmg);
 
     // acrobat: connecting resets your air jumps, enabling aerial chases
@@ -661,7 +743,8 @@ export class Game {
 
     // smash-style knockback: grows with victim percent
     const kb = (spec.kb + spec.ks * dmg * (1 + vic.pct / 90))
-      * att.st.kbMult * vic.st.kbTaken;
+      * att.st.kbMult * vic.st.kbTaken
+      * (vic.state === 'crush' ? CRUSH_KB_TAKEN : 1);
     const ang = spike ? Math.PI / 2 : angRad;   // spikes send straight down
     vic.vx = Math.cos(ang) * kb * dirX * (spike ? 0.15 : 1);
     vic.vy = Math.sin(ang) * kb;
@@ -708,6 +791,7 @@ export class Game {
           f.y = this.stage.respawnY;
           f.vx = 0; f.vy = 0;
           f.pct = 0;
+          f.guard = GUARD_MAX; f.standT = 0;
           f.usedSecondWind = false;
           f.state = 'respawn';
           f.stateT = 0;
@@ -750,6 +834,13 @@ export class Game {
           : { kind: 'swipe', dx: 0, dy: dy < -30 ? -1 : 1 };
       }
       if (f.pct > 70 && this.rng() < 0.02) inp.ab0 = true;
+      // duck under a nearby swing; keep holding until the threat passes
+      const threat = target.state === 'attack' && Math.abs(dx) < 140 && Math.abs(dy) < 60;
+      if (f.grounded && threat
+          && (f.state === 'duck' || (f.guard > 40 && this.rng() < 0.25))) {
+        inp.mx = 0; inp.my = 1;
+        inp.atk = null; inp.jump = false;
+      }
     }
   }
 
@@ -788,6 +879,7 @@ export class Game {
           r2(f.regrabT), f.rollDir, r2(f.invuln), r2(f.dropT),
           f.fastfall ? 1 : 0, r2(f.dashT), r2(f.counterT),
           f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
+          r1(f.guard), r2(f.standT),
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -826,6 +918,7 @@ export function restoreFighter(f, row) {
     f.invuln = row[21] || 0; f.dropT = row[22] || 0;
     f.fastfall = !!row[23]; f.dashT = row[24] || 0; f.counterT = row[25] || 0;
     f.atkDir = (row[26] || row[27]) ? { x: row[26] | 0, y: row[27] | 0 } : null;
+    if (row.length > 28) { f.guard = row[28]; f.standT = row[29] || 0; }
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.
@@ -866,6 +959,14 @@ export function meleeHitbox(f, spec, aim = null) {
     hw: spec.both ? spec.rx : spec.rx / 2 + 14,
     hh: spec.ry,
   };
+}
+
+// Ducking tucks the fighter into a shorter box that stays planted on the
+// ground: half-height shrinks and the center shifts down so jabs and
+// forward smashes whiff over a ducked head. Standing boxes are unchanged.
+function hurtBox(f) {
+  if (f.state === 'duck') return { dy: (F_H - DUCK_H) / 2, hh: DUCK_H / 2 };
+  return { dy: 0, hh: F_H / 2 };
 }
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }

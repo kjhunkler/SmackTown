@@ -516,7 +516,7 @@ function startSession(cfg) {
 
 // Cosmetic events the client already plays locally via prediction; the
 // host's copies are dropped for our own fighter to avoid double effects.
-const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'ability', 'shockwave', 'gale', 'mend']);
+const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'ability', 'shockwave', 'gale', 'mend', 'duck']);
 
 class Session {
   constructor({ mode, myId, players, seed = 1, map = DEFAULT_MAP }) {
@@ -616,7 +616,7 @@ class Session {
       fighters: this.game.fighters.map(f => ({
         id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, facing: f.facing,
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
-        invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f),
+        invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
         color: this.meta.get(f.id)?.color, hat: this.meta.get(f.id)?.hat, cds: f.cds,
       })),
       projectiles: this.game.projectiles,
@@ -788,6 +788,7 @@ class Session {
       pct: r[6], stocks: r[7], state: r[8], dead: !!r[9],
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
       hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4] } : null,
+      guard: r[28],
       color: this.meta.get(r[0])?.color, hat: this.meta.get(r[0])?.hat,
     }));
   }
@@ -818,6 +819,7 @@ class Session {
         vx: mine.vx, vy: mine.vy, facing: mine.facing,
         pct: mine.pct, stocks: mine.stocks, state: mine.state, dead: mine.dead,
         invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
+        guard: mine.guard,
         cds: mine.cds, color: this.meta.get(mine.id)?.color, hat: this.meta.get(mine.id)?.hat,
       };
       const i = fighters.findIndex(f => f.id === this.myId);

@@ -113,6 +113,18 @@ export class Renderer {
         case 'roll':
           this.burst(ev.x, ev.y, 5, '#aabbee', 110);
           break;
+        case 'duck':
+          this.burst(ev.x, ev.y, 4, '#8899cc', 90);
+          break;
+        case 'block':
+          this.burst(ev.x, ev.y, 10, '#8fd3ff', 260);
+          this.shake = Math.max(this.shake, 3);
+          break;
+        case 'crush':
+          this.burst(ev.x, ev.y, 26, '#ffd23e', 480);
+          this.burst(ev.x, ev.y, 12, '#ffffff', 320);
+          this.shake = Math.max(this.shake, 12);
+          break;
       }
     }
   }
@@ -334,17 +346,26 @@ export class Renderer {
 
     // getup roll: tumble the whole body inward
     if (f.state === 'roll') ctx.rotate(t * 16 * f.facing);
+    // guard crush: dazed wobble until the stun wears off
+    if (f.state === 'crush') ctx.rotate(Math.sin(t * 22) * 0.12);
 
     // squash & stretch by vertical speed
     const stretch = clamp(1 + Math.abs(f.vy) / 3500, 1, 1.25);
     ctx.scale(1 / Math.sqrt(stretch), stretch);
 
-    const hurt = f.state === 'hitstun';
+    const hurt = f.state === 'hitstun' || f.state === 'crush';
     const attacking = f.state === 'attack' || f.atk;
+
+    // ducking: tuck into a short, wide squat planted on the same ground
+    // line (mirrors the DUCK_H hurtbox in game.js — what you see is what
+    // can be hit)
+    const duck = f.state === 'duck';
+    const bw = duck ? F_W + 10 : F_W, bh = duck ? 24 : F_H;
+    const bTop = F_H / 2 - bh;
 
     // body
     ctx.fillStyle = f.color;
-    roundRect(ctx, -F_W / 2, -F_H / 2, F_W, F_H, 14);
+    roundRect(ctx, -bw / 2, bTop, bw, bh, 14);
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,.35)';
     ctx.lineWidth = 3;
@@ -354,26 +375,27 @@ export class Renderer {
     const flash = this.flash.get(f.id) || 0;
     if (flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(1, flash / 0.16) * 0.85})`;
-      roundRect(ctx, -F_W / 2, -F_H / 2, F_W, F_H, 14);
+      roundRect(ctx, -bw / 2, bTop, bw, bh, 14);
       ctx.fill();
     }
 
     // belly shade
     ctx.fillStyle = 'rgba(255,255,255,.14)';
-    roundRect(ctx, -F_W / 2 + 5, -F_H / 2 + 5, F_W - 10, F_H / 2, 10);
+    roundRect(ctx, -bw / 2 + 5, bTop + 5, bw - 10, bh / 2, 10);
     ctx.fill();
 
     // face
     const ex = f.facing * 8;
+    const ey = duck ? bTop + 11 : -F_H / 6;
     ctx.fillStyle = '#10122a';
     if (hurt) {
       ctx.lineWidth = 3; ctx.strokeStyle = '#10122a';
-      cross(ctx, ex - 6, -F_H / 6, 4); cross(ctx, ex + 6, -F_H / 6, 4);
+      cross(ctx, ex - 6, ey, 4); cross(ctx, ex + 6, ey, 4);
     } else {
-      ctx.beginPath(); ctx.arc(ex - 6, -F_H / 6, 3.4, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(ex + 6, -F_H / 6, 3.4, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex - 6, ey, 3.4, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + 6, ey, 3.4, 0, 7); ctx.fill();
       if (attacking) { // gritted mouth
-        ctx.fillRect(ex - 6, -F_H / 6 + 10, 12, 3);
+        ctx.fillRect(ex - 6, ey + 10, 12, 3);
       }
     }
 
@@ -384,6 +406,7 @@ export class Renderer {
       if (hat) {
         ctx.save();
         ctx.scale(f.facing || 1, 1);
+        if (duck) ctx.translate(0, F_H - bh);  // hat rides the lowered head
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(hat, HAT_X, HAT_Y, HAT_BW, HAT_BH);
         ctx.restore();
@@ -403,6 +426,19 @@ export class Renderer {
     }
 
     ctx.restore();
+
+    // guard meter: floats overhead while ducking, crushed, or refilling
+    if (f.guard != null && (duck || f.state === 'crush' || f.guard < 99.5)) {
+      const w = 44, h = 5;
+      const k = clamp(f.guard / 100, 0, 1);
+      const x = f.x - w / 2, y = f.y - F_H / 2 - 14;
+      ctx.fillStyle = 'rgba(10,12,30,.6)';
+      roundRect(ctx, x, y, w, h, 3); ctx.fill();
+      if (k > 0) {
+        ctx.fillStyle = k > 0.5 ? '#3ddc84' : k > 0.25 ? '#ffb02e' : '#ff5470';
+        roundRect(ctx, x, y, Math.max(4, w * k), h, 3); ctx.fill();
+      }
+    }
   }
 
   // Attack hitbox: dashed outline while winding up (telegraph), then a hot
