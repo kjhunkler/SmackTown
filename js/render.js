@@ -14,9 +14,9 @@ export class Renderer {
     this.particles = [];
     this.dmgPops = [];               // floating damage numbers
     this.flash = new Map();          // fighter id -> hit-flash time left
-    this.stars = Array.from({ length: 70 }, () => ({
-      x: Math.random() * 2000 - 1000,
-      y: Math.random() * 900 - 700,
+    this.stars = Array.from({ length: 90 }, () => ({
+      x: Math.random() * 2900 - 1450,
+      y: Math.random() * 1300 - 1050,
       s: Math.random() * 1.6 + 0.4,
       tw: Math.random() * Math.PI * 2,
     }));
@@ -98,7 +98,7 @@ export class Renderer {
       const ty = (minY + maxY) / 2 - 40;
       const zx = W / (maxX - minX + pad * 2);
       const zy = H / (maxY - minY + pad * 2);
-      const tz = Math.max(0.42 * this.dpr, Math.min(1.05 * this.dpr, Math.min(zx, zy)));
+      const tz = Math.max(0.30 * this.dpr, Math.min(1.05 * this.dpr, Math.min(zx, zy)));
       const k = 1 - Math.pow(0.001, dt);
       this.cam.x += (tx - this.cam.x) * k;
       this.cam.y += (ty - this.cam.y) * k;
