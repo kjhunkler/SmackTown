@@ -204,6 +204,16 @@ input[type=text]:focus { border-color: var(--accent); }
 }
 .loadout-chip .lo-main:active { border-color: var(--accent); }
 .loadout-chip .r-swatch { width: 20px; height: 20px; border-radius: 6px; flex: none; }
+.loadout-chip .lo-fig { position: relative; flex: none; width: 20px; height: 20px; }
+.loadout-chip .lo-fig .r-swatch { display: block; }
+.loadout-chip .lo-hat {
+  position: absolute;
+  left: 50%; top: -15px;
+  width: 30px; height: 20px;
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 .loadout-chip .lo-text { min-width: 0; }
 .loadout-chip .lo-name { display: block; font-weight: 800; font-size: 14px; }
 .loadout-chip .lo-sum {

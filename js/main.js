@@ -179,6 +179,7 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
   builderWork = {
     color: profile.color,
     build: JSON.parse(JSON.stringify(profile.build)),
+    hat: profile.hat,
   };
   UI.renderBuilder(builderWork);
   UI.showScreen('builder');
@@ -192,7 +193,7 @@ $('#builder-reset').addEventListener('click', () => {
 $('#loadout-save').addEventListener('click', () => {
   const nameEl = $('#loadout-name');
   const err = $('#loadout-error');
-  const res = saveLoadout(nameEl.value, builderWork.color, builderWork.build);
+  const res = saveLoadout(nameEl.value, builderWork.color, builderWork.build, builderWork.hat);
   if (res.ok) {
     nameEl.value = '';
     err.classList.add('hidden');
@@ -204,7 +205,7 @@ $('#loadout-save').addEventListener('click', () => {
 });
 
 $('#builder-save').addEventListener('click', () => {
-  profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build, hat: profile.hat });
+  profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build, hat: builderWork.hat });
   UI.renderMenuCard(profile);
   if (builderReturn === 'lobby' && net?.roomCode) {
     net.updateProfile(profile);      // let the room see the new colors/build
@@ -226,8 +227,9 @@ const hatStudio = new HatStudio();
 
 $('#builder-hat').addEventListener('click', () => {
   UI.showScreen('hat');                 // show first so the canvas has a size
-  hatStudio.open(builderWork.color, profile.hat, {
+  hatStudio.open(builderWork.color, builderWork.hat, {
     onSave: hat => {
+      builderWork.hat = hat;
       profile = saveProfile({ ...profile, hat });
       UI.renderMenuCard(profile);
       if (net?.roomCode) net.updateProfile(profile);   // room sees the new hat

@@ -171,16 +171,28 @@ function renderLoadouts(work) {
     row.className = 'loadout-chip';
     row.innerHTML = `
       <button class="lo-main">
-        <span class="r-swatch" style="background:${esc(lo.color)}"></span>
+        <span class="lo-fig">
+          <span class="r-swatch" style="background:${esc(lo.color)}"></span>
+        </span>
         <span class="lo-text">
           <span class="lo-name">${esc(lo.name)}</span>
           <span class="lo-sum">${esc(buildSummary(lo.build).replace(/\n/g, ' · '))}</span>
         </span>
       </button>
       <button class="lo-del" aria-label="Delete ${esc(lo.name)}">✕</button>`;
+    const img = hatImage(lo.hat);
+    if (img) {
+      const c = document.createElement('canvas');
+      c.width = HAT_W;
+      c.height = HAT_H;
+      c.className = 'lo-hat';
+      c.getContext('2d').drawImage(img, 0, 0);
+      row.querySelector('.lo-fig').appendChild(c);
+    }
     row.querySelector('.lo-main').addEventListener('click', () => {
       work.color = lo.color;
       work.build = JSON.parse(JSON.stringify(lo.build));
+      work.hat = lo.hat;
       renderBuilder(work);
     });
     row.querySelector('.lo-del').addEventListener('click', () => {

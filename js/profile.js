@@ -212,13 +212,14 @@ export function loadLoadouts() {
         name: String(l.name).trim().slice(0, 16),
         color: COLORS.includes(l.color) ? l.color : COLORS[0],
         build: sanitizeBuild(l.build),
+        hat: sanitizeHat(l.hat),
       }));
   } catch (_) { return []; }
 }
 
 // Saves (or overwrites, matched by name) a loadout. Returns {ok} or
 // {ok:false, error} with a message fit to show the player.
-export function saveLoadout(name, color, build) {
+export function saveLoadout(name, color, build, hat = null) {
   if (!validLoadoutName(name)) {
     return { ok: false, error: 'Nicknames are 1–16 letters, numbers or basic punctuation.' };
   }
@@ -228,6 +229,7 @@ export function saveLoadout(name, color, build) {
     name: n,
     color: COLORS.includes(color) ? color : COLORS[0],
     build: sanitizeBuild(build),
+    hat: sanitizeHat(hat),
   };
   const i = list.findIndex(l => l.name.toLowerCase() === n.toLowerCase());
   if (i >= 0) list[i] = entry;
