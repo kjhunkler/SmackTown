@@ -221,6 +221,21 @@ input[type=text]:focus { border-color: var(--accent); }
 
 /* ============ lobby ============ */
 .room-code { color: var(--accent); letter-spacing: 5px; font-weight: 900; }
+.btn.invite { border-color: var(--accent); color: var(--accent); }
+.requests {
+  background: rgba(255, 176, 46, .08);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.requests .req-title { font-size: 11px; font-weight: 800; color: var(--accent); letter-spacing: 1px; text-transform: uppercase; }
+.req-row { display: flex; align-items: center; gap: 8px; }
+.req-row .r-swatch { width: 18px; height: 18px; border-radius: 5px; flex: none; }
+.req-row .r-name { font-weight: 800; flex: 1; }
+.req-row .req-ok { background: var(--good); }
 .roster { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .roster li {
   display: flex; align-items: center; gap: 10px;

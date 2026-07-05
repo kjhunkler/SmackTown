@@ -168,6 +168,24 @@ export function renderLobby(net) {
     list.appendChild(li);
   }
 
+  // pending join requests — host decides who gets in
+  const reqBox = $('#lobby-requests');
+  const requests = net.isHost ? net.requestList() : [];
+  reqBox.classList.toggle('hidden', !requests.length);
+  reqBox.innerHTML = requests.length ? '<div class="req-title">Knocking…</div>' : '';
+  for (const r of requests) {
+    const row = document.createElement('div');
+    row.className = 'req-row';
+    row.innerHTML = `
+      <span class="r-swatch" style="background:${r.color}"></span>
+      <span class="r-name">${esc(r.name)}</span>
+      <button class="btn tiny req-ok">Let in</button>
+      <button class="btn tiny ghost req-no">Deny</button>`;
+    row.querySelector('.req-ok').addEventListener('click', () => net.approveJoin(r.peerId));
+    row.querySelector('.req-no').addEventListener('click', () => net.denyJoin(r.peerId));
+    reqBox.appendChild(row);
+  }
+
   const me = net.members.get(net.myId);
   const readyBtn = $('#lobby-ready');
   readyBtn.textContent = me?.ready ? 'Ready ✓' : "I'm Ready";

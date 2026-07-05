@@ -80,10 +80,16 @@ document.addEventListener('contextmenu', e => {
   if (!$('#screen-game').classList.contains('hidden')) e.preventDefault();
 });
 
+// invite deep link: opening ?join=CODE knocks on that room directly
+const urlJoin = new URLSearchParams(location.search).get('join');
+let pendingJoinCode = urlJoin && /^[A-Za-z]{4}$/.test(urlJoin) ? urlJoin.toUpperCase() : null;
+if (urlJoin) history.replaceState(null, '', location.pathname); // don't re-join on refresh
+
 profile = loadProfile();
 if (profile) {
   UI.renderMenuCard(profile);
   UI.showScreen('menu');
+  if (pendingJoinCode) { enterRoom(pendingJoinCode); pendingJoinCode = null; }
 } else {
   initLogin();
   UI.showScreen('login');
@@ -134,6 +140,7 @@ $('#builder-save').addEventListener('click', () => {
   UI.renderMenuCard(profile);
   UI.showScreen('menu');
   if (builderFirstRun) UI.banner(`Welcome to SmackTown, ${profile.name}!`, 'good');
+  if (builderFirstRun && pendingJoinCode) { enterRoom(pendingJoinCode); pendingJoinCode = null; }
 });
 
 $('#menu-builder').addEventListener('click', () => openBuilder());
@@ -185,6 +192,11 @@ function enterRoom(joinCode) {
     net?.leave(); net = null;
   });
   net.on('banner', (text, kind) => UI.banner(text, kind));
+  net.on('join-request', req => {
+    if (!$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
+    if (req) UI.banner(`${req.name} wants to join — check the lobby!`, 'warn');
+  });
+  net.on('hold', () => UI.banner('Knocking… waiting for the host to let you in', 'warn', 8000));
   net.on('host-changed', () => {
     if (!$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
     session?.onHostChanged();
@@ -225,6 +237,22 @@ $('#lobby-start').addEventListener('click', () => {
 $('#lobby-leave').addEventListener('click', () => {
   net?.leave(); net = null;
   UI.showScreen('menu');
+});
+
+$('#lobby-invite').addEventListener('click', async () => {
+  if (!net?.roomCode) return;
+  const url = `${location.origin}${location.pathname}?join=${net.roomCode}`;
+  const text = `Fight me in SmackTown! Room ${net.roomCode}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'SmackTown', text, url }); } catch (_) {} // cancel = fine
+  } else {
+    try {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      UI.banner('Invite link copied!', 'good');
+    } catch (_) {
+      UI.banner(`Share this code: ${net.roomCode}`, 'warn');
+    }
+  }
 });
 
 // ---------------- game session ----------------
