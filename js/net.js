@@ -10,6 +10,8 @@
 // joinOrder wins. Claims carry a monotonically increasing `term`; a stale
 // host that reappears sees a higher term and demotes itself.
 
+import { peerOptions } from './ice.js';
+
 const ID_PREFIX = 'smacktown-v1-';
 const HB_INTERVAL = 2000;   // presence heartbeat period (ms)
 const HB_AWAY_MS = 6000;    // no heartbeat for this long -> presence 'gone'
@@ -121,12 +123,16 @@ export class Net {
     this.members.clear();
   }
 
-  _openPeer(id, onOpen) {
+  async _openPeer(id, onOpen) {
     // Default PeerJS cloud for signaling; media never touches it (WebRTC is P2P).
-    this.peer = id ? new Peer(id) : new Peer();
-    this.peer.on('open', onOpen);
-    this.peer.on('connection', conn => this._acceptConn(conn));
-    this.peer.on('error', err => {
+    const opts = await peerOptions();
+    if (this.closed) return;
+    const p = id ? new Peer(id, opts) : new Peer(opts);
+    this.peer = p;
+    p.on('open', onOpen);
+    p.on('connection', conn => this._acceptConn(conn));
+    p.on('error', err => {
+      if (p !== this.peer) return;
       if (err.type === 'unavailable-id') {
         // Room code collision (or stale registration) — reroll and retry.
         if (this.joinOrder <= 0 && !this.members.size) {
@@ -142,8 +148,8 @@ export class Net {
         this.emit('error', 'Network error: ' + err.type);
       }
     });
-    this.peer.on('disconnected', () => {
-      if (!this.closed) { try { this.peer.reconnect(); } catch (_) {} }
+    p.on('disconnected', () => {
+      if (!this.closed && p === this.peer) { try { p.reconnect(); } catch (_) {} }
     });
   }
 
@@ -493,11 +499,12 @@ export class Net {
   }
 
   // Re-register the room's public peer ID so newcomers can still join.
-  _claimHostSlot(attempt) {
+  async _claimHostSlot(attempt) {
     if (this.closed || !this.isHost || this.hostListener) return;
     if (attempt > 6) return; // room stays open for current members only
     const hid = hostPeerId(this.roomCode);
-    const listener = new Peer(hid);
+    const listener = new Peer(hid, await peerOptions());
+    if (this.closed || !this.isHost || this.hostListener) { try { listener.destroy(); } catch (_) {} return; }
     listener.on('open', () => {
       this.hostListener = listener;
       listener.on('connection', conn => {

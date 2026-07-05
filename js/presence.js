@@ -8,6 +8,7 @@
 // as guests. A relay hub is needed because the public PeerJS cloud disables
 // peer discovery (listAllPeers), so peers can't find each other by scanning.
 
+import { peerOptions } from './ice.js';
 import { sanitizeHat } from './profile.js';
 
 const HUB_ID = 'smacktown-v1-town-hub';
@@ -154,10 +155,11 @@ export class Presence {
     this.retryTimer = setTimeout(() => this._tryHub(), wait);
   }
 
-  _tryHub() {
+  async _tryHub() {
     if (this.closed) return;
     this._teardownPeer();
-    const p = new Peer(HUB_ID);
+    const p = new Peer(HUB_ID, await peerOptions());
+    if (this.closed) { try { p.destroy(); } catch (_) {} return; }
     this.peer = p;
     p.on('open', () => {
       if (p !== this.peer || this.closed) return;
@@ -182,10 +184,11 @@ export class Presence {
     });
   }
 
-  _tryGuest() {
+  async _tryGuest() {
     if (this.closed) return;
     this._teardownPeer();
-    const p = new Peer();
+    const p = new Peer(await peerOptions());
+    if (this.closed) { try { p.destroy(); } catch (_) {} return; }
     this.peer = p;
     p.on('open', () => {
       if (p !== this.peer || this.closed) return;

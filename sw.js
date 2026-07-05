@@ -1,6 +1,6 @@
 // SmackTown service worker: precache the whole app so it launches instantly
 // and works offline (solo mode fully offline; multiplayer needs a network).
-const CACHE = 'smacktown-v24';
+const CACHE = 'smacktown-v25';
 
 const ASSETS = [
   './',
@@ -9,6 +9,7 @@ const ASSETS = [
   'css/style.css',
   'js/main.js',
   'js/hat.js',
+  'js/ice.js',
   'js/ui.js',
   'js/net.js',
   'js/presence.js',
