@@ -322,6 +322,23 @@ export class Game {
 
   // ---------- combat resolution ----------
 
+  // Current melee hitbox for a fighter (offsets relative to its center), or
+  // null when nothing threatens. active=false marks the windup telegraph
+  // before the hit can actually connect. The renderer draws exactly this.
+  hitboxFor(f) {
+    if (f.dead) return null;
+    if (f.state === 'attack' && f.atk) {
+      const a = ATTACKS[f.atk];
+      if (f.stateT <= a.startup + a.active) {
+        return { ...meleeHitbox(f, a), active: f.stateT >= a.startup };
+      }
+    }
+    if (f.melee && this.tick <= f.melee.until) {
+      return { ...meleeHitbox(f, f.melee), active: true };
+    }
+    return null;
+  }
+
   _resolveAttacks() {
     for (const f of this.fighters) {
       if (f.dead) continue;
@@ -359,12 +376,11 @@ export class Game {
   }
 
   _meleeHit(f, spec, hitSet, angDeg) {
+    const hb = meleeHitbox(f, spec);
+    const cx = f.x + hb.dx, cy = f.y + hb.dy;
     for (const o of this.fighters) {
       if (o.id === f.id || o.dead || o.invuln > 0 || hitSet.has(o.id)) continue;
-      const cx = spec.both || spec.up || spec.down ? f.x : f.x + f.facing * (F_W / 2 + spec.rx / 2);
-      const cy = spec.up ? f.y - F_H / 2 - spec.ry / 2 : spec.down ? f.y + F_H / 2 + spec.ry / 2 : f.y;
-      const rx = spec.both ? spec.rx : spec.rx / 2 + 14;
-      if (Math.abs(o.x - cx) < rx + F_W / 2 && Math.abs(o.y - cy) < spec.ry + F_H / 2) {
+      if (Math.abs(o.x - cx) < hb.hw + F_W / 2 && Math.abs(o.y - cy) < hb.hh + F_H / 2) {
         hitSet.add(o.id);
         if (o.counterT > 0) {
           // countered: attacker eats a reversal hit
@@ -486,11 +502,15 @@ export class Game {
       tk: this.tick,
       over: this.over,
       win: this.winner ? this.winner.id : null,
-      f: this.fighters.map(f => [
-        f.id, r1(f.x), r1(f.y), r1(f.vx), r1(f.vy), f.facing,
-        r1(f.pct), f.stocks, f.state, f.dead ? 1 : 0,
-        f.invuln > 0 ? 1 : 0, f.atk || '', r1(f.cds[0]), r1(f.cds[1]),
-      ]),
+      f: this.fighters.map(f => {
+        const hb = this.hitboxFor(f);
+        return [
+          f.id, r1(f.x), r1(f.y), r1(f.vx), r1(f.vy), f.facing,
+          r1(f.pct), f.stocks, f.state, f.dead ? 1 : 0,
+          f.invuln > 0 ? 1 : 0, f.atk || '', r1(f.cds[0]), r1(f.cds[1]),
+          hb ? [r1(hb.dx), r1(hb.dy), hb.hw, hb.hh, hb.active ? 1 : 0] : 0,
+        ];
+      }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
       ev: this.events.slice(),
     };
@@ -526,6 +546,19 @@ export function blankInput() {
 }
 
 // ---------- helpers ----------
+
+// Axis-aligned melee hitbox for a spec, as offsets from the fighter's center
+// plus half-extents. Shared by combat resolution and the renderer so the
+// hitbox players see is exactly the one the sim tests.
+export function meleeHitbox(f, spec) {
+  return {
+    dx: spec.both || spec.up || spec.down ? 0 : f.facing * (F_W / 2 + spec.rx / 2),
+    dy: spec.up ? -F_H / 2 - spec.ry / 2 : spec.down ? F_H / 2 + spec.ry / 2 : 0,
+    hw: spec.both ? spec.rx : spec.rx / 2 + 14,
+    hh: spec.ry,
+  };
+}
+
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function approach(v, target, amt) {
   return v < target ? Math.min(target, v + amt) : Math.max(target, v - amt);

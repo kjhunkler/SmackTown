@@ -314,7 +314,7 @@ class Session {
       fighters: this.game.fighters.map(f => ({
         id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, facing: f.facing,
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
-        invuln: f.invuln > 0, atk: f.atk,
+        invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f),
         color: this.meta.get(f.id)?.color, cds: f.cds,
       })),
       projectiles: this.game.projectiles,
@@ -402,6 +402,7 @@ class Session {
       id: r[0], x: r[1], y: r[2], vx: r[3], vy: r[4], facing: r[5],
       pct: r[6], stocks: r[7], state: r[8], dead: !!r[9],
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
+      hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4] } : null,
       color: this.meta.get(r[0])?.color,
     }));
   }
@@ -431,6 +432,9 @@ class Session {
   // ----- events & endgame -----
   gameEvents(events) {
     for (const ev of events) {
+      if (ev.e === 'hit' && ev.vic === this.myId && navigator.vibrate) {
+        navigator.vibrate(ev.heavy ? 40 : 15);
+      }
       if (ev.e === 'ko') {
         const name = this.meta.get(ev.id)?.name || '???';
         UI.toast(ev.id === this.myId ? 'You got smacked!' : `${name} KO’d!`);

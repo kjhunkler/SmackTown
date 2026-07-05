@@ -12,6 +12,8 @@ export class Renderer {
     this.cam = { x: 0, y: -120, zoom: 0.8 };
     this.shake = 0;
     this.particles = [];
+    this.dmgPops = [];               // floating damage numbers
+    this.flash = new Map();          // fighter id -> hit-flash time left
     this.stars = Array.from({ length: 70 }, () => ({
       x: Math.random() * 2000 - 1000,
       y: Math.random() * 900 - 700,
@@ -35,6 +37,12 @@ export class Renderer {
         case 'hit':
           this.burst(ev.x, ev.y, ev.heavy ? 18 : 8, ev.heavy ? '#ffdd55' : '#ffffff', ev.heavy ? 420 : 220);
           this.shake = Math.max(this.shake, ev.heavy ? 14 : 5);
+          this.flash.set(ev.vic, 0.16);
+          this.dmgPops.push({
+            x: ev.x + (Math.random() - 0.5) * 16, y: ev.y - F_H / 2 - 10,
+            txt: String(ev.dmg), t: 0, life: ev.heavy ? 0.85 : 0.65,
+            heavy: !!ev.heavy,
+          });
           break;
         case 'ko':
           this.burst(ev.x, ev.y, 40, '#ff5470', 700);
@@ -126,6 +134,12 @@ export class Renderer {
 
     this._stage(ctx);
 
+    // tick down hit flashes
+    for (const [id, v] of this.flash) {
+      if (v - dt <= 0) this.flash.delete(id);
+      else this.flash.set(id, v - dt);
+    }
+
     // projectiles
     for (const p of view.projectiles || []) {
       ctx.save();
@@ -140,6 +154,10 @@ export class Renderer {
 
     for (const f of view.fighters) if (!f.dead) this._fighter(ctx, f, f.id === myId, t);
 
+    // attack hitboxes — the exact rects the sim tests, drawn in world space
+    // so squash & stretch never distorts them
+    for (const f of view.fighters) if (!f.dead && f.hb) this._hitbox(ctx, f, t);
+
     // particles
     for (const p of this.particles) {
       p.t += dt;
@@ -153,6 +171,27 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     this.particles = this.particles.filter(p => p.t < p.life);
+
+    // floating damage numbers
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const d of this.dmgPops) {
+      d.t += dt;
+      const k = d.t / d.life;
+      if (k >= 1) continue;
+      const pop = Math.min(1, d.t * 9);          // quick scale-in punch
+      const size = (d.heavy ? 32 : 22) * (0.5 + 0.5 * pop);
+      ctx.globalAlpha = 1 - k * k;
+      ctx.font = `italic 900 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(10, 12, 25, .75)';
+      ctx.fillStyle = d.heavy ? '#ffdd55' : '#ffffff';
+      const y = d.y - 46 * k;
+      ctx.strokeText(d.txt, d.x, y);
+      ctx.fillText(d.txt, d.x, y);
+    }
+    ctx.globalAlpha = 1;
+    this.dmgPops = this.dmgPops.filter(d => d.t < d.life);
 
     ctx.restore();
   }
@@ -206,6 +245,14 @@ export class Renderer {
     ctx.lineWidth = 3;
     ctx.stroke();
 
+    // hit flash: body whites out for a blink when damage lands
+    const flash = this.flash.get(f.id) || 0;
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, flash / 0.16) * 0.85})`;
+      roundRect(ctx, -F_W / 2, -F_H / 2, F_W, F_H, 14);
+      ctx.fill();
+    }
+
     // belly shade
     ctx.fillStyle = 'rgba(255,255,255,.14)';
     roundRect(ctx, -F_W / 2 + 5, -F_H / 2 + 5, F_W - 10, F_H / 2, 10);
@@ -225,17 +272,30 @@ export class Renderer {
       }
     }
 
-    // attack swoosh
-    if (attacking && f.atk) {
-      ctx.strokeStyle = 'rgba(255,255,255,.8)';
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      if (f.atk === 'usmash') ctx.arc(0, -F_H / 2 - 12, 30, Math.PI * 1.15, Math.PI * 1.85);
-      else if (f.atk === 'dsmash' || f.atk === 'dair') ctx.arc(0, F_H / 2 + 10, 30, Math.PI * 0.15, Math.PI * 0.85);
-      else ctx.arc(f.facing * (F_W / 2 + 16), -6, 26, f.facing > 0 ? -1.2 : Math.PI - 1.2, f.facing > 0 ? 1.2 : Math.PI + 1.2);
+    ctx.restore();
+  }
+
+  // Attack hitbox: dashed outline while winding up (telegraph), then a hot
+  // translucent fill during active frames. Mirrors game.js meleeHitbox.
+  _hitbox(ctx, f, t) {
+    const { dx, dy, hw, hh, active } = f.hb;
+    const x = f.x + dx - hw, y = f.y + dy - hh;
+    ctx.save();
+    if (active) {
+      ctx.fillStyle = 'rgba(255, 82, 82, .30)';
+      ctx.strokeStyle = 'rgba(255, 150, 130, .95)';
+      ctx.lineWidth = 3;
+      roundRect(ctx, x, y, hw * 2, hh * 2, 9);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(255, 214, 102, .55)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 6]);
+      ctx.lineDashOffset = -t * 60;
+      roundRect(ctx, x, y, hw * 2, hh * 2, 9);
       ctx.stroke();
     }
-
     ctx.restore();
   }
 }

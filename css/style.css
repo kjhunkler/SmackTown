@@ -264,6 +264,11 @@ input[type=text]:focus { border-color: var(--accent); }
 }
 .hud-tile .h-name { font-size: 10px; font-weight: 700; color: var(--ink-dim); white-space: nowrap; overflow: hidden; max-width: 90px; }
 .hud-tile .h-pct { font-size: 20px; font-weight: 900; font-style: italic; }
+.hud-tile .h-pct.h-pct-hit { animation: pct-hit .35s ease-out; }
+@keyframes pct-hit {
+  0% { transform: scale(1.5); filter: brightness(2.2); }
+  100% { transform: scale(1); filter: none; }
+}
 .hud-tile .h-stocks { font-size: 10px; letter-spacing: 2px; }
 .hud-tile.dead { opacity: .4; }
 

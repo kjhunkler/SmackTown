@@ -206,11 +206,19 @@ export function updateHud(fighters) {
   for (const f of fighters) {
     const tile = document.getElementById('hud-' + cssId(f.id));
     if (!tile) continue;
-    tile.querySelector('.h-pct').textContent = Math.round(f.pct) + '%';
+    const pctEl = tile.querySelector('.h-pct');
+    const cur = Math.round(f.pct);
+    if (cur > (+tile.dataset.pct || 0)) {   // took damage: punch the number
+      pctEl.classList.remove('h-pct-hit');
+      void pctEl.offsetWidth;               // restart the animation
+      pctEl.classList.add('h-pct-hit');
+    }
+    tile.dataset.pct = cur;
+    pctEl.textContent = cur + '%';
     tile.querySelector('.h-stocks').textContent = '●'.repeat(Math.max(0, f.stocks)) || '—';
     tile.classList.toggle('dead', !!f.dead);
     const heat = Math.min(1, f.pct / 150);
-    tile.querySelector('.h-pct').style.color =
+    pctEl.style.color =
       f.pct > 0 ? `rgb(255, ${Math.round(220 - 150 * heat)}, ${Math.round(160 - 130 * heat)})` : '';
   }
 }
