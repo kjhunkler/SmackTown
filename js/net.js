@@ -64,6 +64,7 @@ export class Net {
       build: this.profile.build,
       joinOrder,
       ready: false,
+      vote: null,
       status: 'online',
       ping: 0,
       lastSeen: Date.now(),
@@ -270,7 +271,7 @@ export class Net {
             color: msg.profile?.color || '#f5f5f5',
             build: msg.profile?.build || null,
             joinOrder: msg.joinOrder ?? 999,
-            ready: false, status: 'online', ping: 0, lastSeen: Date.now(),
+            ready: false, vote: null, status: 'online', ping: 0, lastSeen: Date.now(),
           });
           this.emit('roster');
         }
@@ -298,6 +299,13 @@ export class Net {
 
       case 'ready': {
         if (m) { m.ready = !!msg.ready; this.emit('roster'); }
+        if (this.isHost) this._broadcastRoster();
+        break;
+      }
+
+      case 'vote': {
+        // Map vote for the next fight (null clears it).
+        if (m) { m.vote = msg.map || null; this.emit('roster'); }
         if (this.isHost) this._broadcastRoster();
         break;
       }
@@ -371,7 +379,8 @@ export class Net {
   _rosterWire() {
     return this.rosterList().map(r => ({
       peerId: r.peerId, name: r.name, color: r.color,
-      build: r.build, joinOrder: r.joinOrder, ready: r.ready, status: r.status,
+      build: r.build, joinOrder: r.joinOrder, ready: r.ready,
+      vote: r.vote || null, status: r.status,
     }));
   }
 
@@ -382,7 +391,7 @@ export class Net {
       seen.add(w.peerId);
       const cur = this.members.get(w.peerId);
       if (cur) {
-        Object.assign(cur, { name: w.name, color: w.color, build: w.build, joinOrder: w.joinOrder, ready: w.ready });
+        Object.assign(cur, { name: w.name, color: w.color, build: w.build, joinOrder: w.joinOrder, ready: w.ready, vote: w.vote || null });
       } else {
         this.members.set(w.peerId, { ...w, ping: 0, lastSeen: Date.now(), status: w.status || 'online' });
       }
@@ -400,6 +409,14 @@ export class Net {
     const me = this.members.get(this.myId);
     if (me) me.ready = ready;
     this.broadcast({ t: 'ready', ready });
+    if (this.isHost) this._broadcastRoster();
+    this.emit('roster');
+  }
+
+  setVote(map) {
+    const me = this.members.get(this.myId);
+    if (me) me.vote = map || null;
+    this.broadcast({ t: 'vote', map: map || null });
     if (this.isHost) this._broadcastRoster();
     this.emit('roster');
   }

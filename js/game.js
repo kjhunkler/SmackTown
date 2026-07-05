@@ -7,18 +7,46 @@ import { derivedStats } from './profile.js';
 export const TICK = 1 / 60;
 export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
 
-// Stage in world units (1u ≈ 1px at zoom 1). Battlefield-style layout.
-export const STAGE = {
-  main: { x: -340, y: 0, w: 680, h: 46 },              // solid ground (top at y=0)
-  plats: [                                             // drop-through platforms
-    { x: -230, y: -130, w: 170 },
-    { x: 60,   y: -130, w: 170 },
-    { x: -85,  y: -250, w: 170 },
-  ],
-  blast: { l: -1150, r: 1150, t: -950, b: 500 },
-  spawns: [ -240, 240, -80, 80 ],
-  respawnY: -320,
+// Maps in world units (1u ≈ 1px at zoom 1). Every map is one solid main
+// floor plus optional drop-through platforms, so all mechanics (ledges,
+// drop-through, blast KOs) work everywhere. Visual themes live in render.js.
+export const MAPS = {
+  battlefield: {
+    name: 'Battlefield',
+    main: { x: -340, y: 0, w: 680, h: 46 },              // solid ground (top at y=0)
+    plats: [                                             // drop-through platforms
+      { x: -230, y: -130, w: 170 },
+      { x: 60,   y: -130, w: 170 },
+      { x: -85,  y: -250, w: 170 },
+    ],
+    blast: { l: -1150, r: 1150, t: -950, b: 500 },
+    spawns: [ -240, 240, -80, 80 ],
+    respawnY: -320,
+  },
+  flatlands: {
+    name: 'Flatlands',
+    main: { x: -520, y: 0, w: 1040, h: 46 },             // wide open ground, no plats
+    plats: [],
+    blast: { l: -1300, r: 1300, t: -950, b: 500 },
+    spawns: [ -380, 380, -130, 130 ],
+    respawnY: -320,
+  },
+  skyline: {
+    name: 'Skyline',
+    main: { x: -250, y: 0, w: 500, h: 46 },              // tight ground, aerial towers
+    plats: [
+      { x: -350, y: -160, w: 150 },
+      { x: 200,  y: -160, w: 150 },
+      { x: -80,  y: -300, w: 160 },
+      { x: -80,  y: -440, w: 160 },
+    ],
+    blast: { l: -1100, r: 1100, t: -1050, b: 500 },
+    spawns: [ -180, 180, -60, 60 ],
+    respawnY: -380,
+  },
 };
+export const DEFAULT_MAP = 'battlefield';
+export const MAP_IDS = Object.keys(MAPS);
 
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
@@ -55,7 +83,9 @@ let nextEid = 1;
 
 export class Game {
   // players: [{id, name, color, build, isBot}]
-  constructor(players, seed = 1) {
+  constructor(players, seed = 1, mapId = DEFAULT_MAP) {
+    this.map = MAPS[mapId] ? mapId : DEFAULT_MAP;
+    this.stage = MAPS[this.map];
     this.tick = 0;
     this.over = false;
     this.winner = null;
@@ -74,7 +104,7 @@ export class Game {
     const st = derivedStats(p.build);
     return {
       id: p.id, name: p.name, color: p.color, isBot: !!p.isBot, st,
-      x: STAGE.spawns[i % STAGE.spawns.length], y: -F_H / 2,
+      x: this.stage.spawns[i % this.stage.spawns.length], y: -F_H / 2,
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
       pct: 0, stocks: STOCKS,
@@ -101,7 +131,7 @@ export class Game {
   addFighter(p) {
     if (this.fighters.some(f => f.id === p.id)) return null;
     const f = this._spawnFighter(p, this.fighters.length);
-    f.y = STAGE.respawnY;
+    f.y = this.stage.respawnY;
     f.grounded = false;
     f.state = 'respawn';
     f.stateT = 0;
@@ -171,7 +201,7 @@ export class Game {
 
     if (f.state === 'respawn') {
       if (f.stateT > 0.8) { f.state = 'air'; }
-      else { f.y = STAGE.respawnY; f.vx = 0; f.vy = 0; this._decayInput(inp); return; }
+      else { f.y = this.stage.respawnY; f.vx = 0; f.vy = 0; this._decayInput(inp); return; }
     }
     if (f.state === 'ledge') { this._stepLedge(f, inp); return; }
     if (f.state === 'roll') { this._stepRoll(f, inp); return; }
@@ -256,7 +286,7 @@ export class Game {
     const feet = f.y + F_H / 2;
 
     // solid main stage: land on top, push out of sides
-    const m = STAGE.main;
+    const m = this.stage.main;
     if (f.vy >= 0 && feet >= m.y && feet <= m.y + 42 && f.x > m.x - F_W / 2 && f.x < m.x + m.w + F_W / 2) {
       f.y = m.y - F_H / 2; f.vy = 0; f.grounded = true;
     } else if (f.y + F_H / 2 > m.y + 6 && f.y - F_H / 2 < m.y + m.h) {
@@ -266,7 +296,7 @@ export class Game {
 
     // drop-through platforms (only when falling, not dropping through)
     if (f.dropT <= 0 && f.vy >= 0) {
-      for (const p of STAGE.plats) {
+      for (const p of this.stage.plats) {
         if (feet >= p.y && feet <= p.y + 22 && f.x > p.x && f.x < p.x + p.w) {
           f.y = p.y - F_H / 2; f.vy = 0; f.grounded = true;
           break;
@@ -289,7 +319,7 @@ export class Game {
     // run state while airborne. Anything else (attack/hitstun/...) can't grab.
     if (f.grounded || (f.state !== 'air' && f.state !== 'run')) return;
     if (f.vy <= 0 || f.fastfall || f.regrabT > 0) return;
-    const m = STAGE.main;
+    const m = this.stage.main;
     for (const side of [-1, 1]) {
       const lipX = side < 0 ? m.x : m.x + m.w;
       const dx = (f.x - lipX) * side;        // >0 = outside the stage
@@ -311,7 +341,7 @@ export class Game {
   }
 
   _stepLedge(f, inp) {
-    const m = STAGE.main;
+    const m = this.stage.main;
     const lipX = f.ledge < 0 ? m.x : m.x + m.w;
     f.x = lipX + f.ledge * (F_W / 2 - 6);    // hands over the lip, body outside
     f.y = m.y + LEDGE_HANG_Y;
@@ -348,7 +378,7 @@ export class Game {
   }
 
   _stepRoll(f, inp) {
-    const m = STAGE.main;
+    const m = this.stage.main;
     f.x = clamp(f.x + f.rollDir * (ROLL_DIST / ROLL_TIME) * TICK,
       m.x + F_W / 2, m.x + m.w - F_W / 2);
     f.y = m.y - F_H / 2;
@@ -432,7 +462,7 @@ export class Game {
         const n = Math.hypot(dx, dy) || 1;
         f.x += (dx / n) * 150;
         f.y += (dy / n) * 150;
-        f.y = Math.min(f.y, STAGE.main.y - F_H / 2); // never blink into the floor
+        f.y = Math.min(f.y, this.stage.main.y - F_H / 2); // never blink into the floor
         f.invuln = Math.max(f.invuln, 0.35);
         f.vy = Math.min(f.vy, 0);
         break;
@@ -608,14 +638,14 @@ export class Game {
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
-      const m = STAGE.main;
+      const m = this.stage.main;
       if (pr.y > m.y && pr.x > m.x && pr.x < m.x + m.w) pr.ttl = 0;
     }
     this.projectiles = this.projectiles.filter(p => p.ttl > 0);
   }
 
   _checkBlast() {
-    const b = STAGE.blast;
+    const b = this.stage.blast;
     for (const f of this.fighters) {
       if (f.dead || f.state === 'respawn') continue;
       if (f.x < b.l || f.x > b.r || f.y < b.t || f.y > b.b) {
@@ -625,8 +655,8 @@ export class Game {
           f.dead = true;
           f.state = 'dead';
         } else {
-          f.x = STAGE.spawns[this.fighters.indexOf(f) % STAGE.spawns.length];
-          f.y = STAGE.respawnY;
+          f.x = this.stage.spawns[this.fighters.indexOf(f) % this.stage.spawns.length];
+          f.y = this.stage.respawnY;
           f.vx = 0; f.vy = 0;
           f.pct = 0;
           f.usedSecondWind = false;
@@ -655,7 +685,7 @@ export class Game {
       return;
     }
     const dx = target.x - f.x, dy = target.y - f.y;
-    const offstage = f.x < STAGE.main.x || f.x > STAGE.main.x + STAGE.main.w;
+    const offstage = f.x < this.stage.main.x || f.x > this.stage.main.x + this.stage.main.w;
 
     inp.mx = 0; inp.my = 0;
     if (offstage) {
@@ -696,6 +726,7 @@ export class Game {
       tk: this.tick,
       over: this.over,
       win: this.winner ? this.winner.id : null,
+      map: this.map,
       f: this.fighters.map(f => {
         const hb = this.hitboxFor(f);
         return [
@@ -719,7 +750,7 @@ export class Game {
 // Rebuild a live sim from the last snapshot a peer saw — used when the host
 // drops mid-fight and the elected successor takes over the simulation.
 export function gameFromSnapshot(players, snap, seed = 2) {
-  const g = new Game(players, seed);
+  const g = new Game(players, seed, snap?.map || DEFAULT_MAP);
   if (!snap) return g;
   g.tick = snap.tk || 0;
   for (const row of snap.f || []) {

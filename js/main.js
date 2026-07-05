@@ -5,7 +5,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAP_IDS, DEFAULT_MAP } from './game.js';
 import { TouchInput } from './input.js';
 import { Renderer } from './render.js';
 import * as UI from './ui.js';
@@ -193,7 +193,7 @@ $('#builder-save').addEventListener('click', () => {
   UI.renderMenuCard(profile);
   if (builderReturn === 'lobby' && net?.roomCode) {
     net.updateProfile(profile);      // let the room see the new colors/build
-    UI.renderLobby(net);
+    renderLobby();
     UI.showScreen('lobby');
   } else {
     UI.showScreen('menu');
@@ -211,6 +211,7 @@ $('#menu-solo').addEventListener('click', () => {
   startSession({
     mode: 'solo',
     myId: 'me',
+    map: MAP_IDS[(Math.random() * MAP_IDS.length) | 0],
     players: [
       { id: 'me', name: profile.name, color: profile.color, build: profile.build },
       {
@@ -242,7 +243,7 @@ function enterRoom(joinCode) {
   net = new Net(profile);
 
   net.on('room', () => {
-    UI.renderLobby(net);
+    renderLobby();
     UI.showScreen('lobby');
     presence?.update();               // advertise the joinable room
     if (pendingInvite && net.isHost) {
@@ -252,7 +253,7 @@ function enterRoom(joinCode) {
     }
   });
   net.on('roster', () => {
-    if (!$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
+    if (!$('#screen-lobby').classList.contains('hidden')) renderLobby();
     session?.onRoster();
     maybeAutoStart();
   });
@@ -270,11 +271,11 @@ function enterRoom(joinCode) {
     // the live game and re-broadcast the player list so everyone syncs up.
     if (!session || session.ended || !net.isHost || session.mode === 'solo') return;
     session.addPlayer({ id: rec.peerId, name: rec.name, color: rec.color, build: sanitizeBuild(rec.build) });
-    net.broadcast({ t: 'start', players: session.players, seed: session.seed });
+    net.broadcast({ t: 'start', players: session.players, seed: session.seed, map: session.map });
     UI.banner(`${rec.name} joined the fight!`, 'good');
   });
   net.on('host-changed', () => {
-    if (!$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
+    if (!$('#screen-lobby').classList.contains('hidden')) renderLobby();
     session?.onHostChanged();
     maybeAutoStart();
   });
@@ -282,7 +283,7 @@ function enterRoom(joinCode) {
     if (pid !== net.hostId) return;
     const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build) }));
     if (session) { session.syncPlayers(players); return; }  // mid-game roster update
-    startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed });
+    startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed, map: msg.map });
   });
   net.on('game:input', (msg, pid) => session?.onRemoteInput(pid, msg.inp, msg.seq));
   net.on('game:snap', (msg, pid) => session?.onSnapshot(msg.s, pid));
@@ -294,8 +295,20 @@ function enterRoom(joinCode) {
 $('#lobby-ready').addEventListener('click', () => {
   const me = net?.members.get(net.myId);
   if (me) net.setReady(!me.ready);
-  UI.renderLobby(net);
+  renderLobby();
 });
+
+// Map voting: tap a card to vote, tap it again to clear your vote.
+function voteMap(id) {
+  if (!net) return;
+  const me = net.members.get(net.myId);
+  net.setVote(me?.vote === id ? null : id);
+  renderLobby();
+}
+
+function renderLobby() {
+  if (net) UI.renderLobby(net, voteMap);
+}
 
 // Everyone ready -> the host counts down and starts the fight automatically.
 let autoStartTimer = null;
@@ -317,7 +330,7 @@ function maybeAutoStart() {
   if (!armed) {
     if (autoStartTimer) {
       cancelAutoStart();
-      if (net && !$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
+      if (net && !$('#screen-lobby').classList.contains('hidden')) renderLobby();
     }
     return;
   }
@@ -330,6 +343,19 @@ function maybeAutoStart() {
   $('#lobby-status').textContent = `All ready — starting in ${left}…`;
 }
 
+// Tally the lobby's map votes: most votes wins, ties break randomly among
+// the leaders, and nobody voting means a random map for everyone.
+function tallyMapVotes(active) {
+  const counts = new Map();
+  for (const m of active) {
+    if (m.vote && MAP_IDS.includes(m.vote)) counts.set(m.vote, (counts.get(m.vote) || 0) + 1);
+  }
+  if (!counts.size) return MAP_IDS[(Math.random() * MAP_IDS.length) | 0];
+  const top = Math.max(...counts.values());
+  const leaders = [...counts.entries()].filter(([, n]) => n === top).map(([id]) => id);
+  return leaders[(Math.random() * leaders.length) | 0];
+}
+
 function startFight() {
   cancelAutoStart();
   if (!net?.isHost || session) return;
@@ -339,8 +365,9 @@ function startFight() {
     id: m.peerId, name: m.name, color: m.color, build: sanitizeBuild(m.build),
   }));
   const seed = (Math.random() * 1e9) | 0;
-  net.broadcast({ t: 'start', players, seed });
-  startSession({ mode: 'host', myId: net.myId, players, seed });
+  const map = tallyMapVotes(active);
+  net.broadcast({ t: 'start', players, seed, map });
+  startSession({ mode: 'host', myId: net.myId, players, seed, map });
 }
 
 $('#lobby-start').addEventListener('click', startFight);
@@ -388,12 +415,13 @@ function startSession(cfg) {
 const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'ability', 'shockwave']);
 
 class Session {
-  constructor({ mode, myId, players, seed = 1 }) {
+  constructor({ mode, myId, players, seed = 1, map = DEFAULT_MAP }) {
     this.mode = mode;               // 'solo' | 'host' | 'client'
     this.myId = myId;
     this.players = players;
     this.meta = new Map(players.map(p => [p.id, p]));
     this.seed = seed;
+    this.map = map;
     this.game = null;               // authoritative sim (solo/host)
     this.snaps = [];                // client: interpolation buffer
     this.lastSnap = null;
@@ -413,8 +441,9 @@ class Session {
   }
 
   start() {
-    if (this.mode !== 'client') this.game = new Game(this.players, this.seed);
-    else this.pred = new Game(this.players, this.seed);
+    if (this.mode !== 'client') this.game = new Game(this.players, this.seed, this.map);
+    else this.pred = new Game(this.players, this.seed, this.map);
+    renderer.setMap(this.map);
     const me = this.meta.get(this.myId);
     UI.showScreen('game');
     UI.buildHud(this.players);
@@ -597,6 +626,7 @@ class Session {
       // from the freshest snapshot and carry on as the authority.
       this.mode = 'host';
       this.game = gameFromSnapshot(this.players, this.lastSnap, this.seed + 1);
+      this.map = this.game.map;
       this.pred = null;
       this.tickLog = [];
       this.acc = 0;
@@ -736,7 +766,7 @@ $('#game-quit').addEventListener('click', () => {
   session?.stop();
   session = null;
   if (net) {
-    UI.renderLobby(net);
+    renderLobby();
     UI.showScreen('lobby');
     net.setReady(false);
   } else {
@@ -747,7 +777,7 @@ $('#game-quit').addEventListener('click', () => {
 
 $('#results-again').addEventListener('click', () => {
   if (net) {
-    UI.renderLobby(net);
+    renderLobby();
     UI.showScreen('lobby');
   } else {
     $('#menu-solo').click();
