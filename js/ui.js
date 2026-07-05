@@ -299,12 +299,15 @@ export function renderLobby(net, onVote = null) {
   readyBtn.textContent = me?.ready ? 'Ready ✓' : "I'm Ready";
   readyBtn.classList.toggle('ready-on', !!me?.ready);
 
-  const allReady = active.length >= 2 && active.every(m => m.ready);
+  const everyoneReady = active.length >= 1 && active.every(m => m.ready);
+  const allReady = active.length >= 2 && everyoneReady;
+  const soloReady = active.length === 1 && everyoneReady;   // host alone: practice mode
   const startBtn = $('#lobby-start');
   startBtn.classList.toggle('hidden', !net.isHost);
-  startBtn.disabled = !allReady;
+  startBtn.disabled = !(allReady || (soloReady && net.isHost));
   $('#lobby-status').textContent =
-    active.length < 2 ? 'Waiting for challengers to join…'
+    soloReady ? 'Solo practice ready — hit Start Fight! Friends can join mid-fight.'
+      : active.length < 2 ? 'Waiting for challengers — or ready up to practice solo…'
       : allReady ? 'All ready — starting…'
       : 'Waiting for everyone to ready up…';
 }
@@ -377,6 +380,7 @@ export function updateAbilityButtons(cds) {
 export function renderResults(players, winnerId, finalFighters) {
   $('#results-title').textContent = winnerId
     ? `${esc(players.find(p => p.id === winnerId)?.name || '???')} wins!`
+    : players.length === 1 ? 'Practice complete!'
     : 'Draw!';
   const list = $('#results-list');
   list.innerHTML = '';

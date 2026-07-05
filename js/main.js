@@ -392,7 +392,9 @@ function startFight() {
   cancelAutoStart();
   if (!net?.isHost || session) return;
   const active = net.rosterList().filter(m => m.status !== 'gone');
-  if (active.length < 2) return;
+  // One active player = solo practice: the host still runs a normal
+  // authoritative session so friends can drop in mid-fight.
+  if (!active.length || !active.every(m => m.ready)) return;
   const players = active.map(m => ({
     id: m.peerId, name: m.name, color: m.color, build: sanitizeBuild(m.build), hat: sanitizeHat(m.hat),
   }));
