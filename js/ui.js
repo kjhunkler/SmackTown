@@ -172,7 +172,7 @@ export function renderOnline(entries, ready, { onJoin, onInvite } = {}) {
       <span class="presence-dot online"></span>
       <span class="r-swatch" style="background:${esc(e.color || '#f5f5f5')}"></span>
       <span class="r-name">${esc(e.name)}<span class="r-where">${where}</span></span>`;
-    if (e.status === 'lobby' && e.open && e.code) {
+    if ((e.status === 'lobby' || e.status === 'fighting') && e.open && e.code) {
       const b = document.createElement('button');
       b.className = 'btn tiny';
       b.textContent = 'Join';
@@ -208,24 +208,6 @@ export function renderLobby(net) {
     list.appendChild(li);
   }
 
-  // pending join requests — host decides who gets in
-  const reqBox = $('#lobby-requests');
-  const requests = net.isHost ? net.requestList() : [];
-  reqBox.classList.toggle('hidden', !requests.length);
-  reqBox.innerHTML = requests.length ? '<div class="req-title">Knocking…</div>' : '';
-  for (const r of requests) {
-    const row = document.createElement('div');
-    row.className = 'req-row';
-    row.innerHTML = `
-      <span class="r-swatch" style="background:${r.color}"></span>
-      <span class="r-name">${esc(r.name)}</span>
-      <button class="btn tiny req-ok">Let in</button>
-      <button class="btn tiny ghost req-no">Deny</button>`;
-    row.querySelector('.req-ok').addEventListener('click', () => net.approveJoin(r.peerId));
-    row.querySelector('.req-no').addEventListener('click', () => net.denyJoin(r.peerId));
-    reqBox.appendChild(row);
-  }
-
   const me = net.members.get(net.myId);
   const readyBtn = $('#lobby-ready');
   readyBtn.textContent = me?.ready ? 'Ready ✓' : "I'm Ready";
@@ -238,7 +220,7 @@ export function renderLobby(net) {
   startBtn.disabled = !allReady;
   $('#lobby-status').textContent =
     active.length < 2 ? 'Waiting for challengers to join…'
-      : allReady ? (net.isHost ? 'All ready — start when you like!' : 'Waiting for host to start…')
+      : allReady ? 'All ready — starting…'
       : 'Waiting for everyone to ready up…';
 }
 

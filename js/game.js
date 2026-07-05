@@ -94,6 +94,22 @@ export class Game {
     };
   }
 
+  // Drop a late joiner into a running fight. They enter like a respawn —
+  // descending from above with spawn invulnerability — so they can't be
+  // camped the instant they appear.
+  addFighter(p) {
+    if (this.fighters.some(f => f.id === p.id)) return null;
+    const f = this._spawnFighter(p, this.fighters.length);
+    f.y = STAGE.respawnY;
+    f.grounded = false;
+    f.state = 'respawn';
+    f.stateT = 0;
+    f.invuln = RESPAWN_INVULN;
+    this.fighters.push(f);
+    this.inputs.set(f.id, blankInput());
+    return f;
+  }
+
   setInput(id, inp) {
     const cur = this.inputs.get(id);
     if (!cur) return;

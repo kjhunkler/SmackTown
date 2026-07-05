@@ -37,9 +37,6 @@ export class Net {
     this.term = 0;
     this.joinOrder = -1;
     this.nextJoinOrder = 1;         // host-only counter
-    this.joinRequests = new Map();  // host: peerId -> pending join request
-    this.held = false;              // joiner: waiting for host approval
-    this.holdTimer = null;
     this.status = 'online';
     this.handlers = {};
     this.hbTimer = null;
@@ -96,7 +93,7 @@ export class Net {
       this.pendingHost = hostPeerId(this.roomCode);
       this.joined = false;
       setTimeout(() => {
-        if (!this.joined && !this.held && !this.closed) this.emit('error', 'Could not reach that room. Check the code?');
+        if (!this.joined && !this.closed) this.emit('error', 'Could not reach that room. Check the code?');
       }, 9000);
       this._dialHost(this.pendingHost);
     });
@@ -113,8 +110,6 @@ export class Net {
   leave() {
     this.closed = true;
     clearInterval(this.hbTimer);
-    clearTimeout(this.holdTimer);
-    this.joinRequests.clear();
     document.removeEventListener('visibilitychange', this._visHandler);
     try { this.broadcast({ t: 'bye' }); } catch (_) {}
     for (const c of this.conns.values()) { try { c.close(); } catch (_) {} }
@@ -168,7 +163,6 @@ export class Net {
   _onConnLost(pid, conn) {
     if (this.closed || this.conns.get(pid) !== conn) return;
     this.conns.delete(pid);
-    if (this.joinRequests.delete(pid)) this.emit('join-request');   // knocker left
     if (this.joinOrder < 0 && pid === this.pendingHost) {
       // lost the host link before we were admitted — tell the user now
       // instead of leaving them staring at a silent join/hold screen
@@ -206,37 +200,29 @@ export class Net {
 
     switch (msg.t) {
       case 'hello': {
-        // New player is knocking. Only the host fields requests — they wait
-        // in joinRequests until approveJoin()/denyJoin() decides.
+        // New player at the door. Doors are open: the host admits them on
+        // the spot — no knock, no approval step.
         if (!this.isHost) return;
-        const req = {
+        const existing = this.members.get(pid);
+        const rec = existing || {
           peerId: pid,
-          name: String(msg.profile?.name || 'Fighter').slice(0, 14),
-          color: msg.profile?.color || '#f5f5f5',
-          build: msg.profile?.build || null,
-          ts: Date.now(),
+          joinOrder: this.nextJoinOrder++,
+          ready: false, status: 'online', ping: 0, lastSeen: Date.now(),
         };
-        this.joinRequests.set(pid, req);
-        this.send(pid, { t: 'hold' });
-        this.emit('join-request', req);
-        break;
-      }
-
-      case 'hold': {
-        // Host acknowledged our knock; the decision may take a while.
-        if (pid !== this.pendingHost || this.joined) return;
-        this.held = true;
-        clearTimeout(this.holdTimer);
-        this.holdTimer = setTimeout(() => {
-          if (!this.joined && !this.closed) this.emit('error', "The host didn't answer your join request.");
-        }, 60000);
-        this.emit('hold');
-        break;
-      }
-
-      case 'denied': {
-        if (pid !== this.pendingHost || this.joined) return;
-        this.emit('error', 'The host declined your join request.');
+        rec.name = String(msg.profile?.name || 'Fighter').slice(0, 14);
+        rec.color = msg.profile?.color || '#f5f5f5';
+        rec.build = msg.profile?.build || null;
+        this.members.set(pid, rec);
+        this.send(pid, {
+          t: 'welcome',
+          code: this.roomCode,
+          term: this.term,
+          joinOrder: rec.joinOrder,
+          roster: this._rosterWire(),
+        });
+        this._broadcastRoster();
+        this.emit('roster');
+        if (!existing) this.emit('peer-joined', rec);
         break;
       }
 
@@ -254,8 +240,6 @@ export class Net {
       case 'welcome': {
         if (pid !== this.pendingHost && pid !== this.hostId) return;
         this.joined = true;
-        this.held = false;
-        clearTimeout(this.holdTimer);
         this.hostId = pid;
         this.term = msg.term;
         this.joinOrder = msg.joinOrder;
@@ -318,6 +302,18 @@ export class Net {
         break;
       }
 
+      case 'profile': {
+        // A member re-tuned their fighter (lobby workshop edit).
+        if (m) {
+          m.name = String(msg.profile?.name || m.name || 'Fighter').slice(0, 14);
+          m.color = msg.profile?.color || m.color;
+          m.build = msg.profile?.build || m.build;
+          this.emit('roster');
+          if (this.isHost) this._broadcastRoster();
+        }
+        break;
+      }
+
       case 'bye': {
         this.conns.get(pid)?.close();
         this.conns.delete(pid);
@@ -355,43 +351,19 @@ export class Net {
     }
   }
 
-  // ---------- join requests (host) ----------
+  // ---------- profile updates ----------
 
-  requestList() {
-    return [...this.joinRequests.values()].sort((a, b) => a.ts - b.ts);
-  }
-
-  approveJoin(pid) {
-    if (!this.isHost) return;
-    const req = this.joinRequests.get(pid);
-    if (!req) return;
-    this.joinRequests.delete(pid);
-    if (!this.conns.get(pid)?.open) { this.emit('join-request'); return; } // knocker already left
-    const rec = {
-      peerId: pid, name: req.name, color: req.color, build: req.build,
-      joinOrder: this.nextJoinOrder++,
-      ready: false, status: 'online', ping: 0, lastSeen: Date.now(),
-    };
-    this.members.set(pid, rec);
-    this.send(pid, {
-      t: 'welcome',
-      code: this.roomCode,
-      term: this.term,
-      joinOrder: rec.joinOrder,
-      roster: this._rosterWire(),
-    });
-    this._broadcastRoster();
-    this.emit('join-request');
+  updateProfile(profile) {
+    this.profile = profile;
+    const me = this.members.get(this.myId);
+    if (me) {
+      me.name = profile.name;
+      me.color = profile.color;
+      me.build = profile.build;
+    }
+    this.broadcast({ t: 'profile', profile: { name: profile.name, color: profile.color, build: profile.build } });
+    if (this.isHost) this._broadcastRoster();
     this.emit('roster');
-  }
-
-  denyJoin(pid) {
-    if (!this.isHost || !this.joinRequests.delete(pid)) return;
-    this.send(pid, { t: 'denied' });
-    const c = this.conns.get(pid);
-    this.conns.delete(pid);
-    setTimeout(() => { try { c?.close(); } catch (_) {} }, 800); // let 'denied' flush first
-    this.emit('join-request');
   }
 
   // ---------- roster sync ----------

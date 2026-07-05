@@ -83,7 +83,7 @@ document.addEventListener('contextmenu', e => {
   if (!$('#screen-game').classList.contains('hidden')) e.preventDefault();
 });
 
-// invite deep link: opening ?join=CODE knocks on that room directly
+// invite deep link: opening ?join=CODE drops you into that room directly
 const urlJoin = new URLSearchParams(location.search).get('join');
 let pendingJoinCode = urlJoin && /^[A-Za-z]{4}$/.test(urlJoin) ? urlJoin.toUpperCase() : null;
 if (urlJoin) history.replaceState(null, '', location.pathname); // don't re-join on refresh
@@ -101,7 +101,8 @@ if (profile) {
 
 // ---------------- town-square presence ----------------
 function presenceState() {
-  if (session) return { status: 'fighting', code: net?.roomCode || null, open: false };
+  // The room stays open even mid-fight — late joiners drop straight in.
+  if (session) return { status: 'fighting', code: net?.roomCode || null, open: !!net?.roomCode };
   if (net?.roomCode) return { status: 'lobby', code: net.roomCode, open: true };
   return { status: 'menu', code: null, open: false };
 }
@@ -113,8 +114,16 @@ function startPresence() {
   presence.on('invite', inv => {
     if (!inv.code) return;
     if (session) { UI.banner(`${inv.from.name} invited you — room ${inv.code}`, 'warn', 6000); return; }
-    UI.banner(`⚔️ ${inv.from.name} challenged you! Tap to join room ${inv.code}`, 'good', 12000,
-      () => enterRoom(inv.code));
+    if (net?.roomCode) {
+      // Already in a different lobby: ask, don't yank.
+      if (net.roomCode === inv.code) return;
+      UI.banner(`⚔️ ${inv.from.name} challenged you! Tap to switch to room ${inv.code}`, 'good', 12000,
+        () => enterRoom(inv.code));
+      return;
+    }
+    // Not in a lobby: the invite pulls you straight in.
+    UI.banner(`⚔️ ${inv.from.name} pulled you into room ${inv.code}!`, 'good', 5000);
+    enterRoom(inv.code);
   });
   presence.start();
   refreshOnline();
@@ -161,9 +170,11 @@ function initLogin() {
 // ---------------- builder ----------------
 let builderWork = null;
 let builderFirstRun = false;
+let builderReturn = 'menu';        // 'menu' | 'lobby' — where Save goes back to
 
-function openBuilder(firstRun = false) {
+function openBuilder(firstRun = false, returnTo = 'menu') {
   builderFirstRun = firstRun;
+  builderReturn = returnTo;
   builderWork = {
     color: profile.color,
     build: JSON.parse(JSON.stringify(profile.build)),
@@ -180,8 +191,14 @@ $('#builder-reset').addEventListener('click', () => {
 $('#builder-save').addEventListener('click', () => {
   profile = saveProfile({ name: profile.name, color: builderWork.color, build: builderWork.build });
   UI.renderMenuCard(profile);
-  UI.showScreen('menu');
-  startPresence();
+  if (builderReturn === 'lobby' && net?.roomCode) {
+    net.updateProfile(profile);      // let the room see the new colors/build
+    UI.renderLobby(net);
+    UI.showScreen('lobby');
+  } else {
+    UI.showScreen('menu');
+    startPresence();
+  }
   presence?.setProfile(profile);
   if (builderFirstRun) UI.banner(`Welcome to SmackTown, ${profile.name}!`, 'good');
   if (builderFirstRun && pendingJoinCode) { enterRoom(pendingJoinCode); pendingJoinCode = null; }
@@ -205,9 +222,9 @@ $('#menu-solo').addEventListener('click', () => {
   });
 });
 
-$('#menu-host').addEventListener('click', () => enterRoom(null));
 $('#menu-join').addEventListener('click', () => {
   const code = $('#menu-code').value.trim().toUpperCase();
+  if (!code) return enterRoom(null);          // no code — host a fresh room
   if (code.length !== 4) return menuError('Room codes are 4 letters.');
   enterRoom(code);
 });
@@ -237,6 +254,7 @@ function enterRoom(joinCode) {
   net.on('roster', () => {
     if (!$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
     session?.onRoster();
+    maybeAutoStart();
   });
   net.on('error', text => {
     if (session) return;
@@ -247,23 +265,24 @@ function enterRoom(joinCode) {
     presence?.update();
   });
   net.on('banner', (text, kind) => UI.banner(text, kind));
-  net.on('join-request', req => {
-    if (!$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
-    if (req) UI.banner(`${req.name} wants to join — check the lobby!`, 'warn');
+  net.on('peer-joined', rec => {
+    // A player walked in while a fight is running: as host, drop them into
+    // the live game and re-broadcast the player list so everyone syncs up.
+    if (!session || session.ended || !net.isHost || session.mode === 'solo') return;
+    session.addPlayer({ id: rec.peerId, name: rec.name, color: rec.color, build: sanitizeBuild(rec.build) });
+    net.broadcast({ t: 'start', players: session.players, seed: session.seed });
+    UI.banner(`${rec.name} joined the fight!`, 'good');
   });
-  net.on('hold', () => UI.banner('Knocking… waiting for the host to let you in', 'warn', 8000));
   net.on('host-changed', () => {
     if (!$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
     session?.onHostChanged();
+    maybeAutoStart();
   });
   net.on('game:start', (msg, pid) => {
-    if (pid !== net.hostId || session) return;
-    startSession({
-      mode: 'client',
-      myId: net.myId,
-      players: msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build) })),
-      seed: msg.seed,
-    });
+    if (pid !== net.hostId) return;
+    const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build) }));
+    if (session) { session.syncPlayers(players); return; }  // mid-game roster update
+    startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed });
   });
   net.on('game:input', (msg, pid) => session?.onRemoteInput(pid, msg.inp, msg.seq));
   net.on('game:snap', (msg, pid) => session?.onSnapshot(msg.s, pid));
@@ -278,18 +297,62 @@ $('#lobby-ready').addEventListener('click', () => {
   UI.renderLobby(net);
 });
 
-$('#lobby-start').addEventListener('click', () => {
-  if (!net?.isHost) return;
+// Everyone ready -> the host counts down and starts the fight automatically.
+let autoStartTimer = null;
+let autoStartAt = 0;
+
+function cancelAutoStart() {
+  clearInterval(autoStartTimer);
+  autoStartTimer = null;
+}
+
+function lobbyAllReady() {
   const active = net.rosterList().filter(m => m.status !== 'gone');
+  return active.length >= 2 && active.every(m => m.ready);
+}
+
+function maybeAutoStart() {
+  const armed = net?.isHost && !session
+    && !$('#screen-lobby').classList.contains('hidden') && lobbyAllReady();
+  if (!armed) {
+    if (autoStartTimer) {
+      cancelAutoStart();
+      if (net && !$('#screen-lobby').classList.contains('hidden')) UI.renderLobby(net);
+    }
+    return;
+  }
+  if (!autoStartTimer) {
+    autoStartAt = Date.now() + 3000;
+    autoStartTimer = setInterval(maybeAutoStart, 250);
+  }
+  const left = Math.ceil((autoStartAt - Date.now()) / 1000);
+  if (left <= 0) { startFight(); return; }
+  $('#lobby-status').textContent = `All ready — starting in ${left}…`;
+}
+
+function startFight() {
+  cancelAutoStart();
+  if (!net?.isHost || session) return;
+  const active = net.rosterList().filter(m => m.status !== 'gone');
+  if (active.length < 2) return;
   const players = active.map(m => ({
     id: m.peerId, name: m.name, color: m.color, build: sanitizeBuild(m.build),
   }));
   const seed = (Math.random() * 1e9) | 0;
   net.broadcast({ t: 'start', players, seed });
   startSession({ mode: 'host', myId: net.myId, players, seed });
+}
+
+$('#lobby-start').addEventListener('click', startFight);
+
+$('#lobby-edit').addEventListener('click', () => {
+  // Editing un-readies you so the fight can't auto-start while you shop.
+  net?.setReady(false);
+  openBuilder(false, 'lobby');
 });
 
 $('#lobby-leave').addEventListener('click', () => {
+  cancelAutoStart();
   net?.leave(); net = null;
   pendingInvite = null;
   UI.showScreen('menu');
@@ -542,6 +605,30 @@ class Session {
       this.onRoster();
       UI.toast('You are now the host!');
     }
+  }
+
+  // Host: admit a late joiner into the running fight.
+  addPlayer(p) {
+    if (this.meta.has(p.id) || this.ended) return;
+    this.players.push(p);
+    this.meta.set(p.id, p);
+    this.game?.addFighter(p);
+    UI.buildHud(this.players);
+  }
+
+  // Client: the host re-broadcast the player list (someone joined mid-game).
+  // Fold in anyone new; authoritative state arrives via snapshots.
+  syncPlayers(players) {
+    let changed = false;
+    for (const p of players) {
+      if (this.meta.has(p.id)) continue;
+      this.players.push(p);
+      this.meta.set(p.id, p);
+      this.pred?.addFighter(p);
+      this.game?.addFighter(p);
+      changed = true;
+    }
+    if (changed) UI.buildHud(this.players);
   }
 
   onRoster() {
