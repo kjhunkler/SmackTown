@@ -65,6 +65,12 @@ export class Renderer {
         case 'jump':
           this.burst(ev.x, ev.y, 5, '#aabbee', 120);
           break;
+        case 'ledge':
+          this.burst(ev.x, ev.y, 6, '#8fd3ff', 150);
+          break;
+        case 'roll':
+          this.burst(ev.x, ev.y, 5, '#aabbee', 110);
+          break;
       }
     }
   }
@@ -230,6 +236,9 @@ export class Renderer {
       ctx.closePath(); ctx.fill();
     }
 
+    // getup roll: tumble the whole body inward
+    if (f.state === 'roll') ctx.rotate(t * 16 * f.facing);
+
     // squash & stretch by vertical speed
     const stretch = clamp(1 + Math.abs(f.vy) / 3500, 1, 1.25);
     ctx.scale(1 / Math.sqrt(stretch), stretch);
@@ -269,6 +278,18 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(ex + 6, -F_H / 6, 3.4, 0, 7); ctx.fill();
       if (attacking) { // gritted mouth
         ctx.fillRect(ex - 6, -F_H / 6 + 10, 12, 3);
+      }
+    }
+
+    // hanging: fists gripping the lip (hang offset mirrors game.js LEDGE_HANG_Y)
+    if (f.state === 'ledge') {
+      ctx.fillStyle = f.color;
+      ctx.strokeStyle = 'rgba(0,0,0,.35)';
+      ctx.lineWidth = 2.5;
+      for (const off of [-6, 6]) {
+        ctx.beginPath();
+        ctx.arc(f.facing * (F_W / 2 - 6) + off, -22, 5.5, 0, 7);
+        ctx.fill(); ctx.stroke();
       }
     }
 

@@ -23,6 +23,10 @@ export const STAGE = {
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
 const JUMP_V = 860, JUMP2_V = 780;
+const LEDGE_JUMP_V = 1120;           // ledge super jump — spends no air jump
+const LEDGE_INVULN = 0.6, LEDGE_MAX_HANG = 4.0, REGRAB_CD = 0.45;
+const LEDGE_HANG_Y = 22;             // fighter center hangs this far below the lip
+const ROLL_TIME = 0.38, ROLL_DIST = 150; // ledge getup roll onto the stage
 const F_W = 46, F_H = 64;            // fighter hurtbox
 const STOCKS = 3;
 const RESPAWN_INVULN = 2.0;
@@ -72,7 +76,7 @@ export class Game {
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
       pct: 0, stocks: STOCKS,
-      state: 'idle',                // idle|run|air|attack|hitstun|dead|respawn
+      state: 'idle',                // idle|run|air|attack|hitstun|ledge|roll|dead|respawn
       stateT: 0,
       atk: null,                    // active attack name
       atkHit: new Set(),
@@ -80,6 +84,9 @@ export class Game {
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
       usedSecondWind: false,
       dropT: 0,                     // drop-through timer
+      ledge: 0,                     // hanging: -1 left lip, 1 right lip, 0 none
+      regrabT: 0,                   // cooldown before the ledge can be regrabbed
+      rollDir: 0,
       dead: false,
       lastDir: { x: 1, y: 0 },
     };
@@ -132,6 +139,7 @@ export class Game {
     f.counterT = Math.max(0, f.counterT - TICK);
     f.dashT = Math.max(0, f.dashT - TICK);
     f.dropT = Math.max(0, f.dropT - TICK);
+    f.regrabT = Math.max(0, f.regrabT - TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
 
@@ -139,6 +147,8 @@ export class Game {
       if (f.stateT > 0.8) { f.state = 'air'; }
       else { f.y = STAGE.respawnY; f.vx = 0; f.vy = 0; this._decayInput(inp); return; }
     }
+    if (f.state === 'ledge') { this._stepLedge(f, inp); return; }
+    if (f.state === 'roll') { this._stepRoll(f, inp); return; }
 
     const inHitstun = f.state === 'hitstun';
     const inAttack = f.state === 'attack';
@@ -202,6 +212,7 @@ export class Game {
     f.y += f.vy * TICK;
 
     this._collide(f);
+    this._tryLedgeGrab(f);
     this._decayInput(inp);
   }
 
@@ -243,6 +254,82 @@ export class Game {
       if (f.state === 'air' || f.state === 'hitstun') f.state = 'idle';
       this.events.push({ e: 'land', x: f.x, y: f.y + F_H / 2 });
     }
+  }
+
+  // ---------- ledge grabs (main floor lips only, never platforms) ----------
+
+  _tryLedgeGrab(f) {
+    // 'air' and 'run' are both free-fall here: walking off an edge keeps the
+    // run state while airborne. Anything else (attack/hitstun/...) can't grab.
+    if (f.grounded || (f.state !== 'air' && f.state !== 'run')) return;
+    if (f.vy <= 0 || f.fastfall || f.regrabT > 0) return;
+    const m = STAGE.main;
+    for (const side of [-1, 1]) {
+      const lipX = side < 0 ? m.x : m.x + m.w;
+      const dx = (f.x - lipX) * side;        // >0 = outside the stage
+      const dy = f.y - m.y;                  // fighter center below the lip
+      if (f.vx * side > 40) continue;        // moving away from the stage: no snag
+      if (dx > -8 && dx < 42 && dy > -26 && dy < 64) {
+        f.state = 'ledge';
+        f.stateT = 0;
+        f.ledge = side;
+        f.vx = 0; f.vy = 0;
+        f.jumps = f.st.maxJumps;             // hanging refreshes air jumps, like landing
+        f.fastfall = false;
+        f.atk = null; f.melee = null;
+        f.invuln = Math.max(f.invuln, LEDGE_INVULN);
+        this.events.push({ e: 'ledge', x: lipX, y: m.y });
+        return;
+      }
+    }
+  }
+
+  _stepLedge(f, inp) {
+    const m = STAGE.main;
+    const lipX = f.ledge < 0 ? m.x : m.x + m.w;
+    f.x = lipX + f.ledge * (F_W / 2 - 6);    // hands over the lip, body outside
+    f.y = m.y + LEDGE_HANG_Y;
+    f.vx = 0; f.vy = 0;
+    f.facing = -f.ledge;                     // face the stage
+    f.grounded = false;
+
+    if (inp.jump) {
+      // super jump — stronger than a ground jump and spends no air jump
+      f.state = 'air'; f.stateT = 0;
+      f.vy = -LEDGE_JUMP_V * f.st.jumpMult;
+      f.vx = -f.ledge * 60;
+      f.regrabT = REGRAB_CD;
+      inp.jump = false; inp.bufJ = 0;
+      this.events.push({ e: 'jump', x: f.x, y: f.y + F_H / 2 });
+    } else if (inp.atk) {
+      // getup roll: pop onto the stage and tumble inward, briefly invulnerable
+      f.state = 'roll'; f.stateT = 0;
+      f.rollDir = -f.ledge;
+      f.y = m.y - F_H / 2;
+      f.grounded = true;
+      f.invuln = Math.max(f.invuln, ROLL_TIME + 0.1);
+      f.regrabT = REGRAB_CD;
+      inp.atk = null; inp.bufA = 0;
+      this.events.push({ e: 'roll', x: f.x, y: f.y });
+    } else if (inp.ff || inp.drop || inp.my > 0.6 || f.ledge * inp.mx > 0.7
+        || f.stateT > LEDGE_MAX_HANG) {
+      // let go: down input, push away from the stage, or hang timeout
+      f.state = 'air'; f.stateT = 0;
+      f.regrabT = REGRAB_CD;
+      f.fastfall = false;
+    }
+    this._decayInput(inp);
+  }
+
+  _stepRoll(f, inp) {
+    const m = STAGE.main;
+    f.x = clamp(f.x + f.rollDir * (ROLL_DIST / ROLL_TIME) * TICK,
+      m.x + F_W / 2, m.x + m.w - F_W / 2);
+    f.y = m.y - F_H / 2;
+    f.vx = 0; f.vy = 0;
+    f.grounded = true;
+    if (f.stateT >= ROLL_TIME) { f.state = 'idle'; f.facing = f.rollDir; }
+    this._decayInput(inp);
   }
 
   _startAttack(f, atk) {
@@ -475,6 +562,14 @@ export class Game {
     const inp = this.inputs.get(f.id);
     const target = this.fighters.find(o => o.id !== f.id && !o.dead);
     if (!target) return;
+    if (f.state === 'ledge') {
+      // hang a beat, then climb: usually the super jump, sometimes the roll
+      if (f.stateT > 0.5) {
+        if (this.rng() < 0.10) inp.jump = true;
+        else if (this.rng() < 0.06) inp.atk = { kind: 'tap' };
+      }
+      return;
+    }
     const dx = target.x - f.x, dy = target.y - f.y;
     const offstage = f.x < STAGE.main.x || f.x > STAGE.main.x + STAGE.main.w;
 
