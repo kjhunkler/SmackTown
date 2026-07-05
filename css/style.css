@@ -27,6 +27,16 @@ html, body {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Pin the app so a stray browser zoom can't leave it scrolled/overflowing */
+body { position: fixed; inset: 0; width: 100%; }
+
+/* The game surface must swallow every gesture: 'manipulation' still allows
+   pinch-zoom, which two mashing thumbs trigger constantly. */
+#screen-game, #touch-layer, #stick-zone, #action-zone, .ability-btn, #game-canvas {
+  touch-action: none;
 }
 
 .hidden { display: none !important; }
@@ -104,6 +114,19 @@ input[type=text]:focus { border-color: var(--accent); }
 .btn.ready-on { background: var(--good); }
 
 .error { color: var(--bad); font-size: 13px; font-weight: 600; }
+
+.btn.install { border-color: var(--accent); color: var(--accent); }
+.install-hint {
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-align: center;
+  line-height: 1.5;
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.install-hint b { color: var(--ink); }
+.share-glyph { display: inline-block; transform: rotate(180deg); }
 
 /* color picker */
 .color-grid { display: flex; flex-wrap: wrap; gap: 10px; }

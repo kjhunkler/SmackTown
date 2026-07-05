@@ -23,6 +23,63 @@ if ('serviceWorker' in navigator) {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 
+// ---------------- PWA install ----------------
+// Chrome & friends: surface an in-app Install button when the browser says
+// the app qualifies. iOS has no prompt API, so show Add-to-Home-Screen steps.
+let installPrompt = null;
+const isStandalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches
+  || navigator.standalone === true;
+
+addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  installPrompt = e;
+  $('#menu-install').classList.remove('hidden');
+  $('#install-hint').classList.add('hidden');
+});
+
+$('#menu-install').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice.catch(() => {});
+  installPrompt = null;
+  $('#menu-install').classList.add('hidden');
+});
+
+addEventListener('appinstalled', () => {
+  installPrompt = null;
+  $('#menu-install').classList.add('hidden');
+  $('#install-hint').classList.add('hidden');
+  UI.banner('SmackTown installed! 🥊', 'good');
+});
+
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (isIOS && !isStandalone) $('#install-hint').classList.remove('hidden');
+
+// ---------------- gesture guards ----------------
+// Mobile browsers zoom on pinch and double-tap even with user-scalable=no
+// (iOS ignores it); frantic button mashing triggers both and leaves the page
+// zoomed + overflowing. Kill those gestures app-wide; inputs still work.
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+}
+document.addEventListener('touchmove', e => {
+  if (e.touches.length > 1 || e.scale && e.scale !== 1) e.preventDefault();
+}, { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e => {
+  // Double-tap zoom guard for the game screen only (rapid tap-attacks!).
+  // Menus rely on touch-action: manipulation instead, so their taps keep
+  // producing synthetic clicks.
+  if ($('#screen-game').classList.contains('hidden')) return;
+  const now = Date.now();
+  if (now - lastTouchEnd < 350) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+document.addEventListener('contextmenu', e => {
+  if (!$('#screen-game').classList.contains('hidden')) e.preventDefault();
+});
+
 profile = loadProfile();
 if (profile) {
   UI.renderMenuCard(profile);

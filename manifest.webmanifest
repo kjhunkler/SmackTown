@@ -2,7 +2,7 @@
   "name": "SmackTown",
   "short_name": "SmackTown",
   "description": "P2P pocket brawler — smash your friends off the stage, phone vs phone.",
-  "id": "/",
+  "id": "./",
   "start_url": ".",
   "scope": ".",
   "display": "fullscreen",
