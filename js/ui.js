@@ -3,7 +3,7 @@
 import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
-  loadLoadouts, deleteLoadout, hatArt,
+  loadLoadouts, deleteLoadout, hatArt, loadHats,
   HAT_W, HAT_H, HAT_PX, HAT_FACE_ROWS, HAT_CHARS, HAT_PALETTE, sanitizeHat,
 } from './profile.js';
 import { MAPS } from './game.js';
@@ -120,6 +120,7 @@ export function renderBuilder(work) {
   const left = TOTAL_CREDITS - spent;
   $('#builder-credits').textContent = left;
 
+  renderBuilderPreview(work);
   renderLoadouts(work);
 
   renderColorGrid($('#builder-colors'), work.color, c => {
@@ -158,6 +159,17 @@ export function renderBuilder(work) {
 
   renderShop($('#builder-abilities'), ABILITIES, work.build.abilities, MAX_ABILITIES, left, work);
   renderShop($('#builder-augments'), AUGMENTS, work.build.augments, MAX_AUGMENTS, left, work);
+}
+
+// Live fighter preview in the workshop: the fighter wearing work.hatId,
+// with a label placing that hat in the library cycle (arrows flip through).
+export function renderBuilderPreview(work) {
+  drawPreview($('#builder-preview-canvas'), work.color, hatArt(work.hatId));
+  const label = $('#builder-hat-label');
+  const hats = loadHats();
+  const i = work.hatId ? hats.findIndex(h => h.id === work.hatId) : -1;
+  label.textContent = i >= 0 ? `Hat ${i + 1} of ${hats.length}`
+    : hats.length ? 'No hat' : 'No hat — draw one in the library!';
 }
 
 // Saved builds: tap a chip to load it into the workshop, ✕ to forget it.

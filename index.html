@@ -85,8 +85,16 @@
       <h3 class="section-title">Color</h3>
       <div id="builder-colors" class="color-grid"></div>
 
-      <h3 class="section-title">Hat <span class="hint">pixel millinery, worn in battle</span></h3>
-      <button id="builder-hat" class="btn ghost">🎩 Open Hat Studio</button>
+      <h3 class="section-title">Hat <span class="hint">arrows swap hats from your library</span></h3>
+      <div class="builder-preview">
+        <button id="builder-hat-prev" class="hat-arrow" aria-label="Previous hat">◀</button>
+        <div class="builder-preview-fig">
+          <canvas id="builder-preview-canvas" width="140" height="140"></canvas>
+          <div id="builder-hat-label" class="hat-cycle-label">No hat</div>
+        </div>
+        <button id="builder-hat-next" class="hat-arrow" aria-label="Next hat">▶</button>
+      </div>
+      <button id="builder-hat-library" class="btn ghost">🎩 Hat Library</button>
 
       <h3 class="section-title">Upgrades <span class="hint">raise your core stats</span></h3>
       <div id="builder-stats"></div>
@@ -114,9 +122,7 @@
     <div class="hat-tools">
       <button id="hat-eraser" class="btn tiny ghost">🧽 Eraser</button>
       <button id="hat-clear"  class="btn tiny ghost">🗑 Clear</button>
-      <button id="hat-load"   class="btn tiny ghost">📂 My Hats</button>
     </div>
-    <div id="hat-picker" class="hat-picker hidden"></div>
     <div class="hat-foot">
       <button id="hat-cancel" class="btn ghost">Cancel</button>
       <button id="hat-dup"    class="btn ghost">Save Copy</button>
@@ -177,6 +183,30 @@
     <button id="results-menu" class="btn ghost">Main Menu</button>
   </div>
 </section>
+
+<!-- ============ HAT LIBRARY (modal) ============ -->
+<div id="hat-library" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2>Hat Library</h2>
+      <button id="hatlib-close" class="modal-close" aria-label="Close">✕</button>
+    </header>
+    <div class="hatlib-tabs">
+      <button id="hatlib-tab-mine" class="hatlib-tab on">My Hats</button>
+      <button id="hatlib-tab-town" class="hatlib-tab">🌍 Town Hats</button>
+    </div>
+    <div id="hatlib-mine" class="hatlib-body">
+      <p class="hatlib-hint">Tap a hat to wear it · ✏️ edit · ✕ delete</p>
+      <div id="hatlib-grid" class="hatlib-grid"></div>
+      <button id="hatlib-new" class="btn primary">✏️ Draw New Hat</button>
+    </div>
+    <div id="hatlib-town" class="hatlib-body hidden">
+      <p class="hatlib-hint">Hats fighters in town are showing off — tap 📋 to copy one into your library.</p>
+      <div id="hatlib-town-list" class="hatlib-town-list"></div>
+      <p id="hatlib-town-empty" class="hatlib-empty">Looking for town hats…</p>
+    </div>
+  </div>
+</div>
 
 <div id="net-banner" class="hidden"></div>
 

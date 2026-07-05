@@ -117,6 +117,11 @@ function startPresence() {
   if (presence || !profile) return;
   presence = new Presence(profile, presenceState);
   presence.on('roster', refreshOnline);
+  presence.on('hats', list => {
+    // Only paint if the Town Hats tab is actually on screen.
+    if (!$('#hat-library').classList.contains('hidden')
+      && !$('#hatlib-town').classList.contains('hidden')) renderTownHats(list);
+  });
   presence.on('invite', inv => {
     if (!inv.code) return;
     if (session) { UI.banner(`${inv.from.name} invited you — room ${inv.code}`, 'warn', 6000); return; }
@@ -132,6 +137,7 @@ function startPresence() {
     enterRoom(inv.code);
   });
   presence.start();
+  publishHats();                  // share my hat collection with the town
   refreshOnline();
 }
 
@@ -227,72 +233,186 @@ $('#builder-save').addEventListener('click', () => {
 
 $('#menu-builder').addEventListener('click', () => openBuilder());
 
-// ---------------- hat studio ----------------
+// ---------------- hats: builder arrows, library modal, studio ----------------
 const hatStudio = new HatStudio();
 let editingHatId = null;           // library entry the studio canvas holds
 
-function closeHatStudio() {
-  $('#hat-picker').classList.add('hidden');
-  hatStudio.close();
-  UI.showScreen('builder');
+// Publish my hat collection to the town lobby (low-priority presence freight).
+function publishHats() {
+  presence?.setHats(loadHats().map(h => h.art));
 }
 
-// The picker: every saved hat as a tap-to-load thumbnail with a delete ✕.
-function renderHatPicker() {
-  const box = $('#hat-picker');
+// tiny canvas copy of a hat, for cards and chips
+function hatThumb(art) {
+  const img = UI.hatImage(art);
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  c.getContext('2d').drawImage(img, 0, 0);
+  return c;
+}
+
+// ----- builder preview arrows: cycle [bare-headed, ...library] -----
+function cycleHat(dir) {
+  const ids = [null, ...loadHats().map(h => h.id)];
+  const i = Math.max(0, ids.indexOf(builderWork.hatId));   // stale id -> start at "no hat"
+  builderWork.hatId = ids[(i + dir + ids.length) % ids.length];
+  UI.renderBuilder(builderWork);
+}
+$('#builder-hat-prev').addEventListener('click', () => cycleHat(-1));
+$('#builder-hat-next').addEventListener('click', () => cycleHat(1));
+
+// ----- hat library modal -----
+function openHatLibrary() {
+  $('#hat-library').classList.remove('hidden');
+  showHatLibTab('mine');
+}
+
+function closeHatLibrary() {
+  $('#hat-library').classList.add('hidden');
+}
+
+function showHatLibTab(which) {
+  $('#hatlib-tab-mine').classList.toggle('on', which === 'mine');
+  $('#hatlib-tab-town').classList.toggle('on', which === 'town');
+  $('#hatlib-mine').classList.toggle('hidden', which !== 'mine');
+  $('#hatlib-town').classList.toggle('hidden', which !== 'town');
+  if (which === 'mine') {
+    renderHatLibrary();
+  } else {
+    renderTownHats(null);           // "looking…" until the hub answers
+    presence?.requestHats();
+  }
+}
+
+$('#builder-hat-library').addEventListener('click', openHatLibrary);
+$('#hatlib-close').addEventListener('click', closeHatLibrary);
+$('#hat-library').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeHatLibrary();    // tap the backdrop to close
+});
+$('#hatlib-tab-mine').addEventListener('click', () => showHatLibTab('mine'));
+$('#hatlib-tab-town').addEventListener('click', () => showHatLibTab('town'));
+$('#hatlib-new').addEventListener('click', () => openHatStudio(null));
+
+// My hats: tap the art to wear it (tap again to take it off), ✏️ edit, ✕ delete.
+function renderHatLibrary() {
+  const box = $('#hatlib-grid');
   box.innerHTML = '';
   const hats = loadHats();
   if (!hats.length) {
-    box.innerHTML = '<p class="hat-picker-empty">No saved hats yet — paint one and hit Save!</p>';
+    box.innerHTML = '<p class="hatlib-empty">No hats yet — draw your first one below!</p>';
     return;
   }
   for (const h of hats) {
-    const chip = document.createElement('div');
-    chip.className = 'hat-chip' + (h.id === editingHatId ? ' editing' : '');
-    const pick = document.createElement('button');
-    pick.className = 'hat-pick';
-    pick.title = 'Load this hat';
-    const img = UI.hatImage(h.art);
-    const c = document.createElement('canvas');
-    c.width = img.width;
-    c.height = img.height;
-    c.getContext('2d').drawImage(img, 0, 0);
-    pick.appendChild(c);
-    pick.addEventListener('click', () => {
-      editingHatId = h.id;
-      hatStudio.setArt(h.art);
-      renderHatPicker();
+    const worn = h.id === builderWork.hatId;
+    const card = document.createElement('div');
+    card.className = 'hatlib-card' + (worn ? ' worn' : '');
+    const wear = document.createElement('button');
+    wear.className = 'hatlib-art';
+    wear.title = worn ? 'Take this hat off' : 'Wear this hat';
+    wear.appendChild(hatThumb(h.art));
+    if (worn) {
+      const badge = document.createElement('span');
+      badge.className = 'hatlib-worn';
+      badge.textContent = 'WORN';
+      wear.appendChild(badge);
+    }
+    wear.addEventListener('click', () => {
+      builderWork.hatId = worn ? null : h.id;
+      UI.renderBuilder(builderWork);
+      renderHatLibrary();
     });
+    const actions = document.createElement('div');
+    actions.className = 'hatlib-actions';
+    const edit = document.createElement('button');
+    edit.className = 'hatlib-btn';
+    edit.setAttribute('aria-label', 'Edit hat');
+    edit.textContent = '✏️';
+    edit.addEventListener('click', () => openHatStudio(h.id));
     const del = document.createElement('button');
-    del.className = 'hat-del';
+    del.className = 'hatlib-btn';
     del.setAttribute('aria-label', 'Delete hat');
     del.textContent = '✕';
     del.addEventListener('click', () => {
       deleteHat(h.id);
-      if (editingHatId === h.id) editingHatId = null;   // next Save mints a new hat
       if (builderWork.hatId === h.id) builderWork.hatId = null;
-      renderHatPicker();
+      publishHats();
+      UI.renderBuilder(builderWork);
+      renderHatLibrary();
     });
-    chip.append(pick, del);
-    box.appendChild(chip);
+    actions.append(edit, del);
+    card.append(wear, actions);
+    box.appendChild(card);
   }
 }
 
-$('#builder-hat').addEventListener('click', () => {
+// Town hats: everyone's shared hats, grouped by owner. list = null while loading.
+function renderTownHats(list) {
+  const box = $('#hatlib-town-list');
+  const empty = $('#hatlib-town-empty');
+  box.innerHTML = '';
+  if (!list) {
+    empty.textContent = presence ? 'Looking for town hats…' : 'Town hats need a connection.';
+    empty.classList.remove('hidden');
+    return;
+  }
+  const others = list.filter(e => e.id !== presence?.myId && e.hats.length);
+  if (!others.length) {
+    empty.textContent = 'No town hats right now — your hats are shared automatically, so check back soon!';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  for (const e of others) {
+    const row = document.createElement('div');
+    row.className = 'town-row';
+    const owner = document.createElement('div');
+    owner.className = 'town-owner';
+    const sw = document.createElement('span');
+    sw.className = 'r-swatch';
+    sw.style.background = e.color;
+    const nm = document.createElement('span');
+    nm.className = 'town-name';
+    nm.textContent = e.name;
+    owner.append(sw, nm);
+    const hatsBox = document.createElement('div');
+    hatsBox.className = 'town-hats';
+    for (const art of e.hats) {
+      const chip = document.createElement('div');
+      chip.className = 'town-hat';
+      chip.appendChild(hatThumb(art));
+      const copy = document.createElement('button');
+      copy.className = 'town-copy';
+      copy.title = 'Copy to my hats';
+      copy.textContent = '📋';
+      copy.addEventListener('click', () => {
+        const res = saveHat(art);           // mints a fresh local copy
+        if (!res.ok) { UI.banner(res.error, 'bad'); return; }
+        publishHats();
+        UI.renderBuilder(builderWork);      // hat count in the cycle label changed
+        UI.banner(`Copied ${e.name}'s hat to your library! 🎩`, 'good');
+      });
+      chip.appendChild(copy);
+      hatsBox.appendChild(chip);
+    }
+    row.append(owner, hatsBox);
+    box.appendChild(row);
+  }
+}
+
+// ----- hat studio (drawing screen) -----
+// Reached only through the library modal: New Hat or ✏️ on a card. Saving
+// and cancelling both land back in the library.
+function openHatStudio(hatId) {
+  editingHatId = hatId;
+  closeHatLibrary();
   UI.showScreen('hat');                 // show first so the canvas has a size
-  $('#hat-picker').classList.add('hidden');
-  editingHatId = builderWork.hatId;
   hatStudio.open(builderWork.color, hatArt(editingHatId), {
     onSave: art => {
-      if (!art) {                       // cleared canvas — go bare-headed
-        builderWork.hatId = null;
-        closeHatStudio();
-        UI.banner('Hat removed — bare-headed brawling', 'good');
-        return;
-      }
-      const res = saveHat(art, editingHatId);
+      const res = saveHat(art, editingHatId);   // empty canvas -> friendly error
       if (!res.ok) { UI.banner(res.error, 'bad'); return; }
       builderWork.hatId = res.id;
+      publishHats();
       closeHatStudio();
       UI.banner('Hat saved! 🎩', 'good');
     },
@@ -300,20 +420,20 @@ $('#builder-hat').addEventListener('click', () => {
       const res = saveHat(art, null);   // always mints a new hat
       if (!res.ok) { UI.banner(res.error, 'bad'); return; }
       builderWork.hatId = res.id;
+      publishHats();
       closeHatStudio();
       UI.banner('Saved as a new hat! 🎩', 'good');
     },
-    onLoad: () => {
-      const box = $('#hat-picker');
-      box.classList.toggle('hidden');
-      if (!box.classList.contains('hidden')) {
-        renderHatPicker();
-        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    },
     onCancel: () => closeHatStudio(),
   });
-});
+}
+
+function closeHatStudio() {
+  hatStudio.close();
+  UI.showScreen('builder');
+  UI.renderBuilder(builderWork);
+  openHatLibrary();                     // back to managing the library
+}
 
 // ---------------- menu actions ----------------
 $('#menu-solo').addEventListener('click', () => {

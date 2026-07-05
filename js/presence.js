@@ -8,11 +8,22 @@
 // as guests. A relay hub is needed because the public PeerJS cloud disables
 // peer discovery (listAllPeers), so peers can't find each other by scanning.
 
+import { sanitizeHat } from './profile.js';
+
 const HUB_ID = 'smacktown-v1-town-hub';
 const HB_MS = 2500;        // heartbeat / roster broadcast period
 const SILENT_MS = 8000;    // silent this long -> dropped from the roster
 const DIAL_MS = 8000;      // guest dial to hub considered failed after this
 const RETRY_MAX_MS = 8000; // cap for reconnect backoff
+const MAX_SHARED_HATS = 12; // hats each player publishes to the town lobby
+
+// A hat list off the wire: valid art strings only, capped.
+function sanitizeHatList(raw) {
+  return (Array.isArray(raw) ? raw : [])
+    .map(a => sanitizeHat(a))
+    .filter(Boolean)
+    .slice(0, MAX_SHARED_HATS);
+}
 
 export class Presence {
   constructor(profile, getState) {
@@ -22,8 +33,9 @@ export class Presence {
     this.isHub = false;
     this.myId = null;
     this.hubConn = null;        // guest: my link to the hub
-    this.guests = new Map();    // hub: peerId -> {conn, rec, lastSeen}
+    this.guests = new Map();    // hub: peerId -> {conn, rec, lastSeen, hats}
     this.roster = [];           // latest full roster (includes me)
+    this.myHats = [];           // hat art I'm sharing with the town
     this.ready = false;         // true once we're the hub or got a roster
     this.handlers = {};
     this.hbTimer = null;
@@ -84,6 +96,43 @@ export class Presence {
     const msg = { t: 'invite', to: toId, code, from: { ...this.profile } };
     if (this.isHub) this._relayInvite(msg);
     else if (this.hubConn?.open) { try { this.hubConn.send(msg); } catch (_) {} }
+  }
+
+  // ---------- global hat lobby ----------
+  // Hats ride the presence channel as low-priority freight: pushed only on
+  // connect and when the local library changes, aggregated by the hub, and
+  // fetched on demand when someone opens the Town Hats tab. They never touch
+  // the roster heartbeats.
+
+  setHats(arts) {
+    this.myHats = sanitizeHatList(arts);
+    if (this.closed || this.isHub) return;
+    this._sendHats();
+  }
+
+  // Ask for the aggregate town hat list; answers via the 'hats' event.
+  requestHats() {
+    if (this.closed) return;
+    if (this.isHub) this.emit('hats', this._hatLobby());
+    else if (this.hubConn?.open) { try { this.hubConn.send({ t: 'hats:req' }); } catch (_) {} }
+    else this.emit('hats', []);
+  }
+
+  _sendHats() {
+    if (!this.hubConn?.open) return;
+    try { this.hubConn.send({ t: 'hats', hats: this.myHats }); } catch (_) {}
+  }
+
+  // Hub: everyone's shared hats (mine + every guest's), attributed by roster.
+  _hatLobby() {
+    const list = [];
+    if (this.myHats.length) {
+      list.push({ id: this.myId, name: this.profile.name, color: this.profile.color, hats: [...this.myHats] });
+    }
+    for (const g of this.guests.values()) {
+      if (g.hats?.length) list.push({ id: g.rec.id, name: g.rec.name, color: g.rec.color, hats: g.hats });
+    }
+    return list;
   }
 
   // ---------- connection state machine ----------
@@ -155,6 +204,7 @@ export class Presence {
         this.attempt = 0;
         this.lastFromHub = Date.now();
         this._sendState('hi');
+        if (this.myHats.length) this._sendHats();   // (re)introduce my hats to the hub
         clearInterval(this.hbTimer);
         this.hbTimer = setInterval(() => this._guestBeat(), HB_MS);
       });
@@ -220,6 +270,13 @@ export class Presence {
         from: { name: String(msg.from.name || 'Fighter').slice(0, 14), color: msg.from.color },
         code: typeof msg.code === 'string' ? msg.code.slice(0, 4).toUpperCase() : null,
       });
+    } else if (msg.t === 'hats:all' && Array.isArray(msg.list)) {
+      this.emit('hats', msg.list.map(e => ({
+        id: String(e?.id || ''),
+        name: String(e?.name || 'Fighter').slice(0, 14),
+        color: e?.color || '#f5f5f5',
+        hats: sanitizeHatList(e?.hats),
+      })).filter(e => e.hats.length));
     }
   }
 
@@ -250,13 +307,21 @@ export class Presence {
           open: !!st.open,
         };
         const had = this.guests.get(conn.peer);
-        this.guests.set(conn.peer, { conn, rec, lastSeen: Date.now() });
+        this.guests.set(conn.peer, { conn, rec, lastSeen: Date.now(), hats: had?.hats || [] });
         // Rebroadcast right away for arrivals and visible changes.
         if (!had || JSON.stringify(had.rec) !== JSON.stringify(rec)) this._hubBeat();
         break;
       }
       case 'invite':
         this._relayInvite(msg);
+        break;
+      case 'hats': {
+        const g = this.guests.get(conn.peer);
+        if (g) g.hats = sanitizeHatList(msg.hats);
+        break;
+      }
+      case 'hats:req':
+        try { conn.send({ t: 'hats:all', list: this._hatLobby() }); } catch (_) {}
         break;
       case 'bye':
         this.guests.delete(conn.peer);

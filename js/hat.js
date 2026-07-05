@@ -65,7 +65,6 @@ export class HatStudio {
       this.cbs.onSave?.(sanitizeHat(this.cells.join(''))));   // all-transparent -> null
     $('#hat-dup').addEventListener('click', () =>
       this.cbs.onDuplicate?.(sanitizeHat(this.cells.join(''))));
-    $('#hat-load').addEventListener('click', () => this.cbs.onLoad?.());
     $('#hat-cancel').addEventListener('click', () => this.cbs.onCancel?.());
 
     // paint with any pointer; drag to keep painting
@@ -101,7 +100,7 @@ export class HatStudio {
     cancelAnimationFrame(this.raf);
   }
 
-  // Replace the canvas contents (used when loading a hat from the library).
+  // Replace the canvas contents (used when loading a hat from the Hat Library).
   setArt(hat) {
     const s = sanitizeHat(hat);
     this.cells = s ? s.split('') : new Array(HAT_W * HAT_H).fill('.');
