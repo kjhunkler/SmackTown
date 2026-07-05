@@ -307,7 +307,7 @@ input[type=text]:focus { border-color: var(--accent); }
   background: var(--panel-2);
   border-radius: var(--radius);
   padding: 10px;
-  max-height: 152px;
+  max-height: 216px;   /* three rows of hat chips before scrolling */
   overflow-y: auto;
 }
 .hat-picker-empty { font-size: 12px; color: var(--ink-dim); margin: 0; }
