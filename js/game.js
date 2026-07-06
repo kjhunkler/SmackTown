@@ -62,7 +62,6 @@ export const MAPS = {
     plats: [
       { x: -420, y: -150, w: 140 },
       { x: 280,  y: -150, w: 140 },
-      { x: -70,  y: -290, w: 140 },
     ],
     blast: { l: -1120, r: 1120, t: -980, b: 500 },
     spawns: [ -210, 210, -60, 60 ],
@@ -70,10 +69,8 @@ export const MAPS = {
   },
   garden: {
     name: 'Garden',
-    main: { x: -460, y: 0, w: 920, h: 46 },              // long floor with low bridges
+    main: { x: -460, y: 0, w: 920, h: 46 },              // long floor, one low bridge
     plats: [
-      { x: -260, y: -105, w: 180 },
-      { x: 80,   y: -105, w: 180 },
       { x: -90,  y: -205, w: 180 },
     ],
     blast: { l: -1260, r: 1260, t: -940, b: 500 },
