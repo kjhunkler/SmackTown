@@ -467,8 +467,17 @@ export class Renderer {
       ctx.fill();
       ctx.stroke();
     } else {
-      ctx.strokeStyle = 'rgba(255, 214, 102, .55)';
-      ctx.lineWidth = 2;
+      // charging smash: the telegraph flashes, pulsing faster and hotter as
+      // the charge builds toward full
+      const chg = f.hb.chg || 0;
+      const pulse = chg ? (0.5 + 0.5 * Math.sin(t * (2 + 9 * chg) * 2 * Math.PI)) * chg : 0;
+      if (pulse > 0.02) {
+        ctx.fillStyle = `rgba(255, 160, 90, ${(0.32 * pulse).toFixed(3)})`;
+        shape();
+        ctx.fill();
+      }
+      ctx.strokeStyle = `rgba(255, ${214 - Math.round(90 * pulse)}, 102, ${(0.55 + 0.45 * pulse).toFixed(3)})`;
+      ctx.lineWidth = 2 + 2.5 * chg;
       ctx.setLineDash([7, 6]);
       ctx.lineDashOffset = -t * 60;
       shape();

@@ -680,7 +680,7 @@ function startSession(cfg) {
 
 // Cosmetic events the client already plays locally via prediction; the
 // host's copies are dropped for our own fighter to avoid double effects.
-const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'ability', 'shockwave', 'gale', 'mend', 'duck']);
+const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'ability', 'shockwave', 'gale', 'mend', 'duck']);
 
 class Session {
   constructor({ mode, myId, players, seed = 1, map = DEFAULT_MAP }) {
@@ -803,7 +803,7 @@ class Session {
     while (this.acc >= TICK) {
       this.acc -= TICK;
       this.inputSeq++;
-      const tin = { mx: inp.mx, my: inp.my, ...this.pendActs };
+      const tin = { mx: inp.mx, my: inp.my, chg: inp.chg || null, ...this.pendActs };
       this.pendActs = {};
       this.pred.setInput(this.myId, tin);
       this.tickLog.push({ seq: this.inputSeq, inp: tin });
@@ -813,7 +813,9 @@ class Session {
     }
 
     // ship inputs to the host (fresh actions immediately, stick at ~30 Hz)
-    const hasAction = inp.jump || inp.ff || inp.atk || inp.ab0 || inp.ab1 || inp.drop;
+    const chgEdge = !!inp.chg !== !!this.wasChg;
+    this.wasChg = !!inp.chg;
+    const hasAction = inp.jump || inp.ff || inp.atk || inp.ab0 || inp.ab1 || inp.drop || chgEdge;
     if (hasAction || t - this.lastInputSend > 33) {
       this.lastInputSend = t;
       net?.sendToHost({ t: 'input', inp, seq: this.inputSeq });
@@ -951,7 +953,7 @@ class Session {
       id: r[0], x: r[1], y: r[2], vx: r[3], vy: r[4], facing: r[5],
       pct: r[6], stocks: r[7], state: r[8], dead: !!r[9],
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
-      hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin' } : null,
+      hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', chg: r[14][5] || 0 } : null,
       guard: r[28],
       color: this.meta.get(r[0])?.color, hat: this.meta.get(r[0])?.hat,
     }));

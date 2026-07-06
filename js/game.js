@@ -97,6 +97,14 @@ const ATTACKS = {
             rehit: .14, fin: { kb: 210, ks: 16, ang: -40 } },
 };
 
+// Charged smashes: holding the strong-attack control (finger kept down after
+// a swipe on touch, B/Y held on a pad, K/X held on keyboard) winds the smash
+// up in place, telegraph showing. Damage and knockback grow with hold time;
+// at CHARGE_MAX the attack releases on its own.
+const CHARGE_MAX = 1.2;              // seconds to full charge (auto-fire cap)
+const CHARGE_DMG = 0.5;              // +50% damage at full charge
+const CHARGE_KB = 0.35;              // +35% knockback at full charge
+
 const ABILITY_DEFS = {
   fireball:  { cd: 3.0 },
   dashstrike:{ cd: 4.0 },
@@ -140,11 +148,13 @@ export class Game {
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
       pct: 0, stocks: STOCKS,
-      state: 'idle',                // idle|run|air|attack|hitstun|ledge|roll|dead|respawn
+      state: 'idle',                // idle|run|air|attack|charge|hitstun|ledge|roll|dead|respawn
       stateT: 0,
       atk: null,                    // active attack name
       atkDir: null,                 // 8-way aim at attack start {x,y} or null
       atkHit: new Set(),
+      chg: 0,                       // charge fraction baked into the live attack
+      chgAim: null,                 // 8-way aim captured when the charge began
       invuln: 0, counterT: 0, dashT: 0,
       guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
@@ -186,6 +196,9 @@ export class Game {
     cur.ff ||= !!inp.ff;
     cur.drop ||= !!inp.drop;
     if (inp.atk) { cur.atk = inp.atk; cur.bufA = BUFFER; } // {kind:'tap'|'up'|'down'|'side', dir}
+    // charge is level-triggered like the stick; re-arms on release
+    cur.chg = inp.chg || null;
+    if (!cur.chg) cur.chgArm = true;
     if (inp.ab0) { cur.ab0 = true; cur.buf0 = BUFFER; }
     if (inp.ab1) { cur.ab1 = true; cur.buf1 = BUFFER; }
   }
@@ -242,9 +255,10 @@ export class Game {
 
     const inHitstun = f.state === 'hitstun';
     const inAttack = f.state === 'attack';
+    const inCharge = f.state === 'charge';
     const inDuck = f.state === 'duck';
     const inCrush = f.state === 'crush';
-    const canAct = !inHitstun && !inAttack && !inCrush;
+    const canAct = !inHitstun && !inAttack && !inCharge && !inCrush;
 
     if (Math.abs(inp.mx) > 0.15) f.lastDir = { x: Math.sign(inp.mx), y: inp.my };
 
@@ -305,15 +319,23 @@ export class Game {
 
     // --- attacks & abilities (locked while ducking / standing up / crushed) ---
     const mayAct = canAct && f.state !== 'duck' && f.standT <= 0;
-    if (mayAct && inp.atk) { this._startAttack(f, inp.atk); inp.atk = null; }
+    if (mayAct && inp.chg && inp.chgArm) { this._startCharge(f, inp.chg); inp.chgArm = false; }
+    else if (mayAct && inp.atk) { this._startAttack(f, inp.atk); inp.atk = null; }
     if (mayAct && inp.ab0) { this._useAbility(f, 0); inp.ab0 = false; }
     if (mayAct && inp.ab1) { this._useAbility(f, 1); inp.ab1 = false; }
+
+    // charge state machine: fires when the control is let go (the release
+    // also arrives as a buffered swipe edge — consume it) or at the cap
+    if (inCharge && (!inp.chg || inp.atk || f.stateT >= CHARGE_MAX)) {
+      this._releaseCharge(f);
+      inp.atk = null; inp.bufA = 0;
+    }
 
     // attack state machine
     if (inAttack) {
       const a = ATTACKS[f.atk];
       const total = a.startup + a.active + a.rec;
-      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.atkHit.clear(); }
+      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.atkHit.clear(); f.chg = 0; }
     }
     if (inHitstun && f.stateT >= f.hitstunFor) { f.state = 'air'; }
     if (inCrush && f.stateT >= CRUSH_STUN) { f.state = f.grounded ? 'idle' : 'air'; }
@@ -394,7 +416,7 @@ export class Game {
         f.vx = 0; f.vy = 0;
         f.jumps = f.st.maxJumps;             // hanging refreshes air jumps, like landing
         f.fastfall = false;
-        f.atk = null; f.melee = null;
+        f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0; f.chgAim = null;
         f.invuln = Math.max(f.invuln, LEDGE_INVULN);
         this.events.push({ e: 'ledge', id: f.id, x: lipX, y: m.y });
         return;
@@ -459,7 +481,7 @@ export class Game {
     f.standT = 0;
     f.vy = Math.min(f.vy, -300);
     f.grounded = false;
-    f.atk = null; f.atkDir = null; f.melee = null;
+    f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0; f.chgAim = null;
     this.events.push({ e: 'crush', id: f.id, x: f.x, y: f.y });
   }
 
@@ -497,6 +519,34 @@ export class Game {
       f.fastfall = false;
     }
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy });
+  }
+
+  // Wind up a smash: the fighter plants (or drifts, midair) with the
+  // telegraph showing while the strong-attack control stays held. The aim —
+  // and therefore which smash comes out — locks when the charge begins.
+  _startCharge(f, aim) {
+    const dx = aim.dx | 0, dy = aim.dy | 0;
+    let name;
+    if (dy < 0 && !dx) name = 'usmash';
+    else if (dy > 0 && !dx) name = f.grounded ? 'dsmash' : 'dair';
+    else name = 'fsmash';
+    if (dx) f.facing = dx;
+    f.state = 'charge';
+    f.stateT = 0;
+    f.atk = name;
+    f.atkDir = (dx || dy) ? { x: dx, y: dy } : null;
+    f.chgAim = { dx, dy };
+    f.atkHit.clear();
+    if (f.grounded) f.vx *= 0.35;
+    this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
+  }
+
+  _releaseCharge(f) {
+    const k = clamp(f.stateT / CHARGE_MAX, 0, 1);
+    const aim = f.chgAim || { dx: 0, dy: 0 };
+    f.chgAim = null;
+    this._startAttack(f, { kind: 'swipe', dx: aim.dx, dy: aim.dy });
+    f.chg = k;    // scales damage/knockback when the hit resolves
   }
 
   _useAbility(f, slot) {
@@ -631,6 +681,11 @@ export class Game {
   // before the hit can actually connect. The renderer draws exactly this.
   hitboxFor(f) {
     if (f.dead) return null;
+    // charging smash: telegraph with a 0..1 charge level for the renderer
+    if (f.state === 'charge' && f.atk) {
+      const a = ATTACKS[f.atk];
+      return { ...meleeHitbox(f, a, f.atkDir), active: false, chg: clamp(f.stateT / CHARGE_MAX, 0, 1) };
+    }
     if (f.state === 'attack' && f.atk) {
       const a = ATTACKS[f.atk];
       if (f.stateT <= a.startup + a.active) {
@@ -665,6 +720,9 @@ export class Game {
             const key = '__w' + win;
             if (!f.atkHit.has(key)) { f.atkHit.clear(); f.atkHit.add(key); }
             if (a.fin && win === wins - 1) spec = { ...a, ...a.fin };
+          }
+          if (f.chg > 0) {
+            spec = { ...spec, dmg: spec.dmg * (1 + CHARGE_DMG * f.chg), kb: spec.kb * (1 + CHARGE_KB * f.chg) };
           }
           this._meleeHit(f, spec, f.atkHit, spec.ang, f.atkDir);
         }
@@ -782,6 +840,8 @@ export class Game {
     vic.atk = null;
     vic.atkDir = null;
     vic.melee = null;
+    vic.chg = 0;
+    vic.chgAim = null;
 
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({
@@ -899,13 +959,13 @@ export class Game {
           f.id, r1(f.x), r1(f.y), r1(f.vx), r1(f.vy), f.facing,
           r1(f.pct), f.stocks, f.state, f.dead ? 1 : 0,
           f.invuln > 0 ? 1 : 0, f.atk || '', r1(f.cds[0]), r1(f.cds[1]),
-          hb ? [r1(hb.dx), r1(hb.dy), hb.hw, hb.hh, hb.active ? 1 : 0] : 0,
+          hb ? [r1(hb.dx), r1(hb.dy), hb.hw, hb.hh, hb.active ? 1 : 0, r2(hb.chg || 0)] : 0,
           // Appended for client prediction/reconciliation + host handoff:
           f.grounded ? 1 : 0, f.jumps, r2(f.stateT), f.ledge,
           r2(f.regrabT), f.rollDir, r2(f.invuln), r2(f.dropT),
           f.fastfall ? 1 : 0, r2(f.dashT), r2(f.counterT),
           f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
-          r1(f.guard), r2(f.standT),
+          r1(f.guard), r2(f.standT), r2(f.chg),
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -945,20 +1005,24 @@ export function restoreFighter(f, row) {
     f.fastfall = !!row[23]; f.dashT = row[24] || 0; f.counterT = row[25] || 0;
     f.atkDir = (row[26] || row[27]) ? { x: row[26] | 0, y: row[27] | 0 } : null;
     if (row.length > 28) { f.guard = row[28]; f.standT = row[29] || 0; }
+    f.chg = row[30] || 0;
+    f.chgAim = f.state === 'charge' ? { dx: row[26] | 0, dy: row[27] | 0 } : null;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.
     f.state = f.dead ? 'dead' : 'air';
     f.grounded = false;
   }
-  if (f.atk && f.state !== 'attack') f.atk = null;
-  if (!f.atk) f.atkDir = null;
+  if (f.atk && f.state !== 'attack' && f.state !== 'charge') f.atk = null;
+  if (!f.atk) { f.atkDir = null; f.chg = 0; f.chgAim = null; }
 }
 
 export function blankInput() {
   return {
     mx: 0, my: 0, jump: false, ff: false, drop: false, atk: null,
     ab0: false, ab1: false, bufJ: 0, bufA: 0, buf0: 0, buf1: 0,
+    chg: null,      // {dx,dy} while the strong-attack control is held
+    chgArm: true,   // must see a release before the next charge can start
   };
 }
 

@@ -1,15 +1,22 @@
 // Touch controls tuned for one-thumb-per-side play:
 //   left zone  — drag = virtual stick · flick up = jump · flick down = fast-fall/drop
 //   right zone — tap = quick attack aimed by the movement stick (8-way)
-//                swipe = smash attack in the swipe direction (8-way)
+//                swipe = smash attack in the swipe direction (8-way);
+//                detected the moment the drag crosses the swipe threshold —
+//                keeping the finger down charges the smash, lifting fires it
 //   two floating buttons — equipped abilities
 // Keyboard fallback (desktop testing): arrows/WASD move, space jump,
-// J = tap attack, K = swipe attack (both aimed by held direction, 8-way),
-// L and ; = abilities. Z/X/C/V mirror J/K/L/; for left-hand play.
+// J = tap attack, K = smash (hold to charge, release to fire; aimed by held
+// direction at press, 8-way), L and ; = abilities. Z/X/C/V mirror J/K/L/;.
 // Gamepad (standard layout, polled each frame alongside touch/keys):
 // left stick / dpad move — hold down to duck, flick up = jump, flick
-// down = fast-fall/drop · A = jump · X = quick attack · B/Y = smash
-// (aimed by the stick, 8-way) · LB/LT = ability 0 · RB/RT = ability 1.
+// down = fast-fall/drop · A = jump · X = quick attack · B/Y = smash (hold
+// to charge, release to fire; aimed by the stick at press, 8-way) ·
+// LB/LT = ability 0 · RB/RT = ability 1.
+//
+// Charging is reported to the sim as a level field (`chg`, the locked 8-way
+// aim while the control is held); the release ALSO queues the classic swipe
+// attack edge so a press-and-release faster than one poll still attacks.
 
 const FLICK_SPEED = 0.55;    // px/ms — how fast a move must be to be a flick
 const SWIPE_MIN = 24;        // px before a right-zone gesture becomes a swipe
@@ -31,9 +38,11 @@ const PAD_BTN = {
 
 export class TouchInput {
   constructor(root) {
-    this.state = { mx: 0, my: 0 };   // continuous stick
+    this.state = { mx: 0, my: 0, chg: null };  // continuous stick + held charge aim
     this.queue = [];                 // edge-triggered actions
     this.enabled = false;
+    this.keyChg = null;              // charge aim held via keyboard (K/X)
+    this.padChg = null;              // charge aim held via gamepad (B/Y)
 
     this.stickZone = root.querySelector('#stick-zone');
     this.actionZone = root.querySelector('#action-zone');
@@ -87,6 +96,13 @@ export class TouchInput {
       rec.moved = Math.max(rec.moved, Math.hypot(e.clientX - rec.ox, e.clientY - rec.oy));
       rec.lastX = e.clientX; rec.lastY = e.clientY; rec.lastT = e.timeStamp;
 
+      // smash detected mid-gesture: lock the aim and charge until the
+      // finger lifts — no need to wait for pointerup to start the attack
+      if (which === 'swipe' && !rec.chgAim && rec.moved >= SWIPE_MIN) {
+        rec.chgAim = octant(e.clientX - rec.ox, e.clientY - rec.oy);
+        this.state.chg = rec.chgAim;
+      }
+
       if (which === 'stick') {
         let dx = e.clientX - rec.ox, dy = e.clientY - rec.oy;
         const len = Math.hypot(dx, dy);
@@ -121,11 +137,15 @@ export class TouchInput {
         const dx = e.clientX - rec.ox, dy = e.clientY - rec.oy;
         const dist = Math.hypot(dx, dy);
         const dur = e.timeStamp - rec.t0;
-        if (dist < SWIPE_MIN && dur < TAP_MAX_MS) {
+        if (rec.chgAim) {
+          // finger lifted: release the charged smash in the locked direction
+          this.state.chg = null;
+          this.queue.push({ atk: { kind: 'swipe', ...rec.chgAim } });
+        } else if (dist < SWIPE_MIN && dur < TAP_MAX_MS) {
           // tap: quick attack aimed by the movement stick (neutral = facing)
           this.queue.push({ atk: { kind: 'tap', ...octant(this.state.mx, this.state.my, 0.35) } });
         } else if (dist >= SWIPE_MIN) {
-          // swipe: smash attack in the swipe direction
+          // swipe finished before any move event crossed the threshold
           this.queue.push({ atk: { kind: 'swipe', ...octant(dx, dy) } });
         }
       }
@@ -144,12 +164,20 @@ export class TouchInput {
     const dn = this.keys.has('arrowdown') || this.keys.has('s');
     this.state.mx = dir;
     this.state.my = dn ? 1 : up ? -1 : 0;
-    if (!down) return;
+    if (!down) {
+      // smash key released: fire the charged attack in the aim locked at press
+      if ((k === 'k' || k === 'x') && this.keyChg
+          && !this.keys.has('k') && !this.keys.has('x')) {
+        this.queue.push({ atk: { kind: 'swipe', dx: this.keyChg.dx, dy: this.keyChg.dy } });
+        this.keyChg = null;
+      }
+      return;
+    }
     if (k === ' ' || k === 'arrowup' || k === 'w') this.queue.push({ jump: true });
     if (k === 'arrowdown' || k === 's') this.queue.push({ ff: true, drop: true });
     const aim = { dx: dir, dy: dn ? 1 : up ? -1 : 0 };
     if (k === 'j' || k === 'z') this.queue.push({ atk: { kind: 'tap', ...aim } });
-    if (k === 'k' || k === 'x') this.queue.push({ atk: { kind: 'swipe', ...aim } });
+    if (k === 'k' || k === 'x') this.keyChg = aim;   // hold to charge the smash
     if (k === 'l' || k === 'c') this.queue.push({ ab0: true });
     if (k === ';' || k === 'v') this.queue.push({ ab1: true });
   }
@@ -159,7 +187,7 @@ export class TouchInput {
   // same edge actions the other sources produce.
   _pollGamepad() {
     const pad = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
-    if (!pad) { this.padPrev = []; this.padFlicked = false; return null; }
+    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; return null; }
 
     let mx = pad.axes[0] || 0, my = pad.axes[1] || 0;
     if (Math.hypot(mx, my) < PAD_DEAD) { mx = 0; my = 0; }
@@ -179,15 +207,22 @@ export class TouchInput {
         if (down && !this.padPrev[i]) {
           if (act === 'jump') this.queue.push({ jump: true });
           else if (act === 'tap') this.queue.push({ atk: { kind: 'tap', ...octant(mx, my, PAD_AIM_DEAD) } });
-          else if (act === 'swipe') this.queue.push({ atk: { kind: 'swipe', ...octant(mx, my, PAD_AIM_DEAD) } });
+          else if (act === 'swipe') this.padChg = octant(mx, my, PAD_AIM_DEAD); // hold to charge
           else if (act === 'ab0') this.queue.push({ ab0: true });
           else if (act === 'ab1') this.queue.push({ ab1: true });
         }
         this.padPrev[i] = down;
       }
+      // smash button released: fire the charged attack in the aim from press
+      const swipeHeld = !!(pad.buttons[1]?.pressed || pad.buttons[3]?.pressed);
+      if (this.padChg && !swipeHeld) {
+        this.queue.push({ atk: { kind: 'swipe', dx: this.padChg.dx, dy: this.padChg.dy } });
+        this.padChg = null;
+      }
     } else {
       for (const i of Object.keys(PAD_BTN)) this.padPrev[i] = !!pad.buttons[i]?.pressed;
       this.padFlicked = Math.abs(my) > PAD_FLICK;
+      this.padChg = null;
     }
     return { mx, my };
   }
@@ -195,7 +230,10 @@ export class TouchInput {
   // Drain into a single input frame for the sim/network.
   poll() {
     const g = this._pollGamepad();
-    const out = { mx: this.state.mx, my: this.state.my };
+    const out = {
+      mx: this.state.mx, my: this.state.my,
+      chg: this.state.chg || this.keyChg || this.padChg || null,
+    };
     if (g) {
       if (Math.abs(g.mx) > Math.abs(out.mx)) out.mx = g.mx;
       if (Math.abs(g.my) > Math.abs(out.my)) out.my = g.my;
@@ -210,6 +248,7 @@ export class TouchInput {
     if (!on) {
       this.queue.length = 0;
       this.state.mx = 0; this.state.my = 0;
+      this.state.chg = this.keyChg = this.padChg = null;
       this.stick = this.swipe = null;
       this.stickBase.classList.add('hidden');
     }
