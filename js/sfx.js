@@ -36,11 +36,15 @@ const BRIDGE_MEL = [ // floaty and sparse, hanging over the new changes
   74, 0, 0, 71, 0, 0, 67, 69,     76, 0, 0, 74, 0, 71, 69, 71,
   72, 0, 74, 0, 76, 0, 79, 0,     78, 0, 75, 0, 71, 0, 0, 0,
 ];
-const SOLO_MEL = [ // the rampage: relentless pentatonic runs, top-of-horn wails
-  64, 67, 69, 71, 74, 76, 79, 76, 74, 76, 74, 71, 69, 71, 69, 67,
-  76, 79, 81, 79, 76, 74, 76, 74, 71, 74, 71, 69, 67, 64, 66, 67,
-  88, 0, 86, 83, 81, 83, 79, 81,  76, 79, 76, 74, 76, 71, 74, 71,
-  69, 71, 72, 71, 69, 67, 64, 67, 64, 66, 67, 71, 76, 0, 74, 76,
+const SOLO_MEL = [ // the rampage, in four phrases that breathe like a player:
+  // sneak in low with a bluesy climb, then WAIL on E5 and let it ring
+  0, 0, 64, 66, 67, 69, 70, 71,   76, 0, 0, 0, 0, 0, 74, 76,
+  // the answer up top — stabs around G5/A5, tumbling to a hanging A4
+  79, 0, 76, 79, 81, 0, 79, 76,   74, 76, 74, 71, 69, 0, 0, 0,
+  // the climb: straight up the horn to a screamed E6, held wide open
+  64, 67, 69, 71, 74, 76, 79, 81, 83, 0, 86, 0, 88, 0, 0, 0,
+  // bluesy fall — Bb leaning hard into B — and one last note rung out
+  0, 86, 83, 81, 79, 76, 74, 70,  71, 0, 0, 0, 0, 0, 0, 0,
 ];
 const VERSE_ROOTS = [40, 36, 38, 40, 40, 36, 33, 35];  // E2 C2 D2 E2 E2 C2 A1 B1
 const BRIDGE_ROOTS = [43, 45, 36, 35, 43, 45, 36, 35]; // G2 A2 C2 B1, twice
@@ -360,15 +364,19 @@ class Sfx {
     const q = s & 7, bar = s >> 3;
     const swing = (s & 1) ? STEP * SWING : 0;   // off-eighths drag behind
 
-    // sax melody (verse/bridge/solo sections only; notes before a rest are
-    // held legato into it)
+    // sax melody (verse/bridge/solo sections only). Phrase-ending notes
+    // ring out: a note holds through every rest that follows it, so the
+    // wails at the ends of lines sustain instead of clipping off.
     const m = sec.mel && sec.mel[s];
     if (m) {
-      const held = sec.mel[(s + 1) % 64] ? STEP * 0.95 : STEP * 1.85;
-      this._sax(m, t0 + swing, held, sec.vol);
-      // solo rampage: squeeze grace notes between the eighths for
-      // double-time runs
-      if (sec.solo && (s & 3) === 2) {
+      let ring = 0;
+      while (ring < 6 && !sec.mel[(s + 1 + ring) % 64]) ring++;
+      const held = STEP * (0.95 + ring * 0.9);
+      // held solo notes scoop up into pitch like a player leaning in
+      this._sax(m, t0 + swing, held, sec.vol, sec.solo && ring >= 2);
+      // solo rampage: double-time grace notes, but only mid-run — the
+      // ringing phrase-enders stay clean
+      if (sec.solo && (s & 3) === 2 && sec.mel[(s + 1) % 64]) {
         this._sax(m - 2, t0 + swing + STEP * 0.5, STEP * 0.45, sec.vol * 0.8);
       }
     }
@@ -401,17 +409,25 @@ class Sfx {
 
   // Synth sax: a sawtooth pushed through a resonant lowpass with a soft,
   // breathy attack and vibrato that blooms in partway through the note.
-  _sax(m, t0, dur, vol) {
+  // scoop=true bends up into the pitch from below, like leaning into a wail;
+  // long notes get slower-blooming, deeper vibrato so the ring-outs sing.
+  _sax(m, t0, dur, vol, scoop = false) {
     const ac = this.ac;
     const t = ac.currentTime + t0;
     const o = ac.createOscillator();
     o.type = 'sawtooth';
-    o.frequency.setValueAtTime(hz(m), t);
+    if (scoop) {
+      o.frequency.setValueAtTime(hz(m) * 0.92, t);
+      o.frequency.exponentialRampToValueAtTime(hz(m), t + 0.09);
+    } else {
+      o.frequency.setValueAtTime(hz(m), t);
+    }
     const vib = ac.createOscillator();
     vib.frequency.value = 5.2;
     const vg = ac.createGain();
     vg.gain.setValueAtTime(0, t);
-    vg.gain.linearRampToValueAtTime(hz(m) * 0.014, t + Math.min(0.4, dur * 0.8));
+    vg.gain.linearRampToValueAtTime(hz(m) * (dur > 0.8 ? 0.02 : 0.014),
+      t + Math.min(0.5, dur * 0.6));
     vib.connect(vg).connect(o.frequency);
     const fl = ac.createBiquadFilter();
     fl.type = 'lowpass'; fl.Q.value = 2.5;
