@@ -10,9 +10,10 @@
 // direction at press, 8-way), L and ; = abilities. Z/X/C/V mirror J/K/L/;.
 // Gamepad (standard layout, polled each frame alongside touch/keys):
 // left stick / dpad move — hold down to duck, flick
-// down = fast-fall/drop · A = jump · X = quick attack · B/Y = smash (hold
-// to charge, release to fire; aimed by the stick at press, 8-way) ·
-// LB/LT = ability 0 · RB/RT = ability 1.
+// down = fast-fall/drop · A = quick attack · B = smash (hold to charge,
+// release to fire; aimed by the stick at press, 8-way) · Y = jump ·
+// X / LB / RB = ability 1 · LT / RT = ability 2 · right stick = smash in the
+// tilt direction (hold to charge, return to neutral to fire).
 //
 // Charging is reported to the sim as a level field (`chg`, the locked 8-way
 // aim while the control is held); the release ALSO queues the classic swipe
@@ -28,11 +29,12 @@ const PAD_FLICK = 0.6;       // stick tilt that counts as a vertical flick
 
 // standard-mapping button index -> action
 const PAD_BTN = {
-  0: 'jump',                 // A
-  1: 'swipe', 3: 'swipe',    // B / Y — smash attack
-  2: 'tap',                  // X — quick attack
-  4: 'ab0', 6: 'ab0',        // LB / LT
-  5: 'ab1', 7: 'ab1',        // RB / RT
+  0: 'tap',                  // A — quick attack (jab)
+  1: 'swipe',                // B — smash attack
+  2: 'ab0',                  // X — ability 1
+  3: 'jump',                 // Y
+  4: 'ab0', 5: 'ab0',        // LB / RB — ability 1
+  6: 'ab1', 7: 'ab1',        // LT / RT — ability 2
 };
 
 export class TouchInput {
@@ -41,7 +43,9 @@ export class TouchInput {
     this.queue = [];                 // edge-triggered actions
     this.enabled = false;
     this.keyChg = null;              // charge aim held via keyboard (K/X)
-    this.padChg = null;              // charge aim held via gamepad (B/Y)
+    this.padChg = null;              // charge aim held via gamepad (B)
+    this.padRChg = null;             // charge aim held via the right stick
+    this.padRHeld = false;           // right stick currently tilted
 
     this.stickZone = root.querySelector('#stick-zone');
     this.actionZone = root.querySelector('#action-zone');
@@ -187,7 +191,7 @@ export class TouchInput {
   // same edge actions the other sources produce.
   _pollGamepad() {
     const pad = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
-    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; return null; }
+    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; this.padRChg = null; this.padRHeld = false; return null; }
 
     let mx = pad.axes[0] || 0, my = pad.axes[1] || 0;
     if (Math.hypot(mx, my) < PAD_DEAD) { mx = 0; my = 0; }
@@ -195,6 +199,8 @@ export class TouchInput {
     if (pad.buttons[15]?.pressed) mx = 1;
     if (pad.buttons[12]?.pressed) my = -1;
     if (pad.buttons[13]?.pressed) my = 1;
+    const rx = pad.axes[2] || 0, ry = pad.axes[3] || 0;
+    const rTilt = Math.hypot(rx, ry) > PAD_FLICK;
 
     if (this.enabled) {
       // down flicks mirror the touch stick: fast-fall/drop (up no longer jumps)
@@ -213,15 +219,29 @@ export class TouchInput {
         this.padPrev[i] = down;
       }
       // smash button released: fire the charged attack in the aim from press
-      const swipeHeld = !!(pad.buttons[1]?.pressed || pad.buttons[3]?.pressed);
+      const swipeHeld = !!pad.buttons[1]?.pressed;
       if (this.padChg && !swipeHeld) {
         this.queue.push({ atk: { kind: 'swipe', dx: this.padChg.dx, dy: this.padChg.dy } });
         this.padChg = null;
+      }
+      // right stick = directional smash: tilt locks the aim and charges,
+      // returning to neutral fires it
+      if (rTilt && !this.padRHeld) {
+        this.padRHeld = true;
+        this.padRChg = octant(rx, ry);
+      } else if (!rTilt && this.padRHeld) {
+        this.padRHeld = false;
+        if (this.padRChg) {
+          this.queue.push({ atk: { kind: 'swipe', dx: this.padRChg.dx, dy: this.padRChg.dy } });
+          this.padRChg = null;
+        }
       }
     } else {
       for (const i of Object.keys(PAD_BTN)) this.padPrev[i] = !!pad.buttons[i]?.pressed;
       this.padFlicked = Math.abs(my) > PAD_FLICK;
       this.padChg = null;
+      this.padRHeld = rTilt;
+      this.padRChg = null;
     }
     return { mx, my };
   }
@@ -231,7 +251,7 @@ export class TouchInput {
     const g = this._pollGamepad();
     const out = {
       mx: this.state.mx, my: this.state.my,
-      chg: this.state.chg || this.keyChg || this.padChg || null,
+      chg: this.state.chg || this.keyChg || this.padChg || this.padRChg || null,
     };
     if (g) {
       if (Math.abs(g.mx) > Math.abs(out.mx)) out.mx = g.mx;
@@ -247,7 +267,8 @@ export class TouchInput {
     if (!on) {
       this.queue.length = 0;
       this.state.mx = 0; this.state.my = 0;
-      this.state.chg = this.keyChg = this.padChg = null;
+      this.state.chg = this.keyChg = this.padChg = this.padRChg = null;
+      this.padRHeld = false;
       this.stick = this.swipe = null;
       this.stickBase.classList.add('hidden');
     }
