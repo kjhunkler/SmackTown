@@ -6,7 +6,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAP_IDS, DEFAULT_MAP } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -575,8 +575,9 @@ function enterRoom(joinCode) {
   net.on('game:start', (msg, pid) => {
     if (pid !== net.hostId) return;
     const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) }));
-    if (session) { session.syncPlayers(players); return; }  // mid-game roster update
-    startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed, map: msg.map });
+    const map = MAPS[msg.map] ? msg.map : DEFAULT_MAP;
+    if (session) { session.syncPlayers(players, map); return; }  // mid-game roster update
+    startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed, map });
   });
   net.on('game:input', (msg, pid) => session?.onRemoteInput(pid, msg.inp, msg.seq));
   net.on('game:snap', (msg, pid) => session?.onSnapshot(msg.s, pid));
@@ -667,7 +668,8 @@ function startFight() {
     id: m.peerId, name: m.name, color: m.color, build: sanitizeBuild(m.build), hat: sanitizeHat(m.hat),
   }));
   const seed = (Math.random() * 1e9) | 0;
-  const map = tallyMapVotes(active);
+  const votedMap = tallyMapVotes(active);
+  const map = MAPS[votedMap] ? votedMap : DEFAULT_MAP;
   net.broadcast({ t: 'start', players, seed, map });
   startSession({ mode: 'host', myId: net.myId, players, seed, map });
 }
@@ -724,7 +726,7 @@ class Session {
     this.players = players;
     this.meta = new Map(players.map(p => [p.id, p]));
     this.seed = seed;
-    this.map = map;
+    this.map = MAPS[map] ? map : DEFAULT_MAP;
     this.game = null;               // authoritative sim (solo/host)
     this.snaps = [];                // client: interpolation buffer
     this.lastSnap = null;
@@ -886,6 +888,14 @@ class Session {
 
   onSnapshot(s, pid) {
     if (this.mode !== 'client' || pid !== net?.hostId) return;
+    if (s.map && MAPS[s.map] && s.map !== this.map) {
+      this.map = s.map;
+      this.pred = new Game(this.players, this.seed, this.map);
+      renderer.setMap(this.map);
+      this.snaps.length = 0;
+      this.tickLog.length = 0;
+      this.corr = { x: 0, y: 0 };
+    }
     this.lastSnap = s;
     this.snaps.push({ rt: performance.now(), s });
     if (this.snaps.length > 40) this.snaps.shift();
@@ -932,6 +942,7 @@ class Session {
       this.mode = 'host';
       this.game = gameFromSnapshot(this.players, this.lastSnap, this.seed + 1);
       this.map = this.game.map;
+      renderer.setMap(this.map);
       this.pred = null;
       this.tickLog = [];
       this.acc = 0;
@@ -953,7 +964,13 @@ class Session {
 
   // Client: the host re-broadcast the player list (someone joined mid-game).
   // Fold in anyone new; authoritative state arrives via snapshots.
-  syncPlayers(players) {
+  syncPlayers(players, map = this.map) {
+    const hostMap = MAPS[map] ? map : DEFAULT_MAP;
+    if (hostMap !== this.map) {
+      this.map = hostMap;
+      renderer.setMap(this.map);
+      if (this.pred) this.pred = new Game(this.players, this.seed, this.map);
+    }
     let changed = false;
     for (const p of players) {
       if (this.meta.has(p.id)) continue;

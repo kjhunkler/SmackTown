@@ -562,6 +562,15 @@ input[type=text]:focus { border-color: var(--accent); }
 .map-thumb-skyline { background: linear-gradient(#04141c, #0a2a30); }
 .map-thumb-skyline::after { left: 28%; right: 28%; }
 .map-thumb-skyline::before { top: 8px; }
+.map-thumb-ruins { background: linear-gradient(#201815, #4b2d1f); }
+.map-thumb-ruins::after { left: 14%; right: 14%; }
+.map-thumb-ruins::before { left: 22%; right: 22%; top: 10px; }
+.map-thumb-foundry { background: linear-gradient(#180b10, #3a1218); }
+.map-thumb-foundry::after { left: 24%; right: 24%; }
+.map-thumb-foundry::before { left: 34%; right: 34%; top: 7px; }
+.map-thumb-garden { background: linear-gradient(#0b1f24, #174034); }
+.map-thumb-garden::after { left: 10%; right: 10%; }
+.map-thumb-garden::before { left: 20%; right: 20%; top: 14px; }
 
 /* Landscape phones: short viewport — compact the chrome and lay the lobby
    out in two columns (room info + roster left, actions right) so nothing

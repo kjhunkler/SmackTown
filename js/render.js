@@ -32,6 +32,27 @@ const THEMES = {
     deck: '#173a42', lip: '#20545c', trim: '#3ddca4',
     plat: '#20545c', platTop: '#2e7880',
   },
+  ruins: {
+    sky: ['#201815', '#4b2d1f', '#0c0a0a'],
+    motif: 'moon',
+    stars: 0.75,
+    deck: '#46362d', lip: '#665044', trim: '#d0a35a',
+    plat: '#665044', platTop: '#846757',
+  },
+  foundry: {
+    sky: ['#180b10', '#3a1218', '#070507'],
+    motif: 'sun',
+    stars: 0.15,
+    deck: '#3a2f33', lip: '#5b4245', trim: '#ff6a2a',
+    plat: '#5b4245', platTop: '#7c5a5c',
+  },
+  garden: {
+    sky: ['#0b1f24', '#174034', '#071013'],
+    motif: 'aurora',
+    stars: 0.7,
+    deck: '#254033', lip: '#38644e', trim: '#b4e06f',
+    plat: '#38644e', platTop: '#4f896c',
+  },
 };
 
 export class Renderer {

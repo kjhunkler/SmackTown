@@ -44,6 +44,42 @@ export const MAPS = {
     spawns: [ -180, 180, -60, 60 ],
     respawnY: -380,
   },
+  ruins: {
+    name: 'Ruins',
+    main: { x: -390, y: 0, w: 780, h: 46 },              // broad floor with staggered cover
+    plats: [
+      { x: -320, y: -120, w: 150 },
+      { x: 170,  y: -120, w: 150 },
+      { x: -85,  y: -225, w: 170 },
+    ],
+    blast: { l: -1200, r: 1200, t: -950, b: 500 },
+    spawns: [ -280, 280, -100, 100 ],
+    respawnY: -330,
+  },
+  foundry: {
+    name: 'Foundry',
+    main: { x: -300, y: 0, w: 600, h: 46 },              // compact arena with side perches
+    plats: [
+      { x: -420, y: -150, w: 140 },
+      { x: 280,  y: -150, w: 140 },
+      { x: -70,  y: -290, w: 140 },
+    ],
+    blast: { l: -1120, r: 1120, t: -980, b: 500 },
+    spawns: [ -210, 210, -60, 60 ],
+    respawnY: -360,
+  },
+  garden: {
+    name: 'Garden',
+    main: { x: -460, y: 0, w: 920, h: 46 },              // long floor with low bridges
+    plats: [
+      { x: -260, y: -105, w: 180 },
+      { x: 80,   y: -105, w: 180 },
+      { x: -90,  y: -205, w: 180 },
+    ],
+    blast: { l: -1260, r: 1260, t: -940, b: 500 },
+    spawns: [ -330, 330, -120, 120 ],
+    respawnY: -320,
+  },
 };
 export const DEFAULT_MAP = 'battlefield';
 export const MAP_IDS = Object.keys(MAPS);
