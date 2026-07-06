@@ -11,37 +11,57 @@
 const MUTE_KEY = 'smacktown.muted';  // mutes the MUSIC only; SFX always play
 const MUSIC_VOL = 0.30;
 
-// ---------- theme songs ----------
-// Two songs live here; SONG picks which one loops. Both are 64 eighth-note
-// steps (8 bars) and share the same sequencer.
+// ---------- theme song: 'Focus' ----------
+// An adventure-overworld groove in E minor at 96 BPM: a jazzy synth-sax
+// lead (sawtooth through a resonant lowpass, breathy attack, blooming
+// vibrato, swung eighths), an arcade chip arpeggio sparkling up top, and a
+// dubstep wobble bass + half-time kit that kick in during fights (menus
+// get a calm sub bass instead).
 //
-// 'smacktown' — the original: an upbeat chiptune loop in A minor (Am F C G),
-// ~130 BPM, square lead + triangle bass, drum kit during fights only.
-//
-// 'focus' — the current pick: a slower, adventure-game overworld groove in
-// E minor with a jazzy synth-sax lead (sawtooth through a lowpass with
-// blooming vibrato, swung eighths), an arcade chip arpeggio sparkling up
-// top, and a dubstep wobble bass + half-time kit that kicks in for fights.
-const SONG = 'focus';                // flip to 'smacktown' for the old theme
-const SONGS = { smacktown: { bpm: 130 }, focus: { bpm: 96 } };
+// The song is an arrangement, not a loop of one melody: it cycles through
+// 8-bar sections (FORM below) — verses where the sax sits back in the mix,
+// grooves with NO melody at all so the low end and kit can breathe, a
+// floaty bridge over new changes, and one double-time sax solo rampage.
+const BPM = 96;
 
-const MEL = [ // smacktown lead: midi note per step, 0 = rest
-  76, 0, 76, 74, 72, 0, 69, 72,   77, 0, 77, 76, 72, 0, 69, 0,
-  76, 0, 72, 76, 79, 0, 76, 72,   74, 76, 74, 71, 67, 0, 71, 74,
-  76, 0, 76, 74, 72, 0, 74, 76,   81, 0, 79, 77, 76, 0, 72, 69,
-  79, 76, 72, 76, 74, 71, 67, 71, 69, 0, 0, 67, 69, 0, 0, 0,
-];
-const BASS_ROOTS = [45, 41, 48, 43]; // A2 F2 C3 G2, one per bar, repeated
-
-const FOCUS_MEL = [ // focus sax lead: heroic Em phrases with jazz turns
+const VERSE_MEL = [ // sax verse: heroic Em phrases with jazz turns (0 = rest)
   64, 0, 67, 69, 71, 0, 74, 71,   72, 0, 71, 69, 67, 0, 64, 67,
   66, 0, 69, 71, 74, 0, 76, 74,   76, 0, 74, 71, 69, 71, 67, 64,
   64, 0, 64, 66, 67, 0, 71, 74,   72, 74, 72, 69, 67, 0, 69, 71,
   69, 0, 72, 76, 74, 72, 71, 69,  71, 0, 68, 66, 64, 0, 0, 0,
 ];
-const FOCUS_ROOTS = [40, 36, 38, 40, 40, 36, 33, 35]; // E2 C2 D2 E2 E2 C2 A1 B1
-const FOCUS_WOB = [3, 4, 2, 6, 3, 4, 8, 5];           // wobble LFO Hz per bar
-const SWING = 0.18;                  // focus song: off-eighths land late (jazz)
+const BRIDGE_MEL = [ // floaty and sparse, hanging over the new changes
+  74, 0, 0, 71, 0, 0, 67, 0,      76, 0, 0, 74, 0, 71, 69, 0,
+  79, 0, 0, 76, 0, 0, 72, 74,     75, 0, 74, 0, 71, 0, 0, 0,
+  74, 0, 0, 71, 0, 0, 67, 69,     76, 0, 0, 74, 0, 71, 69, 71,
+  72, 0, 74, 0, 76, 0, 79, 0,     78, 0, 75, 0, 71, 0, 0, 0,
+];
+const SOLO_MEL = [ // the rampage: relentless pentatonic runs, top-of-horn wails
+  64, 67, 69, 71, 74, 76, 79, 76, 74, 76, 74, 71, 69, 71, 69, 67,
+  76, 79, 81, 79, 76, 74, 76, 74, 71, 74, 71, 69, 67, 64, 66, 67,
+  88, 0, 86, 83, 81, 83, 79, 81,  76, 79, 76, 74, 76, 71, 74, 71,
+  69, 71, 72, 71, 69, 67, 64, 67, 64, 66, 67, 71, 76, 0, 74, 76,
+];
+const VERSE_ROOTS = [40, 36, 38, 40, 40, 36, 33, 35];  // E2 C2 D2 E2 E2 C2 A1 B1
+const BRIDGE_ROOTS = [43, 45, 36, 35, 43, 45, 36, 35]; // G2 A2 C2 B1, twice
+const WOB = [3, 4, 2, 6, 3, 4, 8, 5];                  // wobble LFO Hz per bar
+
+// The form: 8-bar (64-step) sections played in order, then looped. mel:null
+// sections are the breathers — just bass, wobble, arp and drums.
+const MEL_VOL = 0.085;   // sax sits back at half the level it used to play
+const SOLO_VOL = 0.12;   // the solo leans in, still under the old level
+const FORM = [
+  { mel: VERSE_MEL,  roots: VERSE_ROOTS,  vol: MEL_VOL },
+  { mel: null,       roots: VERSE_ROOTS },
+  { mel: VERSE_MEL,  roots: VERSE_ROOTS,  vol: MEL_VOL },
+  { mel: BRIDGE_MEL, roots: BRIDGE_ROOTS, vol: MEL_VOL },
+  { mel: null,       roots: BRIDGE_ROOTS },
+  { mel: SOLO_MEL,   roots: VERSE_ROOTS,  vol: SOLO_VOL, solo: true },
+  { mel: null,       roots: VERSE_ROOTS },
+];
+const SONG_LEN = FORM.length * 64;
+
+const SWING = 0.18;                  // off-eighths land late (jazz swing)
 const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 
 class Sfx {
@@ -316,7 +336,7 @@ class Sfx {
   _startMusic() {
     if (this._musicTimer || !this.ac) return;
     this._step = 0;
-    this._stepDur = 60 / SONGS[SONG].bpm / 2;   // eighth note, seconds
+    this._stepDur = 60 / BPM / 2;   // eighth note, seconds
     this._nextT = this.ac.currentTime + 0.1;
     this._musicTimer = setInterval(() => this._scheduleMusic(), 60);
   }
@@ -325,50 +345,40 @@ class Sfx {
     if (this.ac.state !== 'running') { this._nextT = this.ac.currentTime + 0.1; return; }
     while (this._nextT < this.ac.currentTime + 0.3) {
       // muted still advances the step clock, so unmuting rejoins mid-song
-      if (!this.muted) {
-        const t0 = this._nextT - this.ac.currentTime;
-        if (SONG === 'focus') this._playStepFocus(this._step % 64, t0);
-        else this._playStepSmack(this._step % 64, t0);
-      }
+      if (!this.muted) this._playStep(this._step % SONG_LEN, this._nextT - this.ac.currentTime);
       this._step++;
       this._nextT += this._stepDur;
     }
   }
 
-  // --- 'smacktown': chiptune square lead + triangle bass + straight kit ---
-  _playStepSmack(s, t0) {
+  // One step of the arrangement: which 8-bar section we're in decides
+  // whether the sax speaks at all, over which roots, and how loud.
+  _playStep(step, t0) {
     const bus = this.musicBus, STEP = this._stepDur;
-    const m = MEL[s];
-    if (m) this._tone({ type: 'square', f0: hz(m), t0, dur: STEP * 0.9, vol: 0.07, bus });
-    // bass: root per bar with an octave bounce on the off-beats
-    const bar = (s >> 3) & 3;
-    const root = BASS_ROOTS[bar] + ((s & 7) === 2 || (s & 7) === 5 ? 12 : 0);
-    this._tone({ type: 'triangle', f0: hz(root), t0, dur: STEP * 0.95, vol: 0.11, bus });
-    // drums, fights only: kick on 1 & 3, snare on 2 & 4, hats on the 8ths
-    if (this.mode !== 'fight') return;
-    const q = s & 7;
-    if (q === 0 || q === 4) this._tone({ type: 'sine', f0: 150, f1: 45, t0, dur: 0.1, vol: 0.4, bus });
-    if (q === 2 || q === 6) this._noise({ type: 'bandpass', f0: 1900, q: 0.9, t0, dur: 0.08, vol: 0.16, bus });
-    this._noise({ type: 'highpass', f0: 6500, t0, dur: 0.03, vol: q % 2 ? 0.03 : 0.05, bus });
-  }
-
-  // --- 'focus': swung sax lead, chip arp, wobble bass, half-time kit ---
-  _playStepFocus(s, t0) {
-    const bus = this.musicBus, STEP = this._stepDur;
+    const sec = FORM[(step / 64) | 0];
+    const s = step % 64;
     const q = s & 7, bar = s >> 3;
     const swing = (s & 1) ? STEP * SWING : 0;   // off-eighths drag behind
-    // sax melody: notes before a rest are held legato into it
-    const m = FOCUS_MEL[s];
+
+    // sax melody (verse/bridge/solo sections only; notes before a rest are
+    // held legato into it)
+    const m = sec.mel && sec.mel[s];
     if (m) {
-      const held = FOCUS_MEL[(s + 1) % 64] ? STEP * 0.95 : STEP * 1.85;
-      this._sax(m, t0 + swing, held, 0.17);
+      const held = sec.mel[(s + 1) % 64] ? STEP * 0.95 : STEP * 1.85;
+      this._sax(m, t0 + swing, held, sec.vol);
+      // solo rampage: squeeze grace notes between the eighths for
+      // double-time runs
+      if (sec.solo && (s & 3) === 2) {
+        this._sax(m - 2, t0 + swing + STEP * 0.5, STEP * 0.45, sec.vol * 0.8);
+      }
     }
+
     // low end, one note per half-bar: dubstep wobble in fights, calm sub
     // sine in the menus — same roots either way
     if (q === 0 || q === 4) {
-      const root = FOCUS_ROOTS[bar];
+      const root = sec.roots[bar];
       if (this.mode === 'fight') {
-        this._wobble(root, t0, STEP * 3.9, FOCUS_WOB[bar] * (q ? 1.5 : 1), 0.15);
+        this._wobble(root, t0, STEP * 3.9, WOB[bar] * (q ? 1.5 : 1), 0.15);
       } else {
         this._tone({ type: 'sine', f0: hz(root + 12), t0, dur: STEP * 3.6, vol: 0.10, bus });
       }
@@ -376,7 +386,7 @@ class Sfx {
     // arcade chip arpeggio sparkling over the harmony (root/fifth/octave)
     if (s & 1) {
       const off = [0, 7, 12, 7][(s >> 1) & 3];
-      this._tone({ type: 'square', f0: hz(FOCUS_ROOTS[bar] + 24 + off), t0: t0 + swing, dur: STEP * 0.35, vol: 0.022, bus });
+      this._tone({ type: 'square', f0: hz(sec.roots[bar] + 24 + off), t0: t0 + swing, dur: STEP * 0.35, vol: 0.022, bus });
     }
     // half-time dubstep kit, fights only: kick on the one, fat snare on
     // the three, ticking swung hats
