@@ -84,6 +84,7 @@ export const MAP_IDS = Object.keys(MAPS);
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
 const JUMP_V = 860, JUMP2_V = 780;
+const AIR_RISE_CD = 1.1;             // min seconds between aerial up-smash lifts
 const LEDGE_JUMP_V = 1120;           // ledge super jump — spends no air jump
 const LEDGE_INVULN = 0.6, LEDGE_MAX_HANG = 4.0, REGRAB_CD = 0.45;
 const LEDGE_HANG_Y = 22;             // fighter center hangs this far below the lip
@@ -195,6 +196,7 @@ export class Game {
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
       usedSecondWind: false,
       dropT: 0,                     // drop-through timer
+      riseT: 0,                     // cooldown on the aerial up-smash lift
       ledge: 0,                     // hanging: -1 left lip, 1 right lip, 0 none
       regrabT: 0,                   // cooldown before the ledge can be regrabbed
       rollDir: 0,
@@ -276,6 +278,7 @@ export class Game {
     f.counterT = Math.max(0, f.counterT - TICK);
     f.dashT = Math.max(0, f.dashT - TICK);
     f.dropT = Math.max(0, f.dropT - TICK);
+    f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
     f.regrabT = Math.max(0, f.regrabT - TICK);
     f.standT = Math.max(0, f.standT - TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
@@ -555,9 +558,14 @@ export class Game {
     f.lowJab = fromDuck && name === 'jab';
     f.atkHit.clear();
     if (f.grounded) f.vx *= 0.35;
-    // upward swipe in the air boosts you like an air jump — and costs none
+    // upward swipe in the air boosts you like an air jump — and costs none.
+    // The lift itself is on a short cooldown so chained up-smashes can't be
+    // spammed to fly forever; the swing still comes out either way.
     if (swipe && dy < 0 && !f.grounded) {
-      f.vy = Math.min(f.vy, -JUMP2_V * f.st.jumpMult * (dx ? 0.75 : 1));
+      if (f.riseT <= 0) {
+        f.vy = Math.min(f.vy, -JUMP2_V * f.st.jumpMult * (dx ? 0.75 : 1));
+        f.riseT = AIR_RISE_CD;
+      }
       f.fastfall = false;
     }
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy });
@@ -1022,7 +1030,7 @@ export class Game {
           r2(f.regrabT), f.rollDir, r2(f.invuln), r2(f.dropT),
           f.fastfall ? 1 : 0, r2(f.dashT), r2(f.counterT),
           f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
-          r1(f.guard), r2(f.standT), r2(f.chg),
+          r1(f.guard), r2(f.standT), r2(f.chg), r2(f.riseT),
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -1063,6 +1071,7 @@ export function restoreFighter(f, row) {
     f.atkDir = (row[26] || row[27]) ? { x: row[26] | 0, y: row[27] | 0 } : null;
     if (row.length > 28) { f.guard = row[28]; f.standT = row[29] || 0; }
     f.chg = row[30] || 0;
+    f.riseT = row[31] || 0;
     f.chgAim = f.state === 'charge' ? { dx: row[26] | 0, dy: row[27] | 0 } : null;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
