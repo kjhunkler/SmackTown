@@ -148,6 +148,10 @@
 
 <!-- ============ ROOM LOBBY ============ -->
 <section id="screen-lobby" class="screen hidden">
+  <div class="voice-row">
+    <button id="lobby-voice" class="btn ghost voice">🎙 Join Voice</button>
+    <button id="lobby-voice-mute" class="btn ghost voice hidden" aria-label="Mute microphone">🔊</button>
+  </div>
   <div class="panel narrow lobby-panel">
     <h2>Room <span id="lobby-code" class="room-code"></span></h2>
     <p class="tagline">share the code — friends hop straight in</p>
@@ -165,16 +169,6 @@
       </div>
       <button id="lobby-char-next" class="hat-arrow" aria-label="Next character">▶</button>
     </div>
-    <button id="lobby-invite" class="btn ghost invite">📨 Invite Friends</button>
-    <div id="lobby-online" class="online-box lobby-online-box">
-      <h3 class="section-title">Invite active fighters <span id="lobby-online-count" class="hint"></span></h3>
-      <ul id="lobby-online-list" class="roster online-list"></ul>
-      <p id="lobby-online-empty" class="online-empty">Looking for fighters…</p>
-    </div>
-    <div class="voice-row">
-      <button id="lobby-voice" class="btn ghost voice">🎙 Join Voice</button>
-      <button id="lobby-voice-mute" class="btn ghost voice hidden" aria-label="Mute microphone">🔊</button>
-    </div>
     <ul id="lobby-roster" class="roster"></ul>
     <h3 class="section-title">Map vote <span class="hint">majority wins — ties flip a coin</span></h3>
     <div id="lobby-maps" class="map-grid"></div>
@@ -183,6 +177,12 @@
     <button id="lobby-start" class="btn primary big hidden">Start Fight</button>
     <button id="lobby-edit" class="btn ghost">Edit Fighter &amp; Build</button>
     <button id="lobby-leave" class="btn ghost">Leave Room</button>
+    <button id="lobby-invite" class="btn ghost invite">📨 Invite Friends</button>
+    <div id="lobby-online" class="online-box lobby-online-box">
+      <h3 class="section-title">Invite active fighters <span id="lobby-online-count" class="hint"></span></h3>
+      <ul id="lobby-online-list" class="roster online-list"></ul>
+      <p id="lobby-online-empty" class="online-empty">Looking for fighters…</p>
+    </div>
   </div>
 </section>
 

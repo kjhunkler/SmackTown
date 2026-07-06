@@ -509,9 +509,26 @@ input[type=text]:focus { border-color: var(--accent); }
 .lobby-online-box .section-title { margin-top: 0; }
 .lobby-online-box .online-list { max-height: 124px; }
 .btn.invite { border-color: var(--accent); color: var(--accent); }
-.voice-row { display: flex; gap: 8px; }
-.voice-row .btn.voice { flex: 1; }
-.voice-row #lobby-voice-mute { flex: none; width: 52px; }
+/* voice chat pills pinned to the top bar, next to the music toggle */
+.voice-row {
+  position: fixed;
+  top: calc(8px + var(--safe-top));
+  left: 54px;
+  z-index: 40;
+  display: flex;
+  gap: 6px;
+}
+.voice-row .btn.voice {
+  border: none;
+  border-radius: 18px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  background: rgba(10,12,25,.6);
+  color: var(--ink-dim);
+  opacity: .9;
+}
+.voice-row #lobby-voice-mute { width: 36px; padding: 0; }
 .btn.voice.voice-on { border-color: var(--good); color: var(--good); box-shadow: 0 0 10px rgba(80, 220, 120, .25); }
 .roster .r-name .r-voice { font-size: 12px; margin-left: 6px; }
 .roster { list-style: none; display: flex; flex-direction: column; gap: 8px; }
@@ -624,13 +641,13 @@ input[type=text]:focus { border-color: var(--accent); }
       "head   ready"
       "tag    start"
       "char   edit"
-      "invite leave"
-      "online maptitle"
-      "online maps"
-      "voice  maps"
+      "roster leave"
+      "roster maptitle"
       "roster maps"
+      "invite maps"
+      "online online"
       "status status";
-    grid-template-rows: auto auto auto auto auto auto 1fr auto;
+    grid-template-rows: auto auto auto auto auto 1fr auto auto auto;
     column-gap: 16px;
     row-gap: 8px;
     align-items: start;
@@ -639,9 +656,8 @@ input[type=text]:focus { border-color: var(--accent); }
   .lobby-panel .tagline { grid-area: tag; margin-top: 0; text-align: left; }
   .lobby-char-row { grid-area: char; }
   #lobby-invite { grid-area: invite; }
-  #lobby-online { grid-area: online; min-height: 0; }
+  #lobby-online { grid-area: online; }
   #lobby-online .online-list { max-height: 96px; }
-  .voice-row { grid-area: voice; }
   #lobby-roster { grid-area: roster; align-self: stretch; min-height: 0; overflow-y: auto; }
   #lobby-status { grid-area: status; min-height: 0; }
   #lobby-ready  { grid-area: ready; }
