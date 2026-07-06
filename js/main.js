@@ -57,8 +57,32 @@ touch.onPad = on => UI.banner(
 const renderer = new Renderer($('#game-canvas'));
 
 // ---------------- boot ----------------
+// The service worker precaches everything cache-first, so a deployed update
+// only reaches the page once the new worker takes control. When that happens,
+// reload immediately if we're just sitting in a menu; mid-room or mid-fight,
+// offer a tap-to-refresh banner instead of yanking the session away.
 if ('serviceWorker' in navigator) {
-  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  addEventListener('load', async () => {
+    const reg = await navigator.serviceWorker.register('sw.js').catch(() => null);
+    if (!reg) return;
+    // Installed PWAs can stay alive for days without a full page load, so
+    // re-check for a new version whenever the app returns to the foreground.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+    // On a first visit the page loads uncontrolled and the fresh worker's
+    // clients.claim() fires one controllerchange that is not an update —
+    // swallow that one; every later controllerchange is a real new version.
+    let firstClaim = !navigator.serviceWorker.controller;
+    let refreshed = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (firstClaim) { firstClaim = false; return; }
+      if (refreshed) return;
+      refreshed = true;
+      if (!net && !session) { location.reload(); return; }
+      UI.banner('Update ready — tap to refresh', 'good', 60000, () => location.reload());
+    });
+  });
 }
 
 // ---------------- PWA install ----------------
