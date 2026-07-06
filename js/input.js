@@ -158,12 +158,13 @@ export class TouchInput {
     if (!this.enabled || e.repeat) return;
     const k = e.key.toLowerCase();
     if (down) this.keys.add(k); else this.keys.delete(k);
-    const dir = this.keys.has('arrowleft') || this.keys.has('a') ? -1
-      : this.keys.has('arrowright') || this.keys.has('d') ? 1 : 0;
+    const left = this.keys.has('arrowleft') || this.keys.has('a');
+    const right = this.keys.has('arrowright') || this.keys.has('d');
     const up = this.keys.has('arrowup') || this.keys.has('w');
     const dn = this.keys.has('arrowdown') || this.keys.has('s');
+    const dir = (right ? 1 : 0) - (left ? 1 : 0);
     this.state.mx = dir;
-    this.state.my = dn ? 1 : up ? -1 : 0;
+    this.state.my = (dn ? 1 : 0) - (up ? 1 : 0);
     if (!down) {
       // smash key released: fire the charged attack in the aim locked at press
       if ((k === 'k' || k === 'x') && this.keyChg
@@ -175,7 +176,7 @@ export class TouchInput {
     }
     if (k === ' ' || k === 'arrowup' || k === 'w') this.queue.push({ jump: true });
     if (k === 'arrowdown' || k === 's') this.queue.push({ ff: true, drop: true });
-    const aim = { dx: dir, dy: dn ? 1 : up ? -1 : 0 };
+    const aim = { dx: dir, dy: this.state.my };
     if (k === 'j' || k === 'z') this.queue.push({ atk: { kind: 'tap', ...aim } });
     if (k === 'k' || k === 'x') this.keyChg = aim;   // hold to charge the smash
     if (k === 'l' || k === 'c') this.queue.push({ ab0: true });
