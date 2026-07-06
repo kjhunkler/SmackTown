@@ -539,7 +539,13 @@ function enterRoom(joinCode) {
   net = new Net(profile);
   voice = new VoiceChat(net);
   voice.onChange = () => { renderVoiceButtons(); renderLobby(); };
-  net.on('voice', (pid, on) => voice?.onPeerVoice(pid, on));
+  net.on('voice', (pid, on) => {
+    voice?.onPeerVoice(pid, on);
+    if (on && pid !== net.myId) {
+      const name = net.members.get(pid)?.name || 'A fighter';
+      UI.banner(`🎙 ${name} joined voice chat`, 'good');
+    }
+  });
 
   net.on('room', () => {
     renderLobby();

@@ -322,7 +322,7 @@ export class Net {
 
       case 'voice': {
         // A member hopped in or out of the lobby voice channel.
-        if (m) { m.voice = !!msg.on; this.emit('voice', pid, m.voice); this.emit('roster'); }
+        if (m && !!msg.on !== !!m.voice) { m.voice = !!msg.on; this.emit('voice', pid, m.voice); this.emit('roster'); }
         if (this.isHost) this._broadcastRoster();
         break;
       }
