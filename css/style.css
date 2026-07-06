@@ -526,7 +526,16 @@ input[type=text]:focus { border-color: var(--accent); }
 .presence-dot.away { background: var(--warn); }
 .presence-dot.gone { background: var(--bad); animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .3; } }
-.roster .r-fig { position: relative; width: 24px; height: 24px; flex: none; }
+.roster .r-fig {
+  position: relative;
+  width: 46px; height: 46px;
+  flex: none;
+  margin: -8px 0;
+}
+.roster .r-fighter {
+  width: 46px; height: 46px;
+  display: block;
+}
 .roster .r-swatch { display: block; width: 24px; height: 24px; border-radius: 7px; flex: none; }
 .roster .r-hat {
   position: absolute;

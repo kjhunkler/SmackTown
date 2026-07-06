@@ -661,7 +661,13 @@ $('#lobby-voice-mute').addEventListener('click', () => voice?.setMuted(!voice.mu
 
 function renderLobby() {
   if (net) {
-    UI.renderLobbyCard(profile);
+    const me = net.members.get(net.myId);
+    UI.renderLobbyCard(me ? {
+      name: me.name,
+      color: me.color,
+      build: sanitizeBuild(me.build),
+      hat: sanitizeHat(me.hat),
+    } : profile);
     UI.renderLobby(net, voteMap);
     renderLobbyInvites();
   }

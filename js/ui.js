@@ -264,6 +264,15 @@ function appendHat(box, hat) {
   box.appendChild(c);
 }
 
+function fighterThumb(color, hat) {
+  const c = document.createElement('canvas');
+  c.width = 72;
+  c.height = 72;
+  c.className = 'r-fighter';
+  drawPreview(c, color || '#f5f5f5', hat);
+  return c;
+}
+
 // ---------- menu card ----------
 
 export function renderMenuCard(profile) {
@@ -308,9 +317,9 @@ export function renderOnline(entries, ready, { onJoin, onInvite, root = 'menu', 
       : 'in the menu';
     li.innerHTML = `
       <span class="presence-dot online"></span>
-      <span class="r-fig"><span class="r-swatch" style="background:${esc(e.color || '#f5f5f5')}"></span></span>
+      <span class="r-fig"></span>
       <span class="r-name">${esc(e.name)}<span class="r-where">${where}</span></span>`;
-    appendHat(li.querySelector('.r-fig'), e.hat);
+    li.querySelector('.r-fig').appendChild(fighterThumb(e.color, e.hat));
     if (inviteOnly) {
       const b = document.createElement('button');
       b.className = 'btn tiny ghost';
@@ -347,10 +356,10 @@ export function renderLobby(net, onVote = null) {
     const isMe = m.peerId === net.myId;
     li.innerHTML = `
       <span class="presence-dot ${m.status === 'gone' ? 'gone' : m.status === 'away' ? 'away' : 'online'}"></span>
-      <span class="r-fig"><span class="r-swatch" style="background:${m.color}"></span></span>
+      <span class="r-fig"></span>
       <span class="r-name">${esc(m.name)}${isMe ? ' (you)' : ''}${isHost ? '<span class="r-host">HOST</span>' : ''}${m.voice ? '<span class="r-voice" title="In voice chat">🎙</span>' : ''}</span>
       <span class="r-meta">${m.ready ? '<div class="r-ready">READY</div>' : ''}${!isMe && m.ping ? m.ping + 'ms' : ''}</span>`;
-    appendHat(li.querySelector('.r-fig'), m.hat);
+    li.querySelector('.r-fig').appendChild(fighterThumb(m.color, m.hat));
     list.appendChild(li);
   }
 
