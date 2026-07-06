@@ -63,10 +63,14 @@ const renderer = new Renderer($('#game-canvas'));
 // offer a tap-to-refresh banner instead of yanking the session away.
 if ('serviceWorker' in navigator) {
   addEventListener('load', async () => {
-    const reg = await navigator.serviceWorker.register('sw.js').catch(() => null);
+    // updateViaCache:'none' keeps the HTTP cache out of sw.js update checks
+    const reg = await navigator.serviceWorker
+      .register('sw.js', { updateViaCache: 'none' }).catch(() => null);
     if (!reg) return;
-    // Installed PWAs can stay alive for days without a full page load, so
-    // re-check for a new version whenever the app returns to the foreground.
+    // Check for a new version on every launch (mobile Safari especially is
+    // lazy about update checks) and whenever the app returns to the
+    // foreground — installed PWAs can stay alive for days without a load.
+    reg.update().catch(() => {});
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') reg.update().catch(() => {});
     });
