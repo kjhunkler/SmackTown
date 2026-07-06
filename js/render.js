@@ -207,6 +207,8 @@ export class Renderer {
       case 'fireball':  this.burst(ev.x, ev.y, 8, '#ff8a2e', 220); break;
       case 'boomerang': this.burst(ev.x, ev.y, 8, '#8fd3ff', 200); break;
       case 'volley':    this.burst(ev.x, ev.y, 12, '#ffd23e', 260); break;
+      case 'hook':      this.burst(ev.x, ev.y, 8, '#c9d4e8', 200); break;
+      case 'trap':      this.burst(ev.x, ev.y, 8, '#9aa3c7', 160); break;
       case 'mend':      break;   // the 'mend' event already sparkles green
       case 'shockwave': this.burst(ev.x, ev.y, 8, '#ffb02e', 180); break; // cast; slam booms later
       case 'gale':      break;   // the 'gale' event draws the gust rings
@@ -234,6 +236,21 @@ export class Renderer {
       case 'sniper':
         this.burst(ev.x, ev.y, 8, '#ffd23e', 260);
         this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 44, t: 0, life: 0.24, color: '#ffd23e', w: 3 });
+        break;
+      case 'momentum':
+        this.burst(ev.x, ev.y, 8, '#ff8a5c', 230);
+        this.dmgPops.push({ x: ev.x, y: ev.y - F_H / 2 - 20, txt: 'RUSH', t: 0, life: 0.5, heavy: false, color: '#ff8a5c' });
+        break;
+      case 'bulwark':
+        this.rings.push({ x: ev.x, y: ev.y, r0: 20, r1: 50, t: 0, life: 0.26, color: '#8fd3ff', w: 5 });
+        break;
+      case 'executioner':
+        this.burst(ev.x, ev.y, 12, '#ff2e63', 300);
+        this.dmgPops.push({ x: ev.x, y: ev.y - F_H / 2 - 24, txt: 'DOOM', t: 0, life: 0.6, heavy: true, color: '#ff2e63' });
+        break;
+      case 'reaper':
+        this.burst(ev.x, ev.y - 12, 12, '#b388ff', 240);
+        this.dmgPops.push({ x: ev.x, y: ev.y - F_H / 2 - 24, txt: 'REAP', t: 0, life: 0.6, heavy: false, color: '#b388ff' });
         break;
     }
   }
@@ -323,6 +340,32 @@ export class Renderer {
         roundRect(ctx, -5, -17, 10, 34, 5); ctx.fill();
         ctx.fillStyle = '#eaf7ff';
         ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, 7); ctx.fill();
+      } else if (p.kind === 'hook') {
+        // spinning three-prong claw
+        ctx.rotate(t * 14 + p.eid);
+        ctx.strokeStyle = '#c9d4e8';
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        for (const a of [0, 2.1, 4.2]) {
+          ctx.beginPath();
+          ctx.arc(0, 0, 11, a, a + 1.6);
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#eaf7ff';
+        ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, 7); ctx.fill();
+      } else if (p.kind === 'trap') {
+        // armed jaws, teeth glinting while it waits
+        const glint = 0.6 + Math.abs(Math.sin(t * 6 + p.eid)) * 0.4;
+        ctx.fillStyle = '#9aa3c7';
+        roundRect(ctx, -16, 4, 32, 7, 3); ctx.fill();   // base plate
+        ctx.globalAlpha = glint;
+        ctx.fillStyle = '#eaf7ff';
+        for (const dx of [-12, -4, 4]) {                 // teeth
+          ctx.beginPath();
+          ctx.moveTo(dx, 5); ctx.lineTo(dx + 4, -9); ctx.lineTo(dx + 8, 5);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
       } else {
         const bolt = p.kind === 'bolt';
         const flick = 1 + Math.sin(t * 30 + p.eid) * 0.2;

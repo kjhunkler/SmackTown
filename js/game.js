@@ -151,6 +151,8 @@ const ABILITY_DEFS = {
   gale:      { cd: 5.0 },
   bubble:    { cd: 6.0 },
   mend:      { cd: 7.0 },
+  hook:      { cd: 5.0 },
+  trap:      { cd: 6.0 },
 };
 const COUNTER_WINDOW = 0.6;          // parry stance duration (s)
 const BUBBLE_INVULN = 1.5;           // bubble shield duration (s)
@@ -189,12 +191,14 @@ export class Game {
       atk: null,                    // active attack name
       atkDir: null,                 // 8-way aim at attack start {x,y} or null
       atkHit: new Set(),
+      atkSpd: 0,                    // speed when the swing began (momentum augment)
       chg: 0,                       // charge fraction baked into the live attack
       chgAim: null,                 // 8-way aim captured when the charge began
       invuln: 0, counterT: 0, dashT: 0,
       guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
       usedSecondWind: false,
+      lastHitBy: null,              // KO attribution (reaper heal)
       dropT: 0,                     // drop-through timer
       riseT: 0,                     // cooldown on the aerial up-smash lift
       ledge: 0,                     // hanging: -1 left lip, 1 right lip, 0 none
@@ -304,7 +308,8 @@ export class Game {
     const wantDuck = f.grounded && inp.my > 0.6 && inp.my >= Math.abs(inp.mx);
     const duckAttack = inDuck && (inp.atk || (inp.chg && inp.chgArm));
     if (inDuck) {
-      f.guard = Math.max(0, f.guard - GUARD_DRAIN * TICK);
+      const wear = f.st.augments.includes('bulwark') ? 0.6 : 1;  // bulwark: sturdier guard
+      f.guard = Math.max(0, f.guard - GUARD_DRAIN * TICK * wear);
       if (f.guard <= 0) this._crushGuard(f);
       else if (duckAttack) {
         f.state = 'idle';
@@ -379,7 +384,7 @@ export class Game {
     if (inAttack) {
       const a = ATTACKS[f.atk];
       const total = a.startup + a.active + a.rec;
-      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.lowJab = false; f.atkHit.clear(); f.chg = 0; }
+      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.lowJab = false; f.atkHit.clear(); f.chg = 0; f.atkSpd = 0; }
     }
     if (inHitstun && f.stateT >= f.hitstunFor) { f.state = 'air'; }
     if (inCrush && f.stateT >= CRUSH_STUN) { f.state = f.grounded ? 'idle' : 'air'; }
@@ -557,6 +562,7 @@ export class Game {
     f.atkDir = (dx || dy) ? { x: dx, y: dy } : null;
     f.lowJab = fromDuck && name === 'jab';
     f.atkHit.clear();
+    f.atkSpd = Math.hypot(f.vx, f.vy);   // momentum: judge the run-up, not the plant
     if (f.grounded) f.vx *= 0.35;
     // upward swipe in the air boosts you like an air jump — and costs none.
     // The lift itself is on a short cooldown so chained up-smashes can't be
@@ -682,6 +688,24 @@ export class Game {
         f.pct = Math.max(0, f.pct - 15);
         this.events.push({ e: 'mend', id: f.id, x: f.x, y: f.y });
         break;
+      case 'hook':
+        // chain claw: reels the first foe it tags in toward you
+        this.projectiles.push({
+          eid: nextEid++, kind: 'hook', owner: f.id,
+          x: f.x + f.facing * 40, y: f.y - 8,
+          vx: f.facing * 700, vy: 0, ttl: 0.9,
+          dmg: 5, kb: 520, ks: 2, r: 13, pull: true, ang: -20,
+        });
+        break;
+      case 'trap':
+        // planted jaws: drop at your feet and sit armed until someone steps in
+        this.projectiles.push({
+          eid: nextEid++, kind: 'trap', owner: f.id,
+          x: f.x + f.facing * 30, y: f.y + F_H / 2 - 12,
+          vx: 0, vy: 0, grav: 1400, ttl: 6,
+          dmg: 8, kb: 330, ks: 16, r: 16, ang: -80, pierce: true,
+        });
+        break;
     }
     this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y, dir: f.facing });
   }
@@ -794,7 +818,11 @@ export class Game {
         if (Math.abs(pos.x - pr.x) < F_W / 2 + pr.r && Math.abs(pos.y + ob.dy - pr.y) < ob.hh + pr.r) {
           const att = this.fighters.find(x => x.id === pr.owner);
           if (o.counterT > 0) { pr.vx *= -1; pr.owner = o.id; this.events.push({ e: 'counter', x: o.x, y: o.y }); continue; }
-          if (att) this._applyHit(att, o, pr, deg(-40), Math.sign(pr.vx) || 1);
+          if (att) {
+            // hooks yank the victim toward the thrower; traps launch straight up
+            const dirX = pr.pull ? (Math.sign(att.x - pos.x) || 1) : (Math.sign(pr.vx) || 1);
+            this._applyHit(att, o, pr, deg(pr.ang ?? -40), dirX, false, !!pr.pierce);
+          }
           pr.ttl = 0;
         }
       }
@@ -844,7 +872,13 @@ export class Game {
       dmg *= 1.2; // projectile hit
       this.events.push({ e: 'augment', aug: 'sniper', id: att.id, x: vic.x, y: vic.y });
     }
+    if (att.st.augments.includes('momentum') && !spec.r
+        && (att.atkSpd > 320 || Math.hypot(att.vx, att.vy) > 320)) {
+      dmg *= 1.15; // fast-moving melee hits harder
+      this.events.push({ e: 'augment', aug: 'momentum', id: att.id, x: att.x, y: att.y });
+    }
     dmg *= vic.st.dmgTaken;                     // defense stat shaves incoming damage
+    vic.lastHitBy = att.id;                     // KO attribution (reaper heal)
 
     // ducked block: chip damage and a horizontal shove instead of a launch.
     // The guard eats the hit's full raw damage and crushes at zero.
@@ -855,7 +889,12 @@ export class Game {
       const kb = (spec.kb + spec.ks * dmg * (1 + vic.pct / 90))
         * att.st.kbMult * vic.st.kbTaken * DUCK_KB_TAKEN;
       vic.vx = Math.cos(angRad) * kb * dirX;
-      vic.guard -= raw;
+      if (vic.st.augments.includes('bulwark')) {
+        vic.guard -= raw * 0.6;   // bulwark: the guard shrugs off more
+        this.events.push({ e: 'augment', aug: 'bulwark', id: vic.id, x: vic.x, y: vic.y });
+      } else {
+        vic.guard -= raw;
+      }
       if (vic.guard <= 0) this._crushGuard(vic);
       this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
       this.events.push({ e: 'block', x: vic.x, y: vic.y - F_H / 2 + DUCK_H / 2, vic: vic.id });
@@ -891,9 +930,12 @@ export class Game {
     }
 
     // smash-style knockback: grows with victim percent
+    const doom = att.st.augments.includes('executioner') && vic.pct >= 100;
+    if (doom) this.events.push({ e: 'augment', aug: 'executioner', id: att.id, x: vic.x, y: vic.y });
     const kb = (spec.kb + spec.ks * dmg * (1 + vic.pct / 90))
       * att.st.kbMult * vic.st.kbTaken
-      * (vic.state === 'crush' ? CRUSH_KB_TAKEN : 1);
+      * (vic.state === 'crush' ? CRUSH_KB_TAKEN : 1)
+      * (doom ? 1.2 : 1);
     const ang = spike ? Math.PI / 2 : angRad;   // spikes send straight down
     vic.vx = Math.cos(ang) * kb * dirX * (spike ? 0.15 : 1);
     vic.vy = Math.sin(ang) * kb;
@@ -905,6 +947,7 @@ export class Game {
     vic.atk = null;
     vic.atkDir = null;
     vic.melee = null;
+    vic.atkSpd = 0;
     vic.chg = 0;
     vic.chgAim = null;
 
@@ -918,13 +961,30 @@ export class Game {
   _stepProjectiles() {
     for (const pr of this.projectiles) {
       if (pr.ret) pr.vx += pr.ret * TICK;    // boomerang: decelerate, then return
+      if (pr.grav) pr.vy = Math.min(pr.vy + pr.grav * TICK, 1150);  // traps drop until they settle
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
+      if (pr.grav) this._settleTrap(pr);
       const m = this.stage.main;
       if (pr.y > m.y && pr.x > m.x && pr.x < m.x + m.w) pr.ttl = 0;
     }
     this.projectiles = this.projectiles.filter(p => p.ttl > 0);
+  }
+
+  // Snap a falling trap onto the first surface under it, then stop pulling.
+  _settleTrap(pr) {
+    const m = this.stage.main;
+    if (pr.x > m.x && pr.x < m.x + m.w && pr.y >= m.y - 12) {
+      pr.y = m.y - 12; pr.vy = 0; pr.grav = 0;
+      return;
+    }
+    for (const pl of this.stage.plats) {
+      if (pr.x > pl.x && pr.x < pl.x + pl.w && pr.y >= pl.y - 12 && pr.y <= pl.y + 26) {
+        pr.y = pl.y - 12; pr.vy = 0; pr.grav = 0;
+        return;
+      }
+    }
   }
 
   _checkBlast() {
@@ -934,6 +994,13 @@ export class Game {
       if (f.x < b.l || f.x > b.r || f.y < b.t || f.y > b.b) {
         f.stocks--;
         this.events.push({ e: 'ko', x: clamp(f.x, b.l, b.r), y: clamp(f.y, b.t, b.b), id: f.id, stocks: f.stocks });
+        // reaper: whoever landed the last hit drinks deep on the KO
+        const reaper = f.lastHitBy ? this.fighters.find(k => k.id === f.lastHitBy && !k.dead) : null;
+        if (reaper && reaper.st.augments.includes('reaper')) {
+          reaper.pct = Math.max(0, reaper.pct - 25);
+          this.events.push({ e: 'augment', aug: 'reaper', id: reaper.id, x: reaper.x, y: reaper.y });
+        }
+        f.lastHitBy = null;
         if (f.stocks <= 0) {
           f.dead = true;
           f.state = 'dead';
@@ -1030,7 +1097,7 @@ export class Game {
           r2(f.regrabT), f.rollDir, r2(f.invuln), r2(f.dropT),
           f.fastfall ? 1 : 0, r2(f.dashT), r2(f.counterT),
           f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
-          r1(f.guard), r2(f.standT), r2(f.chg), r2(f.riseT),
+          r1(f.guard), r2(f.standT), r2(f.chg), r2(f.riseT), f.lastHitBy || 0,
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -1072,6 +1139,7 @@ export function restoreFighter(f, row) {
     if (row.length > 28) { f.guard = row[28]; f.standT = row[29] || 0; }
     f.chg = row[30] || 0;
     f.riseT = row[31] || 0;
+    f.lastHitBy = row[32] || null;
     f.chgAim = f.state === 'charge' ? { dx: row[26] | 0, dy: row[27] | 0 } : null;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming

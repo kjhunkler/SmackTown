@@ -37,6 +37,10 @@ export const ABILITIES = [
     desc: 'Pop a shield — 1.5s of invulnerability' },
   { id: 'mend',      icon: '💚', name: 'Mend',        cost: 260, cd: 7.0,
     desc: 'Patch yourself up — instantly heal 15%' },
+  { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 240, cd: 5.0,
+    desc: 'Hurl a hook that reels a foe in to you' },
+  { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 6.0,
+    desc: 'Plant spikes that launch whoever steps in' },
 ];
 
 export const AUGMENTS = [
@@ -60,6 +64,14 @@ export const AUGMENTS = [
     desc: 'Landing a hit refreshes your air jumps' },
   { id: 'sniper',      icon: '🎯', name: 'Sniper',       cost: 160,
     desc: 'Your projectiles deal +20% damage' },
+  { id: 'momentum',    icon: '🏃', name: 'Momentum',     cost: 150,
+    desc: 'Melee hits deal +15% while you move fast' },
+  { id: 'bulwark',     icon: '🧱', name: 'Bulwark',      cost: 150,
+    desc: 'Your duck guard wears down 40% slower' },
+  { id: 'executioner', icon: '🪓', name: 'Executioner',  cost: 160,
+    desc: '+20% knockback vs foes at 100% or more' },
+  { id: 'reaper',      icon: '💀', name: 'Reaper',       cost: 170,
+    desc: 'KO a foe to heal 25%' },
 ];
 
 export const MAX_ABILITIES = 2;

@@ -250,6 +250,14 @@ class Sfx {
         for (const t0 of [0, 0.05, 0.10])
           this._tone({ type: 'square', f0: 900, f1: 500, t0, dur: 0.07, vol: 0.09 });
         break;
+      case 'ab:hook':
+        this._noise({ type: 'bandpass', f0: 2000, f1: 700, q: 4, dur: 0.16, vol: 0.14 });
+        this._tone({ type: 'square', f0: 240, f1: 170, dur: 0.1, vol: 0.08 });
+        break;
+      case 'ab:trap':
+        this._tone({ type: 'square', f0: 320, f1: 210, dur: 0.08, vol: 0.12 });
+        this._tone({ type: 'square', f0: 520, t0: 0.07, dur: 0.05, vol: 0.09 });
+        break;
       case 'ability':                               // generic zap fallback
         this._tone({ type: 'sawtooth', f0: 700, f1: 180, dur: 0.12, vol: 0.14 });
         break;
@@ -319,7 +327,13 @@ class Sfx {
       case 'duck':    this.play('duck'); break;
       case 'counter': this.play('counter'); break;
       case 'secondwind': this.play('secondwind'); break;
-      case 'augment': this.play(ev.aug === 'thorns' ? 'block' : ev.aug === 'acrobat' ? 'jump' : ev.aug === 'vampiric' ? 'mend' : 'ability'); break;
+      case 'augment': this.play(
+        ev.aug === 'thorns' ? 'block'
+        : ev.aug === 'acrobat' ? 'jump'
+        : ev.aug === 'vampiric' || ev.aug === 'reaper' ? 'mend'
+        : ev.aug === 'bulwark' ? 'block'
+        : ev.aug === 'executioner' ? 'hitheavy'
+        : 'ability'); break;
       case 'shockwave':  this.play('shockwave'); break;
       case 'gale':    this.play('gale'); break;
       case 'mend':    this.play('mend'); break;
@@ -330,7 +344,7 @@ class Sfx {
 
   _has(name) {
     return ['ab:fireball', 'ab:blink', 'ab:mend', 'ab:shockwave', 'ab:gale',
-      'ab:bubble', 'ab:boomerang', 'ab:volley'].includes(name);
+      'ab:bubble', 'ab:boomerang', 'ab:volley', 'ab:hook', 'ab:trap'].includes(name);
   }
 
   // ---------- theme song sequencer ----------
