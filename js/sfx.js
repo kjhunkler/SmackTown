@@ -319,6 +319,7 @@ class Sfx {
       case 'duck':    this.play('duck'); break;
       case 'counter': this.play('counter'); break;
       case 'secondwind': this.play('secondwind'); break;
+      case 'augment': this.play(ev.aug === 'thorns' ? 'block' : ev.aug === 'acrobat' ? 'jump' : ev.aug === 'vampiric' ? 'mend' : 'ability'); break;
       case 'shockwave':  this.play('shockwave'); break;
       case 'gale':    this.play('gale'); break;
       case 'mend':    this.play('mend'); break;

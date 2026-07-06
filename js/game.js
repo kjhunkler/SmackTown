@@ -828,8 +828,14 @@ export class Game {
 
   _applyHit(att, vic, spec, angRad, dirX, spike = false, pierce = false) {
     let dmg = spec.dmg * att.st.dmgMult;
-    if (att.st.augments.includes('berserker') && att.pct >= 80) dmg *= 1.25;
-    if (att.st.augments.includes('sniper') && spec.r) dmg *= 1.3; // projectile hit
+    if (att.st.augments.includes('berserker') && att.pct >= 80) {
+      dmg *= 1.2;
+      this.events.push({ e: 'augment', aug: 'berserker', id: att.id, x: att.x, y: att.y });
+    }
+    if (att.st.augments.includes('sniper') && spec.r) {
+      dmg *= 1.2; // projectile hit
+      this.events.push({ e: 'augment', aug: 'sniper', id: att.id, x: vic.x, y: vic.y });
+    }
     dmg *= vic.st.dmgTaken;                     // defense stat shaves incoming damage
 
     // ducked block: chip damage and a horizontal shove instead of a launch.
@@ -855,10 +861,16 @@ export class Game {
     vic.pct = Math.min(999, vic.pct + dmg);
 
     // acrobat: connecting resets your air jumps, enabling aerial chases
-    if (att.st.augments.includes('acrobat')) att.jumps = att.st.maxJumps;
+    if (att.st.augments.includes('acrobat') && att.jumps < att.st.maxJumps) {
+      att.jumps = att.st.maxJumps;
+      this.events.push({ e: 'augment', aug: 'acrobat', id: att.id, x: att.x, y: att.y });
+    }
 
     // vampiric heal & second wind
-    if (att.st.augments.includes('vampiric')) att.pct = Math.max(0, att.pct - dmg * 0.15);
+    if (att.st.augments.includes('vampiric')) {
+      att.pct = Math.max(0, att.pct - dmg * 0.12);
+      this.events.push({ e: 'augment', aug: 'vampiric', id: att.id, x: att.x, y: att.y, vic: vic.id });
+    }
     if (vic.st.augments.includes('secondwind') && !vic.usedSecondWind && vic.pct >= 100) {
       vic.usedSecondWind = true;
       vic.pct = Math.max(0, vic.pct - 30);
@@ -866,7 +878,8 @@ export class Game {
     }
     // thorns recoil (melee only — projectiles have no body contact)
     if (vic.st.augments.includes('thorns') && !spec.r) {
-      att.pct = Math.min(999, att.pct + 3);
+      att.pct = Math.min(999, att.pct + 4);
+      this.events.push({ e: 'augment', aug: 'thorns', id: vic.id, x: vic.x, y: vic.y, vic: att.id });
     }
 
     // smash-style knockback: grows with victim percent

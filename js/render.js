@@ -117,6 +117,9 @@ export class Renderer {
         case 'ability':
           this._abilityFx(ev);
           break;
+        case 'augment':
+          this._augmentFx(ev);
+          break;
         case 'counter':
           this.burst(ev.x, ev.y, 14, '#38b6ff', 300);
           break;
@@ -207,6 +210,31 @@ export class Renderer {
       case 'mend':      break;   // the 'mend' event already sparkles green
       case 'shockwave': this.burst(ev.x, ev.y, 8, '#ffb02e', 180); break; // cast; slam booms later
       case 'gale':      break;   // the 'gale' event draws the gust rings
+    }
+  }
+
+  _augmentFx(ev) {
+    switch (ev.aug) {
+      case 'vampiric':
+        this.burst(ev.x, ev.y - 12, 8, '#ff5470', 180);
+        this.dmgPops.push({ x: ev.x, y: ev.y - F_H / 2 - 24, txt: 'LEECH', t: 0, life: 0.55, heavy: false, color: '#ff5470' });
+        break;
+      case 'thorns':
+        this.burst(ev.x, ev.y, 10, '#8dde59', 220);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 18, r1: 56, t: 0, life: 0.28, color: '#8dde59', w: 5 });
+        break;
+      case 'berserker':
+        this.burst(ev.x, ev.y - F_H / 2, 6, '#ff3d3d', 170);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: 62, t: 0, life: 0.22, color: '#ff3d3d', w: 4 });
+        break;
+      case 'acrobat':
+        this.burst(ev.x, ev.y, 10, '#b388ff', 240);
+        this.dmgPops.push({ x: ev.x, y: ev.y - F_H / 2 - 20, txt: 'JUMPS', t: 0, life: 0.5, heavy: false, color: '#b388ff' });
+        break;
+      case 'sniper':
+        this.burst(ev.x, ev.y, 8, '#ffd23e', 260);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 44, t: 0, life: 0.24, color: '#ffd23e', w: 3 });
+        break;
     }
   }
 
@@ -403,7 +431,7 @@ export class Renderer {
       ctx.font = `italic 900 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
       ctx.lineWidth = 5;
       ctx.strokeStyle = 'rgba(10, 12, 25, .75)';
-      ctx.fillStyle = d.heavy ? '#ffdd55' : '#ffffff';
+      ctx.fillStyle = d.color || (d.heavy ? '#ffdd55' : '#ffffff');
       const y = d.y - 46 * k;
       ctx.strokeText(d.txt, d.x, y);
       ctx.fillText(d.txt, d.x, y);

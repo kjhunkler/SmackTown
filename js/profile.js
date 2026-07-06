@@ -40,26 +40,26 @@ export const ABILITIES = [
 ];
 
 export const AUGMENTS = [
-  { id: 'vampiric',    icon: '🩸', name: 'Vampiric',     cost: 180,
-    desc: 'Heal 15% of the damage you deal' },
-  { id: 'thorns',      icon: '🌵', name: 'Thorns',       cost: 150,
-    desc: 'Melee attackers take 3% recoil damage' },
-  { id: 'feather',     icon: '🪶', name: 'Featherweight',cost: 120,
+  { id: 'vampiric',    icon: '🩸', name: 'Vampiric',     cost: 170,
+    desc: 'Heal 12% of the damage you deal' },
+  { id: 'thorns',      icon: '🌵', name: 'Thorns',       cost: 160,
+    desc: 'Melee attackers take 4% recoil damage' },
+  { id: 'feather',     icon: '🪶', name: 'Featherweight',cost: 140,
     desc: '+1 midair jump, but you fly 8% further when hit' },
   { id: 'heavy',       icon: '🗿', name: 'Heavyweight',  cost: 160,
-    desc: '-12% knockback taken, but -8% run speed' },
+    desc: '-10% knockback taken, but -8% run speed' },
   { id: 'berserker',   icon: '😤', name: 'Berserker',    cost: 170,
-    desc: '+25% damage while your own percent is 80+' },
+    desc: '+20% damage while your own percent is 80+' },
   { id: 'secondwind',  icon: '💫', name: 'Second Wind',  cost: 200,
     desc: 'Once per stock: heal 30% when you pass 100%' },
   { id: 'glasscannon', icon: '💎', name: 'Glass Cannon', cost: 170,
-    desc: '+20% damage & knockback dealt, +15% knockback taken' },
+    desc: '+18% damage & knockback dealt, +18% knockback taken' },
   { id: 'quickhands',  icon: '⏱️', name: 'Quick Hands',  cost: 180,
-    desc: 'Ability cooldowns recover 25% faster' },
+    desc: 'Ability cooldowns recover 20% faster' },
   { id: 'acrobat',     icon: '🤸', name: 'Acrobat',      cost: 150,
     desc: 'Landing a hit refreshes your air jumps' },
   { id: 'sniper',      icon: '🎯', name: 'Sniper',       cost: 160,
-    desc: 'Your projectiles deal +30% damage' },
+    desc: 'Your projectiles deal +20% damage' },
 ];
 
 export const MAX_ABILITIES = 2;
@@ -245,13 +245,13 @@ export function derivedStats(build) {
     dmgMult:   (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
     kbMult:    (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
     speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.92 : 1),
-    kbTaken:   (1 - 0.06 * b.stats.defense) * (has('heavy') ? 0.88 : 1)
-      * (has('feather') ? 1.08 : 1) * (glass ? 1.15 : 1),
+    kbTaken:   (1 - 0.06 * b.stats.defense) * (has('heavy') ? 0.90 : 1)
+      * (has('feather') ? 1.08 : 1) * (glass ? 1.18 : 1),
     dmgTaken:  1 - 0.04 * b.stats.defense,
     jumpMult:  1 + 0.05 * b.stats.agility,
     airMult:   1 + 0.08 * b.stats.agility,
     maxJumps:  2 + (has('feather') ? 1 : 0),
-    cdMult:    has('quickhands') ? 0.75 : 1,
+    cdMult:    has('quickhands') ? 0.8 : 1,
     abilities: b.abilities,
     augments:  b.augments,
   };
