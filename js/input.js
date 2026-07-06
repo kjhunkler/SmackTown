@@ -9,7 +9,7 @@
 // J = tap attack, K = smash (hold to charge, release to fire; aimed by held
 // direction at press, 8-way), L and ; = abilities. Z/X/C/V mirror J/K/L/;.
 // Gamepad (standard layout, polled each frame alongside touch/keys):
-// left stick / dpad move — hold down to duck, flick up = jump, flick
+// left stick / dpad move — hold down to duck, flick
 // down = fast-fall/drop · A = jump · X = quick attack · B/Y = smash (hold
 // to charge, release to fire; aimed by the stick at press, 8-way) ·
 // LB/LT = ability 0 · RB/RT = ability 1.
@@ -33,7 +33,6 @@ const PAD_BTN = {
   2: 'tap',                  // X — quick attack
   4: 'ab0', 6: 'ab0',        // LB / LT
   5: 'ab1', 7: 'ab1',        // RB / RT
-  12: 'jump',                // dpad up
 };
 
 export class TouchInput {
@@ -174,7 +173,7 @@ export class TouchInput {
       }
       return;
     }
-    if (k === ' ' || k === 'arrowup' || k === 'w') this.queue.push({ jump: true });
+    if (k === ' ') this.queue.push({ jump: true });
     if (k === 'arrowdown' || k === 's') this.queue.push({ ff: true, drop: true });
     const aim = { dx: dir, dy: this.state.my };
     if (k === 'j' || k === 'z') this.queue.push({ atk: { kind: 'tap', ...aim } });
@@ -198,9 +197,8 @@ export class TouchInput {
     if (pad.buttons[13]?.pressed) my = 1;
 
     if (this.enabled) {
-      // vertical flicks mirror the touch stick: jump up, fast-fall/drop down
-      if (!this.padFlicked && my < -PAD_FLICK) { this.padFlicked = true; this.queue.push({ jump: true }); }
-      else if (!this.padFlicked && my > PAD_FLICK) { this.padFlicked = true; this.queue.push({ ff: true, drop: true }); }
+      // down flicks mirror the touch stick: fast-fall/drop (up no longer jumps)
+      if (!this.padFlicked && my > PAD_FLICK) { this.padFlicked = true; this.queue.push({ ff: true, drop: true }); }
       else if (this.padFlicked && Math.abs(my) < PAD_AIM_DEAD) this.padFlicked = false;
 
       for (const [i, act] of Object.entries(PAD_BTN)) {
