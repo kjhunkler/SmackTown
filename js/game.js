@@ -54,6 +54,11 @@ const JUMP_V = 860, JUMP2_V = 780;
 const LEDGE_JUMP_V = 1120;           // ledge super jump — spends no air jump
 const LEDGE_INVULN = 0.6, LEDGE_MAX_HANG = 4.0, REGRAB_CD = 0.45;
 const LEDGE_HANG_Y = 22;             // fighter center hangs this far below the lip
+// Grab grace box around each lip (px from the lip, in stage coords):
+// how far inside/outside the stage and above/below the lip a falling
+// fighter can be and still snag the ledge.
+const LEDGE_GRACE_IN = 14, LEDGE_GRACE_OUT = 60;
+const LEDGE_GRACE_UP = 40, LEDGE_GRACE_DOWN = 92;
 const ROLL_TIME = 0.38, ROLL_DIST = 150; // ledge getup roll onto the stage
 const F_W = 46, F_H = 64;            // fighter hurtbox
 const STOCKS = 3;
@@ -85,6 +90,11 @@ const ATTACKS = {
   usmash: { dmg: 11, kb: 230, ks: 21, startup: .14, active: .11, rec: .24, rx: 46, ry: 60, ang: -85, up: true },
   dsmash: { dmg: 10, kb: 210, ks: 19, startup: .13, active: .10, rec: .24, rx: 76, ry: 26, ang: -160, both: true },
   dair:   { dmg: 11, kb: 220, ks: 20, startup: .13, active: .12, rec: .22, rx: 40, ry: 56, ang: 80, down: true, spike: true },
+  // neutral-air spin: a whirl centered on the fighter that hits a tight
+  // circle around the body several times. 'rehit' re-arms the hit set every
+  // interval; the last window swaps in 'fin' for a launching finisher.
+  nspin:  { dmg: 2.5, kb: 120, ks: 5, startup: .06, active: .42, rec: .16, rx: 46, ry: 42, ang: -80, both: true,
+            rehit: .14, fin: { kb: 210, ks: 16, ang: -40 } },
 };
 
 const ABILITY_DEFS = {
@@ -374,7 +384,10 @@ export class Game {
       const dx = (f.x - lipX) * side;        // >0 = outside the stage
       const dy = f.y - m.y;                  // fighter center below the lip
       if (f.vx * side > 40) continue;        // moving away from the stage: no snag
-      if (dx > -8 && dx < 42 && dy > -26 && dy < 64) {
+      // one grabber per lip: an occupied ledge can't be stolen
+      if (this.fighters.some(o => o !== f && !o.dead && o.state === 'ledge' && o.ledge === side)) continue;
+      if (dx > -LEDGE_GRACE_IN && dx < LEDGE_GRACE_OUT
+          && dy > -LEDGE_GRACE_UP && dy < LEDGE_GRACE_DOWN) {
         f.state = 'ledge';
         f.stateT = 0;
         f.ledge = side;
@@ -463,7 +476,8 @@ export class Game {
 
     let name;
     if (!swipe) {
-      name = 'jab';
+      // neutral tap in the air: spin move — multiple hits in a close circle
+      name = (!dx && !dy && !f.grounded) ? 'nspin' : 'jab';
       // grounded straight-down tap: angle it forward so it isn't in the floor
       if (dy > 0 && !dx && f.grounded) dx = f.facing;
     } else if (dy < 0 && !dx) name = 'usmash';
@@ -620,7 +634,7 @@ export class Game {
     if (f.state === 'attack' && f.atk) {
       const a = ATTACKS[f.atk];
       if (f.stateT <= a.startup + a.active) {
-        return { ...meleeHitbox(f, a, f.atkDir), active: f.stateT >= a.startup };
+        return { ...meleeHitbox(f, a, f.atkDir), active: f.stateT >= a.startup, round: !!a.rehit };
       }
     }
     if (f.melee && this.tick <= f.melee.until) {
@@ -640,7 +654,19 @@ export class Game {
       if (f.state === 'attack' && f.atk) {
         const a = ATTACKS[f.atk];
         if (f.stateT >= a.startup && f.stateT <= a.startup + a.active) {
-          this._meleeHit(f, a, f.atkHit, a.ang, f.atkDir);
+          let spec = a;
+          if (a.rehit) {
+            // multi-hit: split the active window into rehit-sized slices and
+            // re-arm the hit set at each slice boundary so victims can be
+            // struck once per slice. A '__w<n>' marker (never a fighter id)
+            // remembers which slice the set belongs to.
+            const wins = Math.max(1, Math.ceil(a.active / a.rehit));
+            const win = Math.min(wins - 1, Math.floor((f.stateT - a.startup) / a.rehit));
+            const key = '__w' + win;
+            if (!f.atkHit.has(key)) { f.atkHit.clear(); f.atkHit.add(key); }
+            if (a.fin && win === wins - 1) spec = { ...a, ...a.fin };
+          }
+          this._meleeHit(f, spec, f.atkHit, spec.ang, f.atkDir);
         }
       }
 

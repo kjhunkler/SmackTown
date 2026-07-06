@@ -452,14 +452,18 @@ export class Renderer {
   // Attack hitbox: dashed outline while winding up (telegraph), then a hot
   // translucent fill during active frames. Mirrors game.js meleeHitbox.
   _hitbox(ctx, f, t) {
-    const { dx, dy, hw, hh, active } = f.hb;
+    const { dx, dy, hw, hh, active, round } = f.hb;
     const x = f.x + dx - hw, y = f.y + dy - hh;
+    // spin moves show as a circle (well, ellipse) instead of a box
+    const shape = () => round
+      ? (ctx.beginPath(), ctx.ellipse(f.x + dx, f.y + dy, hw, hh, 0, 0, 7))
+      : roundRect(ctx, x, y, hw * 2, hh * 2, 9);
     ctx.save();
     if (active) {
       ctx.fillStyle = 'rgba(255, 82, 82, .30)';
       ctx.strokeStyle = 'rgba(255, 150, 130, .95)';
       ctx.lineWidth = 3;
-      roundRect(ctx, x, y, hw * 2, hh * 2, 9);
+      shape();
       ctx.fill();
       ctx.stroke();
     } else {
@@ -467,7 +471,7 @@ export class Renderer {
       ctx.lineWidth = 2;
       ctx.setLineDash([7, 6]);
       ctx.lineDashOffset = -t * 60;
-      roundRect(ctx, x, y, hw * 2, hh * 2, 9);
+      shape();
       ctx.stroke();
     }
     ctx.restore();
