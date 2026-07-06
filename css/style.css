@@ -615,7 +615,7 @@ input[type=text]:focus { border-color: var(--accent); }
 .map-thumb-skyline { background: linear-gradient(#04141c, #0a2a30); }
 .map-thumb-skyline::after { left: 28%; right: 28%; }
 .map-thumb-skyline::before { top: 8px; }
-.map-thumb-ruins { background: linear-gradient(#201815, #4b2d1f); }
+.map-thumb-ruins { background: linear-gradient(#241521, #54222a); }
 .map-thumb-ruins::after { left: 14%; right: 14%; }
 .map-thumb-ruins::before { left: 22%; right: 22%; top: 10px; }
 .map-thumb-foundry { background: linear-gradient(#180b10, #3a1218); }

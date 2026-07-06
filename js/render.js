@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -33,11 +33,11 @@ const THEMES = {
     plat: '#20545c', platTop: '#2e7880',
   },
   ruins: {
-    sky: ['#201815', '#4b2d1f', '#0c0a0a'],
-    motif: 'moon',
-    stars: 0.75,
-    deck: '#46362d', lip: '#665044', trim: '#d0a35a',
-    plat: '#665044', platTop: '#846757',
+    sky: ['#241521', '#54222a', '#120c10'],
+    motif: 'eclipse',
+    stars: 0.45,
+    deck: '#3f3a42', lip: '#5a525c', trim: '#d0a35a',
+    plat: '#5a525c', platTop: '#7a6f78',
   },
   foundry: {
     sky: ['#180b10', '#3a1218', '#070507'],
@@ -66,6 +66,7 @@ export class Renderer {
     this.flash = new Map();          // fighter id -> hit-flash time left
     this.auras = new Map();          // fighter id -> {kind, t} bubble/counter overlays
     this.rings = [];                 // expanding shock rings {x,y,r0,r1,t,life,color,w}
+    this.embers = [];                // ambient drifting embers/ash (ruins)
     this.setMap(DEFAULT_MAP);
     this.stars = Array.from({ length: 90 }, () => ({
       x: Math.random() * 2900 - 1450,
@@ -81,6 +82,8 @@ export class Renderer {
     this.mapId = MAPS[id] ? id : DEFAULT_MAP;
     this.stage = MAPS[this.mapId];
     this.theme = THEMES[this.mapId] || THEMES[DEFAULT_MAP];
+    this.embers = [];
+    this.city = this.mapId === 'ruins' ? buildCity() : null;
   }
 
   _resize() {
@@ -321,7 +324,9 @@ export class Renderer {
     ctx.scale(this.cam.zoom, this.cam.zoom);
     ctx.translate(-this.cam.x, -this.cam.y);
 
-    this._stage(ctx);
+    if (this.city) this._cityBackdrop(ctx, t);
+    this._stage(ctx, view.tick ?? 0, t);
+    if (this.city) this._embers(ctx, dt, t);
 
     // tick down hit flashes
     for (const [id, v] of this.flash) {
@@ -522,10 +527,34 @@ export class Renderer {
         }
         ctx.stroke();
       }
+    } else if (this.theme.motif === 'eclipse') {
+      // eclipsed sun: searing corona bleeding around a black disc
+      const breathe = 1 + Math.sin(t * 0.8) * 0.05;
+      const g = ctx.createRadialGradient(px, py, r * 0.7, px, py, r * 3.1 * breathe);
+      g.addColorStop(0, 'rgba(255, 150, 70, .55)');
+      g.addColorStop(0.4, 'rgba(255, 110, 60, .22)');
+      g.addColorStop(1, 'rgba(255, 110, 60, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - r * 3.2, py - r * 3.2, r * 6.4, r * 6.4);
+      ctx.fillStyle = '#0d0a10';
+      ctx.beginPath(); ctx.arc(px, py, r * 1.02, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 205, 140, .9)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(px, py, r * 1.04, 0, 7); ctx.stroke();
+      // diamond-ring glint crawling along the limb
+      const ga = t * 0.11;
+      const gx = px + Math.cos(ga) * r * 1.04, gy = py + Math.sin(ga) * r * 1.04;
+      const dg = ctx.createRadialGradient(gx, gy, 0, gx, gy, r * 0.55);
+      dg.addColorStop(0, 'rgba(255, 240, 210, .95)');
+      dg.addColorStop(1, 'rgba(255, 240, 210, 0)');
+      ctx.fillStyle = dg;
+      ctx.fillRect(gx - r * 0.55, gy - r * 0.55, r * 1.1, r * 1.1);
     }
   }
 
-  _stage(ctx) {
+  _stage(ctx, tickF = 0, t = 0) {
+    const plats = platsAt(this.mapId, tickF);
+    if (this.mapId === 'ruins') { this._ruinsStage(ctx, plats, t); return; }
     const th = this.theme;
     const m = this.stage.main;
     // main platform with themed deck & lip
@@ -536,12 +565,256 @@ export class Renderer {
     ctx.fillStyle = th.trim;
     ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
 
-    for (const p of this.stage.plats) {
+    for (const p of plats) {
       ctx.fillStyle = th.plat;
       roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();
       ctx.fillStyle = th.platTop;
       ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
     }
+  }
+
+  // Ruined City: parallax skyline of collapsed towers behind a broken
+  // freeway deck, a lattice crane sweeping its girder over the fight, and
+  // rubble chunks bobbing on failing grav-thrusters off each lip.
+  _cityBackdrop(ctx, t) {
+    const c = this.city;
+    for (const layer of c.layers) {
+      const ox = this.cam.x * layer.lag, oy = this.cam.y * layer.lag * 0.85;
+      ctx.fillStyle = layer.fill;
+      for (const b of layer.bldgs) {
+        const x = b.x + ox, yb = c.baseY + oy, yt = b.yTop + oy;
+        ctx.beginPath();                       // silhouette with a collapsed top
+        ctx.moveTo(x, yb);
+        ctx.lineTo(x, yt + b.lgap);
+        ctx.lineTo(x + b.w * b.brk, yt);
+        ctx.lineTo(x + b.w, yt + b.rgap);
+        ctx.lineTo(x + b.w, yb);
+        ctx.closePath(); ctx.fill();
+        if (b.spire) {                         // bent antenna mast
+          ctx.strokeStyle = layer.fill;
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.moveTo(x + b.w * b.brk, yt);
+          ctx.lineTo(x + b.w * b.brk + 8, yt - 44);
+          ctx.stroke();
+        }
+      }
+      if (!layer.windows) continue;
+      for (const b of layer.bldgs) {           // survivors' lights & fires
+        const x = b.x + ox, yt = b.yTop + oy;
+        for (const w of b.wins) {
+          const fl = w.fire
+            ? 0.35 + 0.65 * Math.abs(Math.sin(t * 6 + w.ph))
+            : 0.45 + 0.4 * Math.sin(t * w.spd + w.ph);
+          if (fl <= 0.14) continue;
+          ctx.globalAlpha = Math.min(0.85, fl);
+          ctx.fillStyle = w.fire ? '#ff6a3a' : '#ffc46a';
+          ctx.fillRect(x + w.dx, yt + w.dy, 9, 13);
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+    // burning floors: flickering glow + a lazy smoke column (stateless)
+    for (const f of c.fires) {
+      const fx = f.x + this.cam.x * f.lag, fy = f.y + this.cam.y * f.lag * 0.85;
+      const flick = 0.7 + 0.3 * Math.sin(t * 11) * Math.sin(t * 5.3 + 1);
+      const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, 110);
+      g.addColorStop(0, `rgba(255, 130, 50, ${(0.5 * flick).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(255, 130, 50, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(fx - 110, fy - 110, 220, 220);
+      for (let i = 0; i < 9; i++) {
+        const k = (t * 0.11 + i / 9) % 1;
+        const sx = fx + Math.sin(t * 0.5 + i * 1.9 + k * 5) * (14 + k * 44);
+        const sy = fy - 8 - k * 300;
+        ctx.globalAlpha = (1 - k) * 0.2;
+        ctx.fillStyle = '#4a3f4a';
+        ctx.beginPath(); ctx.arc(sx, sy, 9 + k * 30, 0, 7); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  _ruinsStage(ctx, plats, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // cracked pillars carrying the deck down into the haze
+    ctx.fillStyle = '#28222e';
+    for (const px of [m.x + 120, m.x + m.w - 120]) {
+      ctx.fillRect(px - 24, m.y + 40, 48, 400);
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,.5)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(m.x + 108, m.y + 90); ctx.lineTo(m.x + 124, m.y + 150); ctx.lineTo(m.x + 114, m.y + 210);
+    ctx.moveTo(m.x + m.w - 132, m.y + 120); ctx.lineTo(m.x + m.w - 116, m.y + 180);
+    ctx.stroke();
+
+    // collapsed freeway deck
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 10); ctx.fill();
+    ctx.fillStyle = '#2b2733';                    // asphalt wear course
+    ctx.fillRect(m.x + 3, m.y, m.w - 6, 15);
+    ctx.globalAlpha = 0.5;                        // faded lane dashes
+    ctx.fillStyle = th.trim;
+    for (let i = 0; i < Math.floor(m.w / 74); i++) {
+      if (i % 4 === 2) continue;                  // scoured-off stretches
+      ctx.fillRect(m.x + 22 + i * 74, m.y + 6, 36, 3.5);
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#1c1822';                    // crumbling lip bites
+    for (const [bx, bw] of [[m.x + 54, 26], [m.x + m.w * 0.42, 34], [m.x + m.w - 96, 22]]) {
+      ctx.beginPath();
+      ctx.moveTo(bx, m.y); ctx.lineTo(bx + bw / 2, m.y + 9); ctx.lineTo(bx + bw, m.y);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,.45)';          // face cracks
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(m.x + m.w * 0.3, m.y + 16); ctx.lineTo(m.x + m.w * 0.33, m.y + 40); ctx.lineTo(m.x + m.w * 0.3, m.y + 62);
+    ctx.moveTo(m.x + m.w * 0.72, m.y + 16); ctx.lineTo(m.x + m.w * 0.69, m.y + 44); ctx.lineTo(m.x + m.w * 0.73, m.y + 70);
+    ctx.stroke();
+    ctx.strokeStyle = '#7a4a3a';                  // rebar hooks off both lips
+    ctx.lineWidth = 3;
+    for (const [sx, dir] of [[m.x, -1], [m.x + m.w, 1]]) {
+      for (const dy of [14, 30]) {
+        ctx.beginPath();
+        ctx.moveTo(sx, m.y + dy);
+        ctx.quadraticCurveTo(sx + dir * 16, m.y + dy + 2, sx + dir * 20, m.y + dy + 14);
+        ctx.stroke();
+      }
+    }
+
+    // wrecking crane: lattice tower + boom that the girder trolley rides
+    const boomY = -560;
+    ctx.strokeStyle = '#241d28';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(-620, 430); ctx.lineTo(-620, boomY);
+    ctx.moveTo(-566, 430); ctx.lineTo(-566, boomY);
+    ctx.stroke();
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    for (let y = 430; y > boomY; y -= 54) {       // lattice braces
+      ctx.moveTo(-620, y); ctx.lineTo(-566, y - 54);
+      ctx.moveTo(-566, y); ctx.lineTo(-620, y - 54);
+    }
+    ctx.stroke();
+    ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(-640, boomY); ctx.lineTo(560, boomY); ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.beginPath();                              // tie lines to the mast top
+    ctx.moveTo(-593, boomY - 90); ctx.lineTo(-300, boomY);
+    ctx.moveTo(-593, boomY - 90); ctx.lineTo(200, boomY);
+    ctx.moveTo(-593, boomY); ctx.lineTo(-593, boomY - 90);
+    ctx.stroke();
+
+    for (const [i, p] of plats.entries()) {
+      const spec = this.stage.plats[i];
+      if (spec.move?.dx) {
+        // trolley + cables + trussed girder swinging over the deck
+        const cx = p.x + p.w / 2;
+        ctx.fillStyle = '#241d28';
+        roundRect(ctx, cx - 26, boomY - 8, 52, 16, 5); ctx.fill();
+        if (Math.sin(t * 4.2) > 0.2) {            // blinking hazard beacon
+          ctx.fillStyle = '#ff3d3d';
+          ctx.beginPath(); ctx.arc(cx, boomY - 14, 4, 0, 7); ctx.fill();
+        }
+        ctx.strokeStyle = '#3a2f3e';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - 18, boomY + 8); ctx.lineTo(p.x + 10, p.y);
+        ctx.moveTo(cx + 18, boomY + 8); ctx.lineTo(p.x + p.w - 10, p.y);
+        ctx.stroke();
+        ctx.fillStyle = '#6e4a38';                // rusted girder body
+        roundRect(ctx, p.x, p.y, p.w, 14, 3); ctx.fill();
+        ctx.fillStyle = '#8a5f42';
+        ctx.fillRect(p.x + 4, p.y + 1, p.w - 8, 3);
+        ctx.strokeStyle = 'rgba(0,0,0,.4)';       // truss braces
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let x = p.x + 8; x < p.x + p.w - 12; x += 22) {
+          ctx.moveTo(x, p.y + 12); ctx.lineTo(x + 11, p.y + 2);
+          ctx.moveTo(x + 11, p.y + 2); ctx.lineTo(x + 22, p.y + 12);
+        }
+        ctx.stroke();
+        for (const hx of [p.x, p.x + p.w - 12]) { // hazard-striped tips
+          ctx.fillStyle = '#ffd23e';
+          ctx.fillRect(hx, p.y, 12, 14);
+          ctx.fillStyle = '#1c1822';
+          ctx.fillRect(hx + 4, p.y, 4, 14);
+        }
+      } else if (spec.move?.dy) {
+        // rubble chunk hovering on a failing grav-thruster
+        const pulse = 0.75 + 0.25 * Math.sin(t * 6 + i * 2.4);
+        const g = ctx.createRadialGradient(p.x + p.w / 2, p.y + 22, 4, p.x + p.w / 2, p.y + 22, 52);
+        g.addColorStop(0, `rgba(77, 227, 255, ${(0.5 * pulse).toFixed(3)})`);
+        g.addColorStop(1, 'rgba(77, 227, 255, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(p.x + p.w / 2 - 52, p.y - 10, 104, 84);
+        ctx.fillStyle = th.plat;                  // cracked slab
+        roundRect(ctx, p.x, p.y, p.w, 16, 4); ctx.fill();
+        ctx.fillStyle = th.platTop;
+        ctx.fillRect(p.x + 4, p.y + 1, p.w - 8, 3);
+        ctx.strokeStyle = 'rgba(0,0,0,.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(p.x + p.w * 0.35, p.y + 2); ctx.lineTo(p.x + p.w * 0.42, p.y + 14);
+        ctx.stroke();
+        ctx.strokeStyle = '#7a4a3a';              // rebar whiskers
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y + 8); ctx.lineTo(p.x - 12, p.y + 4);
+        ctx.moveTo(p.x + p.w, p.y + 8); ctx.lineTo(p.x + p.w + 10, p.y + 12);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(77, 227, 255, ${(0.75 * pulse).toFixed(3)})`;
+        ctx.lineWidth = 3;                        // thruster ring
+        ctx.beginPath();
+        ctx.ellipse(p.x + p.w / 2, p.y + 19, 20, 6, 0, 0, 7);
+        ctx.stroke();
+      } else {
+        // gutted rooftop: parapet with a chipped notch and an AC husk
+        ctx.fillStyle = th.plat;
+        roundRect(ctx, p.x, p.y, p.w, 12, 4); ctx.fill();
+        ctx.fillStyle = th.platTop;
+        ctx.fillRect(p.x + 5, p.y + 1, p.w - 10, 3);
+        ctx.fillStyle = '#1c1822';
+        ctx.beginPath();
+        ctx.moveTo(p.x + p.w * 0.7, p.y); ctx.lineTo(p.x + p.w * 0.7 + 9, p.y + 6); ctx.lineTo(p.x + p.w * 0.7 + 18, p.y);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#332a38';
+        if (i === 1) ctx.fillRect(p.x + p.w - 34, p.y - 14, 24, 14);
+        else ctx.fillRect(p.x + 10, p.y - 12, 20, 12);
+      }
+    }
+  }
+
+  // Ambient embers rising off the burning city and ash sifting down.
+  _embers(ctx, dt, t) {
+    while (this.embers.length < 44) {
+      const ash = Math.random() < 0.35;
+      this.embers.push({
+        ash,
+        x: this.cam.x + (Math.random() - 0.5) * 2400,
+        y: ash ? this.cam.y - 700 - Math.random() * 300 : this.cam.y + 420 + Math.random() * 320,
+        vy: ash ? 26 + Math.random() * 30 : -(34 + Math.random() * 46),
+        sway: 14 + Math.random() * 30, ph: Math.random() * 7,
+        life: 5 + Math.random() * 5, t: 0, r: ash ? 1.6 : 2.2,
+      });
+    }
+    for (const e of this.embers) {
+      e.t += dt;
+      e.y += e.vy * dt;
+      const k = e.t / e.life;
+      if (k >= 1) continue;
+      const x = e.x + Math.sin(t * 0.8 + e.ph) * e.sway;
+      const glow = e.ash ? 0.35 : 0.5 + 0.5 * Math.sin(t * 6 + e.ph);
+      ctx.globalAlpha = (1 - k) * (e.ash ? 0.5 : 0.85) * Math.max(0.15, glow);
+      ctx.fillStyle = e.ash ? '#8d97b8' : '#ff9a4d';
+      ctx.fillRect(x, e.y, e.r + (e.ash ? 0 : glow), e.r + (e.ash ? 0 : glow));
+    }
+    ctx.globalAlpha = 1;
+    this.embers = this.embers.filter(e => e.t < e.life);
   }
 
   _fighter(ctx, f, isMe, t) {
@@ -711,6 +984,53 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+// Deterministic ruined skyline: two parallax layers of collapsed towers
+// with lit windows, plus a couple of floors left burning. Same seed every
+// time, so all players stand in the same dead city.
+function buildCity() {
+  let s = 1337;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const baseY = 440;
+  const layers = [
+    { lag: 0.72, fill: '#17101c', windows: false, bldgs: [] },  // far, dead
+    { lag: 0.5,  fill: '#241a26', windows: true,  bldgs: [] },  // near, lit
+  ];
+  const fires = [];
+  for (const layer of layers) {
+    let x = -1500 + rnd() * 80;
+    while (x < 1500) {
+      const w = 130 + rnd() * (layer.windows ? 190 : 150);
+      const h = (layer.windows ? 300 : 420) + rnd() * (layer.windows ? 330 : 360);
+      const b = {
+        x, w, yTop: baseY - h,
+        brk: 0.25 + rnd() * 0.5,               // where the collapse peak sits
+        lgap: rnd() * 60, rgap: 20 + rnd() * 90,
+        spire: rnd() < 0.3, wins: [],
+      };
+      if (layer.windows) {
+        const cols = Math.max(2, Math.floor(w / 46));
+        const rows = Math.max(3, Math.floor(h / 64));
+        for (let cx = 0; cx < cols; cx++) {
+          for (let ry = 0; ry < rows; ry++) {
+            if (rnd() > 0.16) continue;        // most windows are dead
+            b.wins.push({
+              dx: 12 + cx * (w - 24) / cols, dy: 46 + ry * (h - 70) / rows,
+              spd: 0.4 + rnd() * 1.4, ph: rnd() * 7, fire: rnd() < 0.12,
+            });
+          }
+        }
+        if (fires.length < 2 && rnd() < 0.35) {
+          fires.push({ x: x + w * (0.3 + rnd() * 0.4), y: baseY - h + 14, lag: layer.lag });
+        }
+      }
+      layer.bldgs.push(b);
+      x += w + 24 + rnd() * 90;
+    }
+  }
+  if (!fires.length) fires.push({ x: -260, y: -420, lag: 0.5 });
+  return { baseY, layers, fires };
 }
 function cross(ctx, x, y, s) {
   ctx.beginPath();

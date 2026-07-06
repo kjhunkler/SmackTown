@@ -45,12 +45,16 @@ export const MAPS = {
     respawnY: -380,
   },
   ruins: {
-    name: 'Ruins',
-    main: { x: -390, y: 0, w: 780, h: 46 },              // broad floor with staggered cover
+    name: 'Ruined City',
+    main: { x: -390, y: 0, w: 780, h: 46 },              // collapsed freeway deck
     plats: [
-      { x: -320, y: -120, w: 150 },
-      { x: 170,  y: -120, w: 150 },
-      { x: -85,  y: -225, w: 170 },
+      { x: -330, y: -130, w: 150 },                      // gutted rooftop (left)
+      { x: 180,  y: -130, w: 150 },                      // gutted rooftop (right)
+      // crane girder: swept back and forth high over the deck
+      { x: -85,  y: -270, w: 170, move: { dx: 250, period: 10 } },
+      // wreck-lifts: hovering rubble chunks bobbing off each lip, counter-phased
+      { x: -585, y: -95, w: 110, move: { dy: 105, period: 7 } },
+      { x: 475,  y: -95, w: 110, move: { dy: 105, period: 7, phase: 3.5 } },
     ],
     blast: { l: -1200, r: 1200, t: -950, b: 500 },
     spawns: [ -280, 280, -100, 100 ],
@@ -80,6 +84,19 @@ export const MAPS = {
 };
 export const DEFAULT_MAP = 'battlefield';
 export const MAP_IDS = Object.keys(MAPS);
+
+// Moving platforms: move = {dx?, dy?, period, phase?} oscillates the platform
+// around its base spot on a sine wave. Position is a pure function of the sim
+// tick, so the host, prediction, and every client compute identical paths.
+function platPos(p, tickF) {
+  if (!p.move) return p;
+  const k = Math.sin((tickF * TICK + (p.move.phase || 0)) * Math.PI * 2 / p.move.period);
+  return { x: p.x + (p.move.dx || 0) * k, y: p.y + (p.move.dy || 0) * k };
+}
+export function platsAt(mapId, tickF) {
+  const map = MAPS[mapId] || MAPS[DEFAULT_MAP];
+  return map.plats.map(p => p.move ? { ...p, ...platPos(p, tickF) } : p);
+}
 
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
@@ -201,6 +218,7 @@ export class Game {
       lastHitBy: null,              // KO attribution (reaper heal)
       dropT: 0,                     // drop-through timer
       riseT: 0,                     // cooldown on the aerial up-smash lift
+      ridePlat: null,               // index of the platform we're standing on
       ledge: 0,                     // hanging: -1 left lip, 1 right lip, 0 none
       regrabT: 0,                   // cooldown before the ledge can be regrabbed
       rollDir: 0,
@@ -248,6 +266,15 @@ export class Game {
   // attacks resolve. Host sets it from measured RTT; capped at 400 ms.
   setLag(id, ticks) {
     this.lagComp.set(id, clamp(ticks | 0, 0, 24));
+  }
+
+  // Current-tick platform positions (cached per tick — collision runs per
+  // fighter and again for projectiles).
+  platsNow() {
+    if (this._pc?.tick !== this.tick) {
+      this._pc = { tick: this.tick, plats: platsAt(this.map, this.tick) };
+    }
+    return this._pc.plats;
   }
 
   step() {
@@ -424,12 +451,29 @@ export class Game {
       else if (f.x < m.x + m.w + F_W / 2 && f.x > m.x + m.w - F_W / 4) { f.x = m.x + m.w + F_W / 2; if (f.vx < 0) f.vx = 0; }
     }
 
-    // drop-through platforms (only when falling, not dropping through)
-    if (f.dropT <= 0 && f.vy >= 0) {
-      for (const p of this.stage.plats) {
-        if (feet >= p.y && feet <= p.y + 22 && f.x > p.x && f.x < p.x + p.w) {
+    // drop-through platforms (only when falling, not dropping through).
+    // Moving platforms carry their riders: once you land on one we track the
+    // index and glue you to its top, folding its per-tick drift into your
+    // position — so the crane girder sweeps you across the skyline.
+    if (f.grounded || f.dropT > 0 || f.vy < 0) {
+      f.ridePlat = null;             // on the floor, dropping through, or rising
+    } else {
+      const plats = this.platsNow();
+      if (f.ridePlat != null) {
+        const p = plats[f.ridePlat];
+        if (p && f.x > p.x && f.x < p.x + p.w && feet >= p.y - 34 && feet <= p.y + 34) {
+          const was = platPos(this.stage.plats[f.ridePlat], this.tick - 1);
+          f.x += p.x - was.x;          // carried sideways with the sweep
           f.y = p.y - F_H / 2; f.vy = 0; f.grounded = true;
-          break;
+        } else f.ridePlat = null;
+      }
+      if (!f.grounded) {
+        for (let i = 0; i < plats.length; i++) {
+          const p = plats[i];
+          if (feet >= p.y && feet <= p.y + 22 && f.x > p.x && f.x < p.x + p.w) {
+            f.y = p.y - F_H / 2; f.vy = 0; f.grounded = true; f.ridePlat = i;
+            break;
+          }
         }
       }
     }
@@ -966,6 +1010,11 @@ export class Game {
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
       if (pr.grav) this._settleTrap(pr);
+      else if (pr.plat != null) {
+        // settled on a platform: ride it (traps on the crane girder sweep too)
+        const pl = this.platsNow()[pr.plat];
+        if (pl) { pr.x = pl.x + pr.pox; pr.y = pl.y - 12; }
+      }
       const m = this.stage.main;
       if (pr.y > m.y && pr.x > m.x && pr.x < m.x + m.w) pr.ttl = 0;
     }
@@ -979,9 +1028,12 @@ export class Game {
       pr.y = m.y - 12; pr.vy = 0; pr.grav = 0;
       return;
     }
-    for (const pl of this.stage.plats) {
+    const plats = this.platsNow();
+    for (let i = 0; i < plats.length; i++) {
+      const pl = plats[i];
       if (pr.x > pl.x && pr.x < pl.x + pl.w && pr.y >= pl.y - 12 && pr.y <= pl.y + 26) {
         pr.y = pl.y - 12; pr.vy = 0; pr.grav = 0;
+        pr.plat = i; pr.pox = pr.x - pl.x;   // remember the perch — it may move
         return;
       }
     }
@@ -1098,6 +1150,7 @@ export class Game {
           f.fastfall ? 1 : 0, r2(f.dashT), r2(f.counterT),
           f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
           r1(f.guard), r2(f.standT), r2(f.chg), r2(f.riseT), f.lastHitBy || 0,
+          f.ridePlat == null ? -1 : f.ridePlat,
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -1140,6 +1193,7 @@ export function restoreFighter(f, row) {
     f.chg = row[30] || 0;
     f.riseT = row[31] || 0;
     f.lastHitBy = row[32] || null;
+    f.ridePlat = (row[33] ?? -1) >= 0 ? row[33] : null;
     f.chgAim = f.state === 'charge' ? { dx: row[26] | 0, dy: row[27] | 0 } : null;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming

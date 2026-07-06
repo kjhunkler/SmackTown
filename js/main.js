@@ -6,7 +6,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, platsAt } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -923,6 +923,7 @@ class Session {
       if (this.game.over) break;
     }
     const view = {
+      tick: this.game.tick,
       fighters: this.game.fighters.map(f => ({
         id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, facing: f.facing,
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
@@ -1028,6 +1029,9 @@ class Session {
     if (!row || !mine) return;
     const px = mine.x, py = mine.y;
     restoreFighter(mine, row);
+    // platform motion is a function of the sim tick — keep the predicted sim
+    // on the host's clock so moving platforms carry us identically
+    if (s.tk) this.pred.tick = s.tk;
     const ack = (s.ack && s.ack[this.myId]) || 0;
     if (this.tickLog.length && ack) {
       this.tickLog = this.tickLog.filter(e => e.seq > ack);
@@ -1153,7 +1157,20 @@ class Session {
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
     }
     const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3] }));
-    return { fighters, projectiles };
+    const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;
+    // riding a moving platform: platforms draw on the interpolated (delayed)
+    // timeline while our fighter is predicted ahead — shift us by the
+    // platform's drift so our feet stay planted on the girder as drawn
+    if (mine && mine.ridePlat != null) {
+      const drawn = platsAt(this.map, tick)[mine.ridePlat];
+      const simmed = platsAt(this.map, this.pred.tick)[mine.ridePlat];
+      const i = fighters.findIndex(f => f.id === this.myId);
+      if (drawn && simmed && i >= 0) {
+        fighters[i].x += drawn.x - simmed.x;
+        fighters[i].y += drawn.y - simmed.y;
+      }
+    }
+    return { fighters, projectiles, tick };
   }
 
   // ----- events & endgame -----
