@@ -12,8 +12,8 @@
 // left stick / dpad move — hold down to duck, flick
 // down = fast-fall/drop · A = quick attack · B = smash (hold to charge,
 // release to fire; aimed by the stick at press, 8-way) · Y = jump ·
-// X / LB / RB = ability 1 · LT / RT = ability 2 · right stick = smash in the
-// tilt direction (hold to charge, return to neutral to fire).
+// X / LB / RB = ability 1 · LT / RT = ability 2 · right stick = instant
+// smash in the tilt direction (no charging — hold B for that).
 //
 // Charging is reported to the sim as a level field (`chg`, the locked 8-way
 // aim while the control is held); the release ALSO queues the classic swipe
@@ -44,8 +44,7 @@ export class TouchInput {
     this.enabled = false;
     this.keyChg = null;              // charge aim held via keyboard (K/X)
     this.padChg = null;              // charge aim held via gamepad (B)
-    this.padRChg = null;             // charge aim held via the right stick
-    this.padRHeld = false;           // right stick currently tilted
+    this.padRHeld = false;           // right stick currently tilted (re-arm)
 
     this.stickZone = root.querySelector('#stick-zone');
     this.actionZone = root.querySelector('#action-zone');
@@ -191,7 +190,7 @@ export class TouchInput {
   // same edge actions the other sources produce.
   _pollGamepad() {
     const pad = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
-    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; this.padRChg = null; this.padRHeld = false; return null; }
+    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; this.padRHeld = false; return null; }
 
     let mx = pad.axes[0] || 0, my = pad.axes[1] || 0;
     if (Math.hypot(mx, my) < PAD_DEAD) { mx = 0; my = 0; }
@@ -224,24 +223,19 @@ export class TouchInput {
         this.queue.push({ atk: { kind: 'swipe', dx: this.padChg.dx, dy: this.padChg.dy } });
         this.padChg = null;
       }
-      // right stick = directional smash: tilt locks the aim and charges,
-      // returning to neutral fires it
+      // right stick = instant smash in the tilt direction (uncharged);
+      // re-arms once the stick returns to neutral
       if (rTilt && !this.padRHeld) {
         this.padRHeld = true;
-        this.padRChg = octant(rx, ry);
+        this.queue.push({ atk: { kind: 'swipe', ...octant(rx, ry) } });
       } else if (!rTilt && this.padRHeld) {
         this.padRHeld = false;
-        if (this.padRChg) {
-          this.queue.push({ atk: { kind: 'swipe', dx: this.padRChg.dx, dy: this.padRChg.dy } });
-          this.padRChg = null;
-        }
       }
     } else {
       for (const i of Object.keys(PAD_BTN)) this.padPrev[i] = !!pad.buttons[i]?.pressed;
       this.padFlicked = Math.abs(my) > PAD_FLICK;
       this.padChg = null;
       this.padRHeld = rTilt;
-      this.padRChg = null;
     }
     return { mx, my };
   }
@@ -251,7 +245,7 @@ export class TouchInput {
     const g = this._pollGamepad();
     const out = {
       mx: this.state.mx, my: this.state.my,
-      chg: this.state.chg || this.keyChg || this.padChg || this.padRChg || null,
+      chg: this.state.chg || this.keyChg || this.padChg || null,
     };
     if (g) {
       if (Math.abs(g.mx) > Math.abs(out.mx)) out.mx = g.mx;
@@ -267,7 +261,7 @@ export class TouchInput {
     if (!on) {
       this.queue.length = 0;
       this.state.mx = 0; this.state.my = 0;
-      this.state.chg = this.keyChg = this.padChg = this.padRChg = null;
+      this.state.chg = this.keyChg = this.padChg = null;
       this.padRHeld = false;
       this.stick = this.swipe = null;
       this.stickBase.classList.add('hidden');
