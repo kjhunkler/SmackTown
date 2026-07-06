@@ -736,6 +736,23 @@ input[type=text]:focus { border-color: var(--accent); }
 .help-card p { font-size: 14px; color: var(--ink-dim); line-height: 1.5; }
 .help-card b { color: var(--ink); }
 
+#sfx-mute {
+  position: fixed;
+  top: calc(8px + var(--safe-top));
+  left: 10px;
+  z-index: 40;
+  width: 36px; height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(10,12,25,.6);
+  font-size: 17px;
+  line-height: 36px;
+  text-align: center;
+  cursor: pointer;
+  opacity: .8;
+}
+#sfx-mute:active { transform: scale(.92); }
+
 #net-banner {
   position: fixed;
   top: calc(8px + var(--safe-top));

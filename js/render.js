@@ -4,6 +4,7 @@
 import { MAPS, DEFAULT_MAP } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
+import { SFX } from './sfx.js';
 
 const F_W = 46, F_H = 64;
 
@@ -68,6 +69,7 @@ export class Renderer {
 
   onEvents(events) {
     for (const ev of events || []) {
+      SFX.event(ev);   // every cosmetic event makes its sound exactly once
       switch (ev.e) {
         case 'hit':
           this.burst(ev.x, ev.y, ev.heavy ? 18 : 8, ev.heavy ? '#ffdd55' : '#ffffff', ev.heavy ? 420 : 220);

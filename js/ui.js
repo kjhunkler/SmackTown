@@ -7,6 +7,7 @@ import {
   HAT_W, HAT_H, HAT_PX, HAT_FACE_ROWS, HAT_CHARS, HAT_PALETTE, sanitizeHat,
 } from './profile.js';
 import { MAPS } from './game.js';
+import { SFX } from './sfx.js';
 
 // ---------- pixel hats ----------
 // Rasterize a hat string once to a tiny offscreen canvas; scaled draws stay
@@ -36,6 +37,8 @@ const $ = s => document.querySelector(s);
 export function showScreen(name) {
   for (const el of document.querySelectorAll('.screen')) el.classList.add('hidden');
   $('#screen-' + name).classList.remove('hidden');
+  // the theme song adds its drum kit during fights, mellows out elsewhere
+  SFX.setMode(name === 'game' ? 'fight' : 'menu');
 }
 
 export function banner(text, kind = 'warn', ms = 3000, onClick = null) {

@@ -846,7 +846,7 @@ export class Game {
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({
       e: 'hit', x: vic.x, y: vic.y, dmg: Math.round(dmg),
-      heavy: kb > 700, vic: vic.id, att: att.id,
+      heavy: kb > 700, spike, vic: vic.id, att: att.id,
     });
   }
 

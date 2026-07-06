@@ -11,8 +11,34 @@ import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
 import * as UI from './ui.js';
+import { SFX } from './sfx.js';
 
 const $ = s => document.querySelector(s);
+
+// ---------------- audio ----------------
+// Audio can only start after a user gesture: the first press anywhere
+// unlocks the WebAudio context and starts the theme song.
+addEventListener('pointerdown', () => SFX.unlock());
+addEventListener('keydown', () => SFX.unlock());
+
+// Every tappable control blips; a few get their own signature sound.
+const BTN_SFX = {
+  'loadout-save': 'save', 'builder-save': 'save',
+  'hat-save': 'save', 'hat-dup': 'save',
+  'login-go': 'ready',
+};
+const BTN_SILENT = new Set(['ability-btn-0', 'ability-btn-1', 'lobby-ready', 'lobby-start']);
+document.addEventListener('click', e => {
+  const b = e.target.closest(
+    'button, [role="button"], .color-swatch, .loadout-chip, .shop-item, .map-card, .stat-pips');
+  if (!b || b.disabled || BTN_SILENT.has(b.id)) return;
+  SFX.play(BTN_SFX[b.id] || 'click');
+}, true);
+
+const muteBtn = $('#sfx-mute');
+function renderMute() { muteBtn.textContent = SFX.muted ? '🔇' : '🔊'; }
+muteBtn.addEventListener('click', () => { SFX.setMuted(!SFX.muted); renderMute(); });
+renderMute();
 
 // ---------------- global state ----------------
 let profile = null;
@@ -560,7 +586,11 @@ function enterRoom(joinCode) {
 
 $('#lobby-ready').addEventListener('click', () => {
   const me = net?.members.get(net.myId);
-  if (me) net.setReady(!me.ready);
+  if (me) {
+    const nowReady = !me.ready;
+    net.setReady(nowReady);
+    SFX.play(nowReady ? 'ready' : 'unready');
+  }
   renderLobby();
 });
 
@@ -579,10 +609,12 @@ function renderLobby() {
 // Everyone ready -> the host counts down and starts the fight automatically.
 let autoStartTimer = null;
 let autoStartAt = 0;
+let lastCountTick = 0;    // last countdown second we blipped for
 
 function cancelAutoStart() {
   clearInterval(autoStartTimer);
   autoStartTimer = null;
+  lastCountTick = 0;
 }
 
 function lobbyAllReady() {
@@ -606,6 +638,7 @@ function maybeAutoStart() {
   }
   const left = Math.ceil((autoStartAt - Date.now()) / 1000);
   if (left <= 0) { startFight(); return; }
+  if (left !== lastCountTick) { lastCountTick = left; SFX.play('tick'); }
   $('#lobby-status').textContent = `All ready — starting in ${left}…`;
 }
 
@@ -675,6 +708,7 @@ function startSession(cfg) {
   session?.stop();
   session = new Session(cfg);
   session.start();
+  SFX.play('go');
   presence?.update();
 }
 
