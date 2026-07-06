@@ -830,6 +830,7 @@ export class Game {
     let dmg = spec.dmg * att.st.dmgMult;
     if (att.st.augments.includes('berserker') && att.pct >= 80) dmg *= 1.25;
     if (att.st.augments.includes('sniper') && spec.r) dmg *= 1.3; // projectile hit
+    dmg *= vic.st.dmgTaken;                     // defense stat shaves incoming damage
 
     // ducked block: chip damage and a horizontal shove instead of a launch.
     // The guard eats the hit's full raw damage and crushes at zero.

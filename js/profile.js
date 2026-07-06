@@ -8,9 +8,9 @@ export const COLORS = [
 export const TOTAL_CREDITS = 1000;
 
 export const STATS = [
-  { id: 'power',   name: 'Power',   desc: '+7% damage & knockback per level',      cost: 80, max: 5 },
+  { id: 'power',   name: 'Power',   desc: '+5% damage & knockback per level',      cost: 80, max: 5 },
   { id: 'speed',   name: 'Speed',   desc: '+6% run speed per level',               cost: 80, max: 5 },
-  { id: 'defense', name: 'Defense', desc: '-5% knockback taken per level',         cost: 80, max: 5 },
+  { id: 'defense', name: 'Defense', desc: '-6% knockback & -4% damage taken per level', cost: 80, max: 5 },
   { id: 'agility', name: 'Agility', desc: '+jump height & air control per level',  cost: 80, max: 5 },
 ];
 
@@ -242,11 +242,12 @@ export function derivedStats(build) {
   const has = id => b.augments.includes(id);
   const glass = has('glasscannon');
   return {
-    dmgMult:   (1 + 0.07 * b.stats.power) * (glass ? 1.2 : 1),
-    kbMult:    (1 + 0.07 * b.stats.power) * (glass ? 1.2 : 1),
+    dmgMult:   (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
+    kbMult:    (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
     speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.92 : 1),
-    kbTaken:   (1 - 0.05 * b.stats.defense) * (has('heavy') ? 0.88 : 1)
+    kbTaken:   (1 - 0.06 * b.stats.defense) * (has('heavy') ? 0.88 : 1)
       * (has('feather') ? 1.08 : 1) * (glass ? 1.15 : 1),
+    dmgTaken:  1 - 0.04 * b.stats.defense,
     jumpMult:  1 + 0.05 * b.stats.agility,
     airMult:   1 + 0.08 * b.stats.agility,
     maxJumps:  2 + (has('feather') ? 1 : 0),
