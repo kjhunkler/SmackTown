@@ -185,6 +185,7 @@ function refreshOnline() {
       }
     },
   });
+  if (net?.roomCode && !$('#screen-lobby').classList.contains('hidden')) renderLobbyInvites();
 }
 
 // ---------------- login (first run) ----------------
@@ -294,10 +295,28 @@ function cycleCharacter(dir) {
   selectLoadout(next.name);
   profile = saveProfile({ name: profile.name, color: next.color, build: next.build, hatId: next.hatId });
   UI.renderMenuCard(profile);
+  if (net?.roomCode) {
+    net.setReady(false);
+    net.updateProfile(profile);
+    UI.renderLobbyCard(profile);
+  }
   presence?.setProfile(profile);            // town roster shows the new colors
 }
 $('#menu-char-prev').addEventListener('click', () => cycleCharacter(-1));
 $('#menu-char-next').addEventListener('click', () => cycleCharacter(1));
+$('#lobby-char-prev').addEventListener('click', () => cycleCharacter(-1));
+$('#lobby-char-next').addEventListener('click', () => cycleCharacter(1));
+$('#lobby-card').addEventListener('click', () => {
+  net?.setReady(false);
+  openBuilder(false, 'lobby');
+});
+$('#lobby-card').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    net?.setReady(false);
+    openBuilder(false, 'lobby');
+  }
+});
 
 // ---------------- hats: builder arrows, library modal, studio ----------------
 const hatStudio = new HatStudio();
@@ -641,8 +660,26 @@ $('#lobby-voice').addEventListener('click', async () => {
 $('#lobby-voice-mute').addEventListener('click', () => voice?.setMuted(!voice.muted));
 
 function renderLobby() {
-  if (net) UI.renderLobby(net, voteMap);
+  if (net) {
+    UI.renderLobbyCard(profile);
+    UI.renderLobby(net, voteMap);
+    renderLobbyInvites();
+  }
   renderVoiceButtons();
+}
+
+function renderLobbyInvites() {
+  if (!presence || !net?.roomCode) return;
+  const currentRoom = net.roomCode;
+  const entries = presence.list().filter(e => e.status !== 'fighting' && e.code !== currentRoom);
+  UI.renderOnline(entries, presence.ready, {
+    root: 'lobby',
+    inviteOnly: true,
+    onInvite: e => {
+      presence.invite(e.id, currentRoom);
+      UI.banner(`Invite sent to ${e.name}!`, 'good');
+    },
+  });
 }
 
 // Everyone ready -> the host counts down and starts the fight automatically.

@@ -499,6 +499,15 @@ input[type=text]:focus { border-color: var(--accent); }
 
 /* ============ lobby ============ */
 .room-code { color: var(--accent); letter-spacing: 5px; font-weight: 900; }
+.lobby-char-row { margin-top: -2px; }
+.lobby-online-box {
+  background: rgba(35, 42, 69, .55);
+  border: 1px solid #2c3457;
+  border-radius: var(--radius);
+  padding: 10px;
+}
+.lobby-online-box .section-title { margin-top: 0; }
+.lobby-online-box .online-list { max-height: 124px; }
 .btn.invite { border-color: var(--accent); color: var(--accent); }
 .voice-row { display: flex; gap: 8px; }
 .voice-row .btn.voice { flex: 1; }
@@ -517,7 +526,16 @@ input[type=text]:focus { border-color: var(--accent); }
 .presence-dot.away { background: var(--warn); }
 .presence-dot.gone { background: var(--bad); animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .3; } }
-.roster .r-swatch { width: 22px; height: 22px; border-radius: 6px; flex: none; }
+.roster .r-fig { position: relative; width: 24px; height: 24px; flex: none; }
+.roster .r-swatch { display: block; width: 24px; height: 24px; border-radius: 7px; flex: none; }
+.roster .r-hat {
+  position: absolute;
+  left: 50%; top: -17px;
+  width: 34px; height: 33px;
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 .roster .r-name { font-weight: 800; flex: 1; }
 .roster .r-name .r-host { font-size: 10px; color: var(--accent); margin-left: 6px; }
 .roster .r-meta { font-size: 11px; color: var(--ink-dim); text-align: right; }
@@ -596,19 +614,25 @@ input[type=text]:focus { border-color: var(--accent); }
     grid-template-areas:
       "head   ready"
       "tag    start"
-      "invite edit"
-      "roster leave"
-      "roster maptitle"
+      "char   edit"
+      "invite leave"
+      "online maptitle"
+      "online maps"
+      "voice  maps"
       "roster maps"
       "status status";
-    grid-template-rows: auto auto auto auto auto 1fr auto;
+    grid-template-rows: auto auto auto auto auto auto 1fr auto;
     column-gap: 16px;
     row-gap: 8px;
     align-items: start;
   }
   .lobby-panel h2 { grid-area: head; align-self: center; }
   .lobby-panel .tagline { grid-area: tag; margin-top: 0; text-align: left; }
+  .lobby-char-row { grid-area: char; }
   #lobby-invite { grid-area: invite; }
+  #lobby-online { grid-area: online; min-height: 0; }
+  #lobby-online .online-list { max-height: 96px; }
+  .voice-row { grid-area: voice; }
   #lobby-roster { grid-area: roster; align-self: stretch; min-height: 0; overflow-y: auto; }
   #lobby-status { grid-area: status; min-height: 0; }
   #lobby-ready  { grid-area: ready; }

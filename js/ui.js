@@ -253,33 +253,52 @@ function renderShop(box, defs, owned, maxOwned, left, work) {
   }
 }
 
+function appendHat(box, hat) {
+  const img = hatImage(hat);
+  if (!img) return;
+  const c = document.createElement('canvas');
+  c.width = HAT_W;
+  c.height = HAT_H;
+  c.className = 'r-hat';
+  c.getContext('2d').drawImage(img, 0, 0);
+  box.appendChild(c);
+}
+
 // ---------- menu card ----------
 
 export function renderMenuCard(profile) {
-  $('#menu-name').textContent = profile.name;
-  $('#menu-build').textContent = buildSummary(profile.build);
-  drawPreview($('#menu-preview'), profile.color, profile.hat);
+  renderCharacterCard('menu', profile);
+}
+
+export function renderLobbyCard(profile) {
+  renderCharacterCard('lobby', profile);
+}
+
+function renderCharacterCard(prefix, profile) {
+  $('#' + prefix + '-name').textContent = profile.name;
+  $('#' + prefix + '-build').textContent = buildSummary(profile.build);
+  drawPreview($('#' + prefix + '-preview'), profile.color, profile.hat);
   // Selected character label + arrow availability. The arrows cycle saved
   // builds; from an unsaved fighter the first tap lands on a saved one.
   const list = loadLoadouts();
   const sel = selectedLoadout();
   const i = sel ? list.findIndex(l => l.name === sel) : -1;
-  $('#menu-loadout').textContent = i >= 0 ? `${sel} · ${i + 1} of ${list.length}`
+  $('#' + prefix + '-loadout').textContent = i >= 0 ? `${sel} · ${i + 1} of ${list.length}`
     : list.length ? 'unsaved fighter' : '';
   const lock = !list.length || (list.length === 1 && i >= 0);
-  $('#menu-char-prev').disabled = lock;
-  $('#menu-char-next').disabled = lock;
+  $('#' + prefix + '-char-prev').disabled = lock;
+  $('#' + prefix + '-char-next').disabled = lock;
 }
 
 // ---------- main-menu presence ----------
 
-export function renderOnline(entries, ready, { onJoin, onInvite } = {}) {
-  const list = $('#menu-online-list');
-  const empty = $('#menu-online-empty');
-  $('#menu-online-count').textContent = entries.length ? `${entries.length} in town` : '';
+export function renderOnline(entries, ready, { onJoin, onInvite, root = 'menu', inviteOnly = false } = {}) {
+  const list = $('#' + root + '-online-list');
+  const empty = $('#' + root + '-online-empty');
+  $('#' + root + '-online-count').textContent = entries.length ? `${entries.length} in town` : '';
   empty.classList.toggle('hidden', entries.length > 0);
   empty.textContent = ready
-    ? 'No one else is in town — send someone an invite link!'
+    ? (root === 'lobby' ? 'No active fighters outside this lobby right now.' : 'No one else is in town — send someone an invite link!')
     : 'Looking for fighters…';
   list.innerHTML = '';
   for (const e of entries) {
@@ -289,9 +308,16 @@ export function renderOnline(entries, ready, { onJoin, onInvite } = {}) {
       : 'in the menu';
     li.innerHTML = `
       <span class="presence-dot online"></span>
-      <span class="r-swatch" style="background:${esc(e.color || '#f5f5f5')}"></span>
+      <span class="r-fig"><span class="r-swatch" style="background:${esc(e.color || '#f5f5f5')}"></span></span>
       <span class="r-name">${esc(e.name)}<span class="r-where">${where}</span></span>`;
-    if ((e.status === 'lobby' || e.status === 'fighting') && e.open && e.code) {
+    appendHat(li.querySelector('.r-fig'), e.hat);
+    if (inviteOnly) {
+      const b = document.createElement('button');
+      b.className = 'btn tiny ghost';
+      b.textContent = 'Invite';
+      b.addEventListener('click', () => onInvite?.(e));
+      li.appendChild(b);
+    } else if ((e.status === 'lobby' || e.status === 'fighting') && e.open && e.code) {
       const b = document.createElement('button');
       b.className = 'btn tiny';
       b.textContent = 'Join';
@@ -321,9 +347,10 @@ export function renderLobby(net, onVote = null) {
     const isMe = m.peerId === net.myId;
     li.innerHTML = `
       <span class="presence-dot ${m.status === 'gone' ? 'gone' : m.status === 'away' ? 'away' : 'online'}"></span>
-      <span class="r-swatch" style="background:${m.color}"></span>
+      <span class="r-fig"><span class="r-swatch" style="background:${m.color}"></span></span>
       <span class="r-name">${esc(m.name)}${isMe ? ' (you)' : ''}${isHost ? '<span class="r-host">HOST</span>' : ''}${m.voice ? '<span class="r-voice" title="In voice chat">🎙</span>' : ''}</span>
       <span class="r-meta">${m.ready ? '<div class="r-ready">READY</div>' : ''}${!isMe && m.ping ? m.ping + 'ms' : ''}</span>`;
+    appendHat(li.querySelector('.r-fig'), m.hat);
     list.appendChild(li);
   }
 

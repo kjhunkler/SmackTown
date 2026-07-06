@@ -28,7 +28,7 @@ function sanitizeHatList(raw) {
 
 export class Presence {
   constructor(profile, getState) {
-    this.profile = { name: profile.name, color: profile.color };
+    this.profile = { name: profile.name, color: profile.color, hat: sanitizeHat(profile.hat) };
     this.getState = getState;   // () => {status:'menu'|'lobby'|'fighting', code, open}
     this.peer = null;
     this.isHub = false;
@@ -82,7 +82,7 @@ export class Presence {
   }
 
   setProfile(profile) {
-    this.profile = { name: profile.name, color: profile.color };
+    this.profile = { name: profile.name, color: profile.color, hat: sanitizeHat(profile.hat) };
     this.update();
   }
 
@@ -236,6 +236,7 @@ export class Presence {
       id: this.myId,
       name: this.profile.name,
       color: this.profile.color,
+      hat: this.profile.hat || null,
       status: s.status,
       code: s.code || null,
       open: !!s.open,
@@ -305,6 +306,7 @@ export class Presence {
           id: conn.peer,
           name: String(msg.profile?.name || 'Fighter').slice(0, 14),
           color: msg.profile?.color || '#f5f5f5',
+          hat: sanitizeHat(msg.profile?.hat),
           status: st.status === 'lobby' || st.status === 'fighting' ? st.status : 'menu',
           code: typeof st.code === 'string' ? st.code.slice(0, 4).toUpperCase() : null,
           open: !!st.open,

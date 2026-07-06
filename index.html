@@ -151,7 +151,26 @@
   <div class="panel narrow lobby-panel">
     <h2>Room <span id="lobby-code" class="room-code"></span></h2>
     <p class="tagline">share the code — friends hop straight in</p>
+    <div class="menu-char-row lobby-char-row">
+      <button id="lobby-char-prev" class="hat-arrow" aria-label="Previous character">◀</button>
+      <div id="lobby-card" class="fighter-card" role="button" tabindex="0"
+           aria-label="Edit this character" title="Tap to edit">
+        <canvas id="lobby-preview" width="120" height="120"></canvas>
+        <div class="fighter-card-info">
+          <div id="lobby-name" class="fighter-name"></div>
+          <div id="lobby-loadout" class="fighter-loadout"></div>
+          <div id="lobby-build" class="fighter-build"></div>
+        </div>
+        <span class="fighter-card-edit" aria-hidden="true">✏️</span>
+      </div>
+      <button id="lobby-char-next" class="hat-arrow" aria-label="Next character">▶</button>
+    </div>
     <button id="lobby-invite" class="btn ghost invite">📨 Invite Friends</button>
+    <div id="lobby-online" class="online-box lobby-online-box">
+      <h3 class="section-title">Invite active fighters <span id="lobby-online-count" class="hint"></span></h3>
+      <ul id="lobby-online-list" class="roster online-list"></ul>
+      <p id="lobby-online-empty" class="online-empty">Looking for fighters…</p>
+    </div>
     <div class="voice-row">
       <button id="lobby-voice" class="btn ghost voice">🎙 Join Voice</button>
       <button id="lobby-voice-mute" class="btn ghost voice hidden" aria-label="Mute microphone">🔊</button>
