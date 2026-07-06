@@ -21,7 +21,7 @@ export const ABILITIES = [
     desc: 'Lunge forward with a rushing blow' },
   { id: 'shockwave', icon: '💥', name: 'Shockwave',   cost: 250, cd: 6.0,
     desc: 'Slam the ground, blasting everyone nearby' },
-  { id: 'uppercut',  icon: '🥊', name: 'Uppercut',    cost: 200, cd: 5.0,
+  { id: 'uppercut',  icon: '🥊', name: 'Uppercut',    cost: 200, cd: 4.5,
     desc: 'Rising punch that launches enemies skyward' },
   { id: 'counter',   icon: '🛡️', name: 'Counter',     cost: 240, cd: 5.0,
     desc: 'Brief parry — negate a hit and strike back' },
@@ -33,9 +33,9 @@ export const ABILITIES = [
     desc: 'Loose a fan of three fire bolts' },
   { id: 'gale',      icon: '💨', name: 'Gale Burst',  cost: 220, cd: 5.0,
     desc: 'Blast of wind that flings everyone near you' },
-  { id: 'bubble',    icon: '🫧', name: 'Bubble Shield', cost: 240, cd: 7.0,
-    desc: 'Pop a shield — 1s of invulnerability' },
-  { id: 'mend',      icon: '💚', name: 'Mend',        cost: 260, cd: 8.0,
+  { id: 'bubble',    icon: '🫧', name: 'Bubble Shield', cost: 240, cd: 6.0,
+    desc: 'Pop a shield — 1.5s of invulnerability' },
+  { id: 'mend',      icon: '💚', name: 'Mend',        cost: 260, cd: 7.0,
     desc: 'Patch yourself up — instantly heal 15%' },
 ];
 

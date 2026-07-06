@@ -142,15 +142,17 @@ const ABILITY_DEFS = {
   fireball:  { cd: 3.0 },
   dashstrike:{ cd: 4.0 },
   shockwave: { cd: 6.0 },
-  uppercut:  { cd: 5.0 },
+  uppercut:  { cd: 4.5 },
   counter:   { cd: 5.0 },
   blink:     { cd: 4.0 },
   boomerang: { cd: 4.0 },
   volley:    { cd: 5.0 },
   gale:      { cd: 5.0 },
-  bubble:    { cd: 7.0 },
-  mend:      { cd: 8.0 },
+  bubble:    { cd: 6.0 },
+  mend:      { cd: 7.0 },
 };
+const COUNTER_WINDOW = 0.6;          // parry stance duration (s)
+const BUBBLE_INVULN = 1.5;           // bubble shield duration (s)
 
 let nextEid = 1;
 
@@ -620,7 +622,7 @@ export class Game {
         f.melee = { name: 'upper', dmg: 9, kb: 260, ks: 20, rx: 44, ry: 60, ang: -88, until: this.tick + 16, hit: new Set() };
         break;
       case 'counter':
-        f.counterT = 0.45;
+        f.counterT = COUNTER_WINDOW;
         break;
       case 'blink': {
         const len = Math.hypot(dir.x, dir.y) > 0.3 ? 1 : 0;
@@ -648,7 +650,7 @@ export class Game {
             eid: nextEid++, kind: 'bolt', owner: f.id,
             x: f.x + f.facing * 40, y: f.y - 8,
             vx: f.facing * 580, vy, ttl: 1.1,
-            dmg: 4, kb: 140, ks: 10, r: 11,
+            dmg: 5, kb: 140, ks: 10, r: 11,
           });
         }
         break;
@@ -660,20 +662,20 @@ export class Game {
           const pos = this._rewound(o, f.id);
           const d = Math.hypot(pos.x - f.x, pos.y - f.y);
           if (d < 200) {
-            this._applyHit(f, o, { dmg: 3, kb: 420, ks: 6 },
+            this._applyHit(f, o, { dmg: 5, kb: 420, ks: 6 },
               Math.atan2(pos.y - f.y, pos.x - f.x) * 0.25 - Math.PI / 6, Math.sign(pos.x - f.x) || 1);
           }
         }
         break;
       case 'bubble':
-        f.invuln = Math.max(f.invuln, 1.0);
+        f.invuln = Math.max(f.invuln, BUBBLE_INVULN);
         break;
       case 'mend':
         f.pct = Math.max(0, f.pct - 15);
         this.events.push({ e: 'mend', id: f.id, x: f.x, y: f.y });
         break;
     }
-    this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y });
+    this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y, dir: f.facing });
   }
 
   _shockwave(f) {
@@ -802,9 +804,10 @@ export class Game {
       if (Math.abs(pos.x - cx) < hb.hw + F_W / 2 && Math.abs(pos.y + ob.dy - cy) < hb.hh + ob.hh) {
         hitSet.add(o.id);
         if (o.counterT > 0) {
-          // countered: attacker eats a reversal hit
+          // countered: attacker eats a reversal hit — 1.3x the blocked hit,
+          // with a floor so countering a jab still pays off
           this.events.push({ e: 'counter', x: o.x, y: o.y });
-          this._applyHit(o, f, { dmg: spec.dmg * 1.2, kb: 240, ks: 16 }, deg(-45), Math.sign(f.x - o.x) || 1);
+          this._applyHit(o, f, { dmg: Math.max(spec.dmg * 1.3, 7), kb: 260, ks: 18 }, deg(-45), Math.sign(f.x - o.x) || 1);
           continue;
         }
         // launch direction follows the aim (8-way); neutral keeps archetype

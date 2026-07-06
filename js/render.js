@@ -64,6 +64,8 @@ export class Renderer {
     this.particles = [];
     this.dmgPops = [];               // floating damage numbers
     this.flash = new Map();          // fighter id -> hit-flash time left
+    this.auras = new Map();          // fighter id -> {kind, t} bubble/counter overlays
+    this.rings = [];                 // expanding shock rings {x,y,r0,r1,t,life,color,w}
     this.setMap(DEFAULT_MAP);
     this.stars = Array.from({ length: 90 }, () => ({
       x: Math.random() * 2900 - 1450,
@@ -109,7 +111,11 @@ export class Renderer {
           break;
         case 'shockwave':
           this.burst(ev.x, ev.y, 26, '#ffb02e', 520);
+          this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: 190, t: 0, life: 0.4, color: '#ffb02e', w: 7 });
           this.shake = Math.max(this.shake, 10);
+          break;
+        case 'ability':
+          this._abilityFx(ev);
           break;
         case 'counter':
           this.burst(ev.x, ev.y, 14, '#38b6ff', 300);
@@ -119,6 +125,9 @@ export class Renderer {
           break;
         case 'gale':
           this.burst(ev.x, ev.y, 24, '#bfe3ff', 560);
+          // show the actual windbox: an expanding gust ring out to its range
+          this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: 200, t: 0, life: 0.45, color: '#bfe3ff', w: 8 });
+          this.rings.push({ x: ev.x, y: ev.y, r0: 10, r1: 160, t: 0, life: 0.35, color: '#eaf7ff', w: 4 });
           this.shake = Math.max(this.shake, 7);
           break;
         case 'mend':
@@ -149,6 +158,55 @@ export class Renderer {
           this.shake = Math.max(this.shake, 12);
           break;
       }
+    }
+  }
+
+  // Cast flair per ability, so every ability visibly announces itself.
+  // Bubble and counter get persistent auras (drawn each frame while their
+  // sim effect lasts); the rest get bursts, rings, or directional streaks.
+  _abilityFx(ev) {
+    switch (ev.ability) {
+      case 'bubble':
+        this.auras.set(ev.id, { kind: 'bubble', t: 1.5 });   // matches sim invuln
+        this.burst(ev.x, ev.y, 14, '#7fe9ff', 240);
+        break;
+      case 'counter':
+        this.auras.set(ev.id, { kind: 'counter', t: 0.6 });  // matches parry window
+        this.burst(ev.x, ev.y, 8, '#38b6ff', 150);
+        break;
+      case 'uppercut':
+        // column of rising sparks
+        for (let i = 0; i < 16; i++) {
+          this.particles.push({
+            x: ev.x + (Math.random() - 0.5) * 34, y: ev.y + Math.random() * 26,
+            vx: (Math.random() - 0.5) * 140, vy: -420 - Math.random() * 520,
+            life: 0.4 + Math.random() * 0.25, t: 0, color: '#ffd23e',
+            r: 2 + Math.random() * 3.5,
+          });
+        }
+        this.shake = Math.max(this.shake, 6);
+        break;
+      case 'dashstrike':
+        // horizontal speed streaks trailing the lunge
+        for (let i = 0; i < 12; i++) {
+          this.particles.push({
+            x: ev.x - (Math.random() - 0.2) * 40, y: ev.y + (Math.random() - 0.5) * 40,
+            vx: -(200 + Math.random() * 300) * Math.sign(ev.dir || 1), vy: (Math.random() - 0.5) * 60,
+            life: 0.3 + Math.random() * 0.2, t: 0, color: '#ffb02e',
+            r: 2 + Math.random() * 3,
+          });
+        }
+        break;
+      case 'blink':
+        this.burst(ev.x, ev.y, 16, '#c59cff', 320);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 70, t: 0, life: 0.3, color: '#c59cff', w: 5 });
+        break;
+      case 'fireball':  this.burst(ev.x, ev.y, 8, '#ff8a2e', 220); break;
+      case 'boomerang': this.burst(ev.x, ev.y, 8, '#8fd3ff', 200); break;
+      case 'volley':    this.burst(ev.x, ev.y, 12, '#ffd23e', 260); break;
+      case 'mend':      break;   // the 'mend' event already sparkles green
+      case 'shockwave': this.burst(ev.x, ev.y, 8, '#ffb02e', 180); break; // cast; slam booms later
+      case 'gale':      break;   // the 'gale' event draws the gust rings
     }
   }
 
@@ -253,6 +311,70 @@ export class Renderer {
     // attack hitboxes — the exact rects the sim tests, drawn in world space
     // so squash & stretch never distorts them
     for (const f of view.fighters) if (!f.dead && f.hb) this._hitbox(ctx, f, t);
+
+    // expanding shock rings (gale gusts, shockwave blasts, blink pops)
+    for (const ring of this.rings) {
+      ring.t += dt;
+      const k = Math.min(1, ring.t / ring.life);
+      if (k >= 1) continue;
+      const ease = 1 - (1 - k) * (1 - k);      // fast out, soft landing
+      ctx.globalAlpha = (1 - k) * 0.9;
+      ctx.strokeStyle = ring.color;
+      ctx.lineWidth = ring.w * (1 - k * 0.6);
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, ring.r0 + (ring.r1 - ring.r0) * ease, 0, 7);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    this.rings = this.rings.filter(r => r.t < r.life);
+
+    // timed fighter auras: bubble shield dome & counter parry stance.
+    // Timers tick for every entry (even fighters missing from this frame's
+    // view) so auras can't outlive their owner; drawing is per-fighter.
+    for (const [id, a] of this.auras) {
+      if ((a.t -= dt) <= 0) this.auras.delete(id);
+    }
+    for (const f of view.fighters) {
+      const a = this.auras.get(f.id);
+      if (!a || f.dead) continue;
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      if (a.kind === 'bubble') {
+        // shimmering soap-bubble dome, straining (flickering) as it expires
+        const wob = 1 + Math.sin(t * 9) * 0.04;
+        const dying = a.t < 0.4 ? 0.4 + 0.6 * Math.abs(Math.sin(t * 25)) : 1;
+        const r = 52 * wob;
+        const g = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r);
+        g.addColorStop(0, 'rgba(127, 233, 255, 0)');
+        g.addColorStop(0.8, 'rgba(127, 233, 255, .10)');
+        g.addColorStop(1, 'rgba(127, 233, 255, .38)');
+        ctx.globalAlpha = dying;
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+        ctx.strokeStyle = 'rgba(210, 248, 255, .85)';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        // gliding highlight arc
+        ctx.strokeStyle = 'rgba(255,255,255,.9)';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.arc(0, 0, r - 6, t * 2.2, t * 2.2 + 0.9); ctx.stroke();
+      } else if (a.kind === 'counter') {
+        // spinning parry brackets that tighten as the window closes
+        const r = 44 + a.t * 26;
+        ctx.strokeStyle = '#38b6ff';
+        ctx.lineWidth = 5;
+        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 22);
+        for (const off of [0, Math.PI]) {
+          ctx.beginPath(); ctx.arc(0, 0, r, t * 7 + off, t * 7 + off + 1.15); ctx.stroke();
+        }
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = '#8fd3ff';
+        ctx.font = 'italic 900 17px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('!', 0, -F_H / 2 - 20);
+      }
+      ctx.restore();
+    }
 
     // particles
     for (const p of this.particles) {
