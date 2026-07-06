@@ -264,9 +264,15 @@ export class Game {
 
     // --- ducking (hold the stick mostly-down while grounded) ---
     const wantDuck = f.grounded && inp.my > 0.6 && inp.my >= Math.abs(inp.mx);
+    const duckAttack = inDuck && (inp.atk || (inp.chg && inp.chgArm));
     if (inDuck) {
       f.guard = Math.max(0, f.guard - GUARD_DRAIN * TICK);
       if (f.guard <= 0) this._crushGuard(f);
+      else if (duckAttack) {
+        f.state = 'idle';
+        f.stateT = 0;
+        f.standT = 0;
+      }
       else if (!wantDuck) {
         f.state = f.grounded ? 'idle' : 'air';
         f.stateT = 0;
@@ -320,7 +326,7 @@ export class Game {
     // --- attacks & abilities (locked while ducking / standing up / crushed) ---
     const mayAct = canAct && f.state !== 'duck' && f.standT <= 0;
     if (mayAct && inp.chg && inp.chgArm) { this._startCharge(f, inp.chg); inp.chgArm = false; }
-    else if (mayAct && inp.atk) { this._startAttack(f, inp.atk); inp.atk = null; }
+    else if (mayAct && inp.atk) { this._startAttack(f, inp.atk, duckAttack); inp.atk = null; }
     if (mayAct && inp.ab0) { this._useAbility(f, 0); inp.ab0 = false; }
     if (mayAct && inp.ab1) { this._useAbility(f, 1); inp.ab1 = false; }
 
@@ -335,7 +341,7 @@ export class Game {
     if (inAttack) {
       const a = ATTACKS[f.atk];
       const total = a.startup + a.active + a.rec;
-      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.atkHit.clear(); f.chg = 0; }
+      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.lowJab = false; f.atkHit.clear(); f.chg = 0; }
     }
     if (inHitstun && f.stateT >= f.hitstunFor) { f.state = 'air'; }
     if (inCrush && f.stateT >= CRUSH_STUN) { f.state = f.grounded ? 'idle' : 'air'; }
@@ -485,7 +491,7 @@ export class Game {
     this.events.push({ e: 'crush', id: f.id, x: f.x, y: f.y });
   }
 
-  _startAttack(f, atk) {
+  _startAttack(f, atk, fromDuck = false) {
     // Aimed commands: {kind:'tap'|'swipe', dx, dy} with dx/dy in {-1,0,1}
     // (8-way). Legacy shapes {kind:'up'|'down'|'side'} from older peers
     // still convert. Taps are quick jabs aimed by movement; swipes are
@@ -511,6 +517,7 @@ export class Game {
     f.stateT = 0;
     f.atk = name;
     f.atkDir = (dx || dy) ? { x: dx, y: dy } : null;
+    f.lowJab = fromDuck && name === 'jab';
     f.atkHit.clear();
     if (f.grounded) f.vx *= 0.35;
     // upward swipe in the air boosts you like an air jump — and costs none
@@ -1014,7 +1021,7 @@ export function restoreFighter(f, row) {
     f.grounded = false;
   }
   if (f.atk && f.state !== 'attack' && f.state !== 'charge') f.atk = null;
-  if (!f.atk) { f.atkDir = null; f.chg = 0; f.chgAim = null; }
+  if (!f.atk) { f.atkDir = null; f.lowJab = false; f.chg = 0; f.chgAim = null; }
 }
 
 export function blankInput() {
@@ -1033,6 +1040,14 @@ export function blankInput() {
 // hitbox players see is exactly the one the sim tests. An 8-way aim places
 // the box along that direction; 'both' boxes stay centered on the fighter.
 export function meleeHitbox(f, spec, aim = null) {
+  if (f.lowJab) {
+    return {
+      dx: f.facing * (F_W / 2 + spec.rx / 2 + 10),
+      dy: (F_H - DUCK_H) / 2,
+      hw: spec.rx / 2 + 14,
+      hh: spec.ry,
+    };
+  }
   const a = !spec.both && aim && (aim.x || aim.y) ? aim : null;
   if (a) {
     const n = Math.hypot(a.x, a.y);
