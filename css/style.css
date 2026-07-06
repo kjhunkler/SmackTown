@@ -500,6 +500,11 @@ input[type=text]:focus { border-color: var(--accent); }
 /* ============ lobby ============ */
 .room-code { color: var(--accent); letter-spacing: 5px; font-weight: 900; }
 .btn.invite { border-color: var(--accent); color: var(--accent); }
+.voice-row { display: flex; gap: 8px; }
+.voice-row .btn.voice { flex: 1; }
+.voice-row #lobby-voice-mute { flex: none; width: 52px; }
+.btn.voice.voice-on { border-color: var(--good); color: var(--good); box-shadow: 0 0 10px rgba(80, 220, 120, .25); }
+.roster .r-name .r-voice { font-size: 12px; margin-left: 6px; }
 .roster { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .roster li {
   display: flex; align-items: center; gap: 10px;

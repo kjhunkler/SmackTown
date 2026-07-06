@@ -322,7 +322,7 @@ export function renderLobby(net, onVote = null) {
     li.innerHTML = `
       <span class="presence-dot ${m.status === 'gone' ? 'gone' : m.status === 'away' ? 'away' : 'online'}"></span>
       <span class="r-swatch" style="background:${m.color}"></span>
-      <span class="r-name">${esc(m.name)}${isMe ? ' (you)' : ''}${isHost ? '<span class="r-host">HOST</span>' : ''}</span>
+      <span class="r-name">${esc(m.name)}${isMe ? ' (you)' : ''}${isHost ? '<span class="r-host">HOST</span>' : ''}${m.voice ? '<span class="r-voice" title="In voice chat">🎙</span>' : ''}</span>
       <span class="r-meta">${m.ready ? '<div class="r-ready">READY</div>' : ''}${!isMe && m.ping ? m.ping + 'ms' : ''}</span>`;
     list.appendChild(li);
   }

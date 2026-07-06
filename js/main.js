@@ -10,6 +10,7 @@ import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MA
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
+import { VoiceChat } from './voice.js';
 import * as UI from './ui.js';
 import { SFX } from './sfx.js';
 
@@ -45,6 +46,7 @@ renderMute();
 let profile = null;
 let net = null;             // Net instance while in a room
 let session = null;         // active game session
+let voice = null;           // lobby voice chat channel (lives with net)
 let presence = null;        // town-square presence (menu roster + invites)
 let pendingInvite = null;   // {id, name} to ping once our fresh room opens
 const touch = new TouchInput(document);
@@ -533,7 +535,11 @@ function menuError(text) {
 // ---------------- room / lobby ----------------
 function enterRoom(joinCode) {
   if (net) { net.leave(); net = null; }
+  voice?.destroy(); voice = null;
   net = new Net(profile);
+  voice = new VoiceChat(net);
+  voice.onChange = () => { renderVoiceButtons(); renderLobby(); };
+  net.on('voice', (pid, on) => voice?.onPeerVoice(pid, on));
 
   net.on('room', () => {
     renderLobby();
@@ -547,6 +553,7 @@ function enterRoom(joinCode) {
   });
   net.on('roster', () => {
     if (!$('#screen-lobby').classList.contains('hidden')) renderLobby();
+    voice?.prune();
     session?.onRoster();
     maybeAutoStart();
   });
@@ -554,6 +561,7 @@ function enterRoom(joinCode) {
     if (session) return;
     UI.showScreen('menu');
     menuError(text);
+    voice?.destroy(); voice = null;
     net?.leave(); net = null;
     pendingInvite = null;
     presence?.update();
@@ -604,8 +612,31 @@ function voteMap(id) {
   renderLobby();
 }
 
+// Voice chat: join/leave the room's mic channel; mute toggles the mic track.
+function renderVoiceButtons() {
+  const joinBtn = $('#lobby-voice');
+  const muteBtn2 = $('#lobby-voice-mute');
+  const on = !!voice?.active;
+  joinBtn.textContent = on ? '🎙 Leave Voice' : '🎙 Join Voice';
+  joinBtn.classList.toggle('voice-on', on);
+  joinBtn.disabled = !voice?.supported();
+  if (!voice?.supported()) joinBtn.textContent = '🎙 Voice unavailable';
+  muteBtn2.classList.toggle('hidden', !on);
+  muteBtn2.textContent = voice?.muted ? '🔇' : '🔊';
+}
+
+$('#lobby-voice').addEventListener('click', async () => {
+  if (!voice) return;
+  if (voice.active) { voice.stop(); return; }
+  const ok = await voice.start();
+  if (!ok) UI.banner('Couldn\u2019t start voice — check mic permission', 'warn');
+});
+
+$('#lobby-voice-mute').addEventListener('click', () => voice?.setMuted(!voice.muted));
+
 function renderLobby() {
   if (net) UI.renderLobby(net, voteMap);
+  renderVoiceButtons();
 }
 
 // Everyone ready -> the host counts down and starts the fight automatically.
@@ -684,6 +715,7 @@ $('#lobby-edit').addEventListener('click', () => {
 
 $('#lobby-leave').addEventListener('click', () => {
   cancelAutoStart();
+  voice?.destroy(); voice = null;
   net?.leave(); net = null;
   pendingInvite = null;
   UI.showScreen('menu');
@@ -1109,13 +1141,14 @@ $('#results-again').addEventListener('click', () => {
 });
 
 $('#results-menu').addEventListener('click', () => {
+  voice?.destroy(); voice = null;
   net?.leave(); net = null;
   UI.showScreen('menu');
   presence?.update();
 });
 
 // Leaving the page: tell peers instead of ghosting them.
-addEventListener('pagehide', () => { net?.leave(); presence?.stop(); });
+addEventListener('pagehide', () => { voice?.destroy(); net?.leave(); presence?.stop(); });
 addEventListener('pageshow', e => { if (e.persisted) presence?.start(); });
 
 // Debug/testing handle (read-only peek at live state).
