@@ -8,21 +8,40 @@
 // (render.js calls SFX.event for every cosmetic event), so anything the
 // players can see also makes noise, exactly once per client.
 
-const MUTE_KEY = 'smacktown.muted';
+const MUTE_KEY = 'smacktown.muted';  // mutes the MUSIC only; SFX always play
+const MUSIC_VOL = 0.30;
 
-// ---------- theme song ----------
-// An upbeat 8-bar chiptune loop in A minor (Am F C G), ~130 BPM on an
-// eighth-note grid: square lead, triangle bass, and a kick/snare/hat kit
-// that only plays during fights ('fight' mode) so menus stay mellower.
-const BPM = 130;
-const STEP = 60 / BPM / 2;           // eighth note, seconds
-const MEL = [ // midi note per step, 0 = rest
+// ---------- theme songs ----------
+// Two songs live here; SONG picks which one loops. Both are 64 eighth-note
+// steps (8 bars) and share the same sequencer.
+//
+// 'smacktown' — the original: an upbeat chiptune loop in A minor (Am F C G),
+// ~130 BPM, square lead + triangle bass, drum kit during fights only.
+//
+// 'focus' — the current pick: a slower, adventure-game overworld groove in
+// E minor with a jazzy synth-sax lead (sawtooth through a lowpass with
+// blooming vibrato, swung eighths), an arcade chip arpeggio sparkling up
+// top, and a dubstep wobble bass + half-time kit that kicks in for fights.
+const SONG = 'focus';                // flip to 'smacktown' for the old theme
+const SONGS = { smacktown: { bpm: 130 }, focus: { bpm: 96 } };
+
+const MEL = [ // smacktown lead: midi note per step, 0 = rest
   76, 0, 76, 74, 72, 0, 69, 72,   77, 0, 77, 76, 72, 0, 69, 0,
   76, 0, 72, 76, 79, 0, 76, 72,   74, 76, 74, 71, 67, 0, 71, 74,
   76, 0, 76, 74, 72, 0, 74, 76,   81, 0, 79, 77, 76, 0, 72, 69,
   79, 76, 72, 76, 74, 71, 67, 71, 69, 0, 0, 67, 69, 0, 0, 0,
 ];
 const BASS_ROOTS = [45, 41, 48, 43]; // A2 F2 C3 G2, one per bar, repeated
+
+const FOCUS_MEL = [ // focus sax lead: heroic Em phrases with jazz turns
+  64, 0, 67, 69, 71, 0, 74, 71,   72, 0, 71, 69, 67, 0, 64, 67,
+  66, 0, 69, 71, 74, 0, 76, 74,   76, 0, 74, 71, 69, 71, 67, 64,
+  64, 0, 64, 66, 67, 0, 71, 74,   72, 74, 72, 69, 67, 0, 69, 71,
+  69, 0, 72, 76, 74, 72, 71, 69,  71, 0, 68, 66, 64, 0, 0, 0,
+];
+const FOCUS_ROOTS = [40, 36, 38, 40, 40, 36, 33, 35]; // E2 C2 D2 E2 E2 C2 A1 B1
+const FOCUS_WOB = [3, 4, 2, 6, 3, 4, 8, 5];           // wobble LFO Hz per bar
+const SWING = 0.18;                  // focus song: off-eighths land late (jazz)
 const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 
 class Sfx {
@@ -35,7 +54,7 @@ class Sfx {
     document.addEventListener('visibilitychange', () => {
       if (!this.ac) return;
       if (document.hidden) this.ac.suspend();
-      else if (!this.muted) this.ac.resume();
+      else this.ac.resume();
     });
   }
 
@@ -45,13 +64,13 @@ class Sfx {
       if (!AC) return;
       this.ac = new AC();
       this.master = this.ac.createGain();
-      this.master.gain.value = this.muted ? 0 : 1;
+      this.master.gain.value = 1;
       this.master.connect(this.ac.destination);
       this.sfxBus = this.ac.createGain();
       this.sfxBus.gain.value = 0.9;
       this.sfxBus.connect(this.master);
       this.musicBus = this.ac.createGain();
-      this.musicBus.gain.value = 0.30;
+      this.musicBus.gain.value = this.muted ? 0 : MUSIC_VOL;
       this.musicBus.connect(this.master);
       // shared 1s white-noise buffer for every percussive/whoosh sound
       const len = this.ac.sampleRate;
@@ -63,11 +82,12 @@ class Sfx {
     this._startMusic();
   }
 
+  // Mutes the theme song only — game and UI sounds keep playing.
   setMuted(m) {
     this.muted = m;
     localStorage.setItem(MUTE_KEY, m ? '1' : '0');
-    if (this.master) {
-      this.master.gain.setTargetAtTime(m ? 0 : 1, this.ac.currentTime, 0.02);
+    if (this.musicBus) {
+      this.musicBus.gain.setTargetAtTime(m ? 0 : MUSIC_VOL, this.ac.currentTime, 0.02);
     }
   }
 
@@ -111,7 +131,7 @@ class Sfx {
   // ---------- one-shot sound bank ----------
 
   play(name) {
-    if (!this.ac || this.muted) return;
+    if (!this.ac) return;
     const now = performance.now();
     if (now - (this.lastPlay.get(name) || 0) < 35) return;   // anti-machinegun
     this.lastPlay.set(name, now);
@@ -229,7 +249,7 @@ class Sfx {
   // Charging smash: a rising whine that tracks the ~1.2s wind-up. It stops
   // early if the charge releases (swing) or gets interrupted (hit/crush/...).
   startCharge(id) {
-    if (!this.ac || this.muted) return;
+    if (!this.ac) return;
     this.stopCharge(id);
     const t = this.ac.currentTime;
     const o = this.ac.createOscillator();
@@ -296,22 +316,28 @@ class Sfx {
   _startMusic() {
     if (this._musicTimer || !this.ac) return;
     this._step = 0;
+    this._stepDur = 60 / SONGS[SONG].bpm / 2;   // eighth note, seconds
     this._nextT = this.ac.currentTime + 0.1;
     this._musicTimer = setInterval(() => this._scheduleMusic(), 60);
   }
 
   _scheduleMusic() {
     if (this.ac.state !== 'running') { this._nextT = this.ac.currentTime + 0.1; return; }
-    while (this._nextT < this.ac.currentTime + 0.25) {
-      if (!this.muted) this._playStep(this._step % MEL.length, this._nextT - this.ac.currentTime);
+    while (this._nextT < this.ac.currentTime + 0.3) {
+      // muted still advances the step clock, so unmuting rejoins mid-song
+      if (!this.muted) {
+        const t0 = this._nextT - this.ac.currentTime;
+        if (SONG === 'focus') this._playStepFocus(this._step % 64, t0);
+        else this._playStepSmack(this._step % 64, t0);
+      }
       this._step++;
-      this._nextT += STEP;
+      this._nextT += this._stepDur;
     }
   }
 
-  _playStep(s, t0) {
-    const bus = this.musicBus;
-    // lead
+  // --- 'smacktown': chiptune square lead + triangle bass + straight kit ---
+  _playStepSmack(s, t0) {
+    const bus = this.musicBus, STEP = this._stepDur;
     const m = MEL[s];
     if (m) this._tone({ type: 'square', f0: hz(m), t0, dur: STEP * 0.9, vol: 0.07, bus });
     // bass: root per bar with an octave bounce on the off-beats
@@ -324,6 +350,100 @@ class Sfx {
     if (q === 0 || q === 4) this._tone({ type: 'sine', f0: 150, f1: 45, t0, dur: 0.1, vol: 0.4, bus });
     if (q === 2 || q === 6) this._noise({ type: 'bandpass', f0: 1900, q: 0.9, t0, dur: 0.08, vol: 0.16, bus });
     this._noise({ type: 'highpass', f0: 6500, t0, dur: 0.03, vol: q % 2 ? 0.03 : 0.05, bus });
+  }
+
+  // --- 'focus': swung sax lead, chip arp, wobble bass, half-time kit ---
+  _playStepFocus(s, t0) {
+    const bus = this.musicBus, STEP = this._stepDur;
+    const q = s & 7, bar = s >> 3;
+    const swing = (s & 1) ? STEP * SWING : 0;   // off-eighths drag behind
+    // sax melody: notes before a rest are held legato into it
+    const m = FOCUS_MEL[s];
+    if (m) {
+      const held = FOCUS_MEL[(s + 1) % 64] ? STEP * 0.95 : STEP * 1.85;
+      this._sax(m, t0 + swing, held, 0.17);
+    }
+    // low end, one note per half-bar: dubstep wobble in fights, calm sub
+    // sine in the menus — same roots either way
+    if (q === 0 || q === 4) {
+      const root = FOCUS_ROOTS[bar];
+      if (this.mode === 'fight') {
+        this._wobble(root, t0, STEP * 3.9, FOCUS_WOB[bar] * (q ? 1.5 : 1), 0.15);
+      } else {
+        this._tone({ type: 'sine', f0: hz(root + 12), t0, dur: STEP * 3.6, vol: 0.10, bus });
+      }
+    }
+    // arcade chip arpeggio sparkling over the harmony (root/fifth/octave)
+    if (s & 1) {
+      const off = [0, 7, 12, 7][(s >> 1) & 3];
+      this._tone({ type: 'square', f0: hz(FOCUS_ROOTS[bar] + 24 + off), t0: t0 + swing, dur: STEP * 0.35, vol: 0.022, bus });
+    }
+    // half-time dubstep kit, fights only: kick on the one, fat snare on
+    // the three, ticking swung hats
+    if (this.mode !== 'fight') return;
+    if (q === 0) this._tone({ type: 'sine', f0: 130, f1: 40, t0, dur: 0.14, vol: 0.45, bus });
+    if (q === 4) {
+      this._noise({ type: 'bandpass', f0: 1500, q: 0.8, t0, dur: 0.14, vol: 0.22, bus });
+      this._tone({ type: 'triangle', f0: 210, f1: 120, t0, dur: 0.1, vol: 0.14, bus });
+    }
+    this._noise({ type: 'highpass', f0: 7500, t0: t0 + swing, dur: 0.025, vol: q % 2 ? 0.025 : 0.045, bus });
+  }
+
+  // Synth sax: a sawtooth pushed through a resonant lowpass with a soft,
+  // breathy attack and vibrato that blooms in partway through the note.
+  _sax(m, t0, dur, vol) {
+    const ac = this.ac;
+    const t = ac.currentTime + t0;
+    const o = ac.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(hz(m), t);
+    const vib = ac.createOscillator();
+    vib.frequency.value = 5.2;
+    const vg = ac.createGain();
+    vg.gain.setValueAtTime(0, t);
+    vg.gain.linearRampToValueAtTime(hz(m) * 0.014, t + Math.min(0.4, dur * 0.8));
+    vib.connect(vg).connect(o.frequency);
+    const fl = ac.createBiquadFilter();
+    fl.type = 'lowpass'; fl.Q.value = 2.5;
+    fl.frequency.setValueAtTime(900, t);
+    fl.frequency.linearRampToValueAtTime(1900, t + 0.06);  // breath opening up
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.05);
+    g.gain.setValueAtTime(vol, t + Math.max(0.06, dur * 0.7));
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(fl).connect(g).connect(this.musicBus);
+    o.start(t); o.stop(t + dur + 0.05);
+    vib.start(t); vib.stop(t + dur + 0.05);
+  }
+
+  // Dubstep wobble: saw + sub-octave sine under a resonant lowpass whose
+  // cutoff is pumped by an LFO — the LFO rate is the "wub" speed.
+  _wobble(m, t0, dur, rate, vol) {
+    const ac = this.ac;
+    const t = ac.currentTime + t0;
+    const o = ac.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = hz(m);
+    const sub = ac.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = hz(m - 12);
+    const fl = ac.createBiquadFilter();
+    fl.type = 'lowpass'; fl.Q.value = 7;
+    fl.frequency.value = 750;
+    const lfo = ac.createOscillator();
+    lfo.frequency.value = rate;
+    const lg = ac.createGain();
+    lg.gain.value = 620;
+    lfo.connect(lg).connect(fl.frequency);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.setValueAtTime(vol, t + Math.max(0.05, dur - 0.06));
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(fl).connect(g);
+    sub.connect(g);
+    g.connect(this.musicBus);
+    for (const n of [o, sub, lfo]) { n.start(t); n.stop(t + dur + 0.03); }
   }
 }
 

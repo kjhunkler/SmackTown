@@ -35,8 +35,9 @@ document.addEventListener('click', e => {
   SFX.play(BTN_SFX[b.id] || 'click');
 }, true);
 
+// The toggle silences the theme song only — game/UI sounds keep playing.
 const muteBtn = $('#sfx-mute');
-function renderMute() { muteBtn.textContent = SFX.muted ? '🔇' : '🔊'; }
+function renderMute() { muteBtn.textContent = SFX.muted ? '🔇' : '🎵'; }
 muteBtn.addEventListener('click', () => { SFX.setMuted(!SFX.muted); renderMute(); });
 renderMute();
 
