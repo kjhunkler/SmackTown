@@ -237,6 +237,10 @@ class Sfx {
 
       // --- abilities ---
       case 'ab:fireball': this._noise({ type: 'bandpass', f0: 400, f1: 1600, q: 1.2, dur: 0.22, vol: 0.2 }); break;
+      case 'burn':
+        this._noise({ type: 'bandpass', f0: 300, f1: 2200, q: 1.1, dur: 0.3, vol: 0.22 });
+        this._tone({ type: 'sawtooth', f0: 160, f1: 60, dur: 0.22, vol: 0.1 });
+        break;
       case 'ab:blink':    this._tone({ type: 'sine', f0: 1400, f1: 300, dur: 0.14, vol: 0.15 }); break;
       case 'ab:mend': break;                        // the 'mend' event chimes
       case 'ab:shockwave': break;                   // the slam event booms
@@ -320,6 +324,7 @@ class Sfx {
       case 'swing':   this.stopCharge(ev.id); this.play(ev.atk === 'nspin' ? 'spin' : 'swing'); break;
       case 'charge':  this.startCharge(ev.id); break;
       case 'crush':   this.stopCharge(ev.id); this.play('crush'); break;
+      case 'burn':    this.stopCharge(ev.vic); this.play('burn'); break;
       case 'ledge':   this.stopCharge(ev.id); this.play('ledge'); break;
       case 'jump':    this.play('jump'); break;
       case 'land':    this.play('land'); break;

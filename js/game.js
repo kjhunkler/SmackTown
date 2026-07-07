@@ -64,11 +64,18 @@ export const MAPS = {
     respawnY: -330,
   },
   foundry: {
-    name: 'Foundry',
+    name: 'The Crucible',
     main: { x: -300, y: 0, w: 600, h: 46 },              // compact arena with side perches
     plats: [
       { x: -420, y: -150, w: 140 },
       { x: 280,  y: -150, w: 140 },
+    ],
+    // molten geysers: deck vents that telegraph, then erupt in a column of
+    // melt. Timing is a pure function of the tick (like moving platforms)
+    // so host, prediction and every client agree on every eruption.
+    hazards: [
+      { x: -186, w: 72, h: 250, period: 11, phase: 0,   warn: 1.5, act: 1.0 },
+      { x: 114,  w: 72, h: 250, period: 11, phase: 5.5, warn: 1.5, act: 1.0 },
     ],
     blast: { l: -1120, r: 1120, t: -980, b: 500 },
     spawns: [ -210, 210, -60, 60 ],
@@ -102,6 +109,22 @@ function platPos(p, tickF) {
 export function platsAt(mapId, tickF) {
   const map = MAPS[mapId] || MAPS[DEFAULT_MAP];
   return map.plats.map(p => p.move ? { ...p, ...platPos(p, tickF) } : p);
+}
+
+// Molten hazards: each vent cycles warn → erupt → idle on a fixed period.
+// State is a pure function of the sim tick so every peer computes identical
+// eruptions; k runs 0→1 within the current phase for animation.
+export function hazardsAt(mapId, tickF) {
+  const map = MAPS[mapId] || MAPS[DEFAULT_MAP];
+  if (!map.hazards) return [];
+  return map.hazards.map(hz => {
+    const tm = (tickF * TICK + (hz.phase || 0)) % hz.period;
+    const state = tm < hz.warn ? 'warn' : tm < hz.warn + hz.act ? 'erupt' : 'idle';
+    const k = state === 'warn' ? tm / hz.warn
+      : state === 'erupt' ? (tm - hz.warn) / hz.act
+      : (tm - hz.warn - hz.act) / (hz.period - hz.warn - hz.act);
+    return { x: hz.x, w: hz.w, h: hz.h, y: map.main.y, state, k };
+  });
 }
 
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
@@ -238,6 +261,7 @@ export class Game {
       usedSecondWind: false,
       lastHitBy: null,              // KO attribution (reaper heal)
       dropT: 0,                     // drop-through timer
+      burnT: 0,                     // molten-hazard burn cooldown
       riseT: 0,                     // cooldown on the aerial up-smash lift
       ridePlat: null,               // index of the platform we're standing on
       ledge: 0,                     // hanging: -1 left lip, 1 right lip, 0 none
@@ -347,6 +371,7 @@ export class Game {
     this._stepProjectiles();
     this._recordHistory();
     this._resolveAttacks();
+    this._stepHazards();
     this._checkBlast();
 
     const alive = this.fighters.filter(f => !f.dead);
@@ -365,6 +390,7 @@ export class Game {
     f.counterT = Math.max(0, f.counterT - TICK);
     f.dashT = Math.max(0, f.dashT - TICK);
     f.dropT = Math.max(0, f.dropT - TICK);
+    f.burnT = Math.max(0, f.burnT - TICK);
     f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
     f.regrabT = Math.max(0, f.regrabT - TICK);
     f.standT = Math.max(0, f.standT - TICK);
@@ -1150,6 +1176,39 @@ export class Game {
     }
   }
 
+  // Molten geysers: an erupting vent pops anyone caught in its column —
+  // percent, an upward launch and hitstun. Ducking can't block floor fire,
+  // but spawn/ledge invulnerability and a short per-fighter burn cooldown
+  // keep it from combo-locking. lastHitBy is untouched, so smacking someone
+  // into a geyser still earns you the fall it causes.
+  _stepHazards() {
+    if (!this.stage.hazards) return;
+    for (const h of hazardsAt(this.map, this.tick)) {
+      if (h.state !== 'erupt') continue;
+      const cx = h.x + h.w / 2;
+      for (const f of this.fighters) {
+        if (f.dead || f.state === 'respawn' || f.state === 'ledge') continue;
+        if (f.invuln > 0 || f.burnT > 0) continue;
+        if (Math.abs(f.x - cx) > h.w / 2 + F_W / 2 - 8) continue;
+        if (f.y - F_H / 2 > h.y || f.y + F_H / 2 < h.y - h.h) continue;
+        const dmg = 9 * f.st.dmgTaken;
+        f.pct = Math.min(999, f.pct + dmg);
+        f.score.taken += dmg;
+        f.burnT = 0.8;
+        f.vy = -760;
+        f.vx = clamp(f.vx + Math.sign(f.x - cx || 1) * 190, -420, 420);
+        f.grounded = false;
+        f.fastfall = false;
+        f.state = 'hitstun';
+        f.stateT = 0;
+        f.hitstunFor = 0.34;
+        f.atk = null; f.atkDir = null; f.melee = null;
+        f.atkSpd = 0; f.chg = 0; f.chgAim = null;
+        this.events.push({ e: 'burn', x: f.x, y: h.y - 20, vic: f.id, dmg: Math.round(dmg) });
+      }
+    }
+  }
+
   _checkBlast() {
     const b = this.stage.blast;
     for (const f of this.fighters) {
@@ -1226,6 +1285,14 @@ export class Game {
         inp.atk = null; inp.jump = false;
       }
     }
+    // a vent telegraphing underfoot outranks everything: clear the grate
+    if (f.grounded) {
+      for (const h of hazardsAt(this.map, this.tick)) {
+        if (h.state === 'idle') continue;
+        const cx = h.x + h.w / 2;
+        if (Math.abs(f.x - cx) < h.w / 2 + 60) { inp.mx = f.x < cx ? -1 : 1; inp.my = 0; }
+      }
+    }
   }
 
   // ---------- client-side prediction ----------
@@ -1266,6 +1333,7 @@ export class Game {
           r1(f.guard), r2(f.standT), r2(f.chg), r2(f.riseT), f.lastHitBy || 0,
           f.ridePlat == null ? -1 : f.ridePlat,
           [f.score.ko, f.score.fall, f.score.sd, r1(f.score.dmg), r1(f.score.taken), r1(f.score.maxHit)],
+          r2(f.burnT),
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -1312,6 +1380,7 @@ export function restoreFighter(f, row) {
     f.chgAim = f.state === 'charge' ? { dx: row[26] | 0, dy: row[27] | 0 } : null;
     const sc = row[34];
     if (sc) f.score = { ko: sc[0] | 0, fall: sc[1] | 0, sd: sc[2] | 0, dmg: +sc[3] || 0, taken: +sc[4] || 0, maxHit: +sc[5] || 0 };
+    f.burnT = +row[35] || 0;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.

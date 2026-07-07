@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -45,11 +45,12 @@ const THEMES = {
     plat: '#5a525c', platTop: '#7a6f78',
   },
   foundry: {
-    sky: ['#180b10', '#3a1218', '#070507'],
-    motif: 'sun',
-    stars: 0.15,
-    deck: '#3a2f33', lip: '#5b4245', trim: '#ff6a2a',
-    plat: '#5b4245', platTop: '#7c5a5c',
+    sky: ['#0d0508', '#38100e', '#1c0906'],
+    motif: 'forgesun',
+    stars: 0.1,
+    ambient: 'ashspark',
+    deck: '#33272b', lip: '#544047', trim: '#ff6a2a',
+    plat: '#4a3a40', platTop: '#6d565c',
   },
   garden: {
     sky: ['#1a1440', '#3c2b5c', '#0e2418'],
@@ -95,6 +96,7 @@ export class Renderer {
     this.mesas = this.mapId === 'flatlands' ? buildMesas() : null;
     this.flora = this.mapId === 'garden' ? buildFlora() : null;
     this.isles = this.mapId === 'battlefield' ? buildSkyIsles() : null;
+    this.works = this.mapId === 'foundry' ? buildWorks() : null;
   }
 
   _resize() {
@@ -173,6 +175,16 @@ export class Renderer {
           this.burst(ev.x, ev.y, 26, '#ffd23e', 480);
           this.burst(ev.x, ev.y, 12, '#ffffff', 320);
           this.shake = Math.max(this.shake, 12);
+          break;
+        case 'burn':
+          this.burst(ev.x, ev.y, 20, '#ff8a2e', 520);
+          this.burst(ev.x, ev.y, 10, '#ffd23e', 340);
+          this.flash.set(ev.vic, 0.16);
+          this.shake = Math.max(this.shake, 8);
+          this.dmgPops.push({
+            x: ev.x + (Math.random() - 0.5) * 16, y: ev.y - F_H / 2 - 10,
+            txt: String(ev.dmg), t: 0, life: 0.7, heavy: false, color: '#ff8a2e',
+          });
           break;
       }
     }
@@ -339,6 +351,7 @@ export class Renderer {
     if (this.mesas) this._mesaBackdrop(ctx, t);
     if (this.flora) this._floraBackdrop(ctx, t);
     if (this.isles) this._isleBackdrop(ctx, t);
+    if (this.works) this._worksBackdrop(ctx, t);
     this._stage(ctx, view.tick ?? 0, t);
     if (this.theme.ambient) this._ambient(ctx, dt, t);
 
@@ -573,6 +586,28 @@ export class Renderer {
       ctx.fillRect(px - r * 3, sy - r * 3, r * 6, r * 6);
       ctx.fillStyle = '#ffd23e';
       ctx.beginPath(); ctx.arc(px, sy, r * 1.15, 0, 7); ctx.fill();
+    } else if (this.theme.motif === 'forgesun') {
+      // a smoke-smothered sun sunk low behind the works, more furnace-glow
+      // than daylight, its bloom pulsing like a breathing bellows
+      const sx = W * 0.3 - this.cam.x * 0.04 * this.dpr;
+      const sy = H * 0.42 - this.cam.y * 0.04 * this.dpr;
+      const breathe = 1 + Math.sin(t * 0.8) * 0.06;
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 3.4 * breathe);
+      g.addColorStop(0, 'rgba(255, 120, 40, .8)');
+      g.addColorStop(0.4, 'rgba(200, 60, 24, .32)');
+      g.addColorStop(1, 'rgba(200, 60, 24, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(sx - r * 3.4, sy - r * 3.4, r * 6.8, r * 6.8);
+      ctx.fillStyle = '#ff7a30';
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.arc(sx, sy, r * 0.95, 0, 7); ctx.fill();
+      ctx.globalAlpha = 0.5;                           // smoke bands slicing the disc
+      ctx.fillStyle = '#1c0906';
+      for (const [dy, hh] of [[-0.25, 0.16], [0.15, 0.12], [0.45, 0.2]]) {
+        ctx.fillRect(sx - r * 1.4, sy + r * dy - r * hh / 2
+          + Math.sin(t * 0.3 + dy * 9) * r * 0.05, r * 2.8, r * hh);
+      }
+      ctx.globalAlpha = 1;
     } else if (this.theme.motif === 'aurora') {
       ctx.lineWidth = Math.max(8, H * 0.045);
       ctx.lineCap = 'round';
@@ -707,6 +742,7 @@ export class Renderer {
     if (this.mapId === 'skyline') { this._skylineStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'flatlands') { this._flatlandsStage(ctx, t); return; }
     if (this.mapId === 'garden') { this._gardenStage(ctx, plats, t); return; }
+    if (this.mapId === 'foundry') { this._crucibleStage(ctx, plats, tickF, t); return; }
     const th = this.theme;
     const m = this.stage.main;
     // main platform with themed deck & lip
@@ -1015,6 +1051,95 @@ export class Renderer {
         }
       }
     }
+  }
+
+  // The Crucible: parallax silhouettes of the works — blast furnaces,
+  // chimneys venting smoke, cooling towers, a glowing ladle crane crawling
+  // its gantry rail — over a distant melt-glow horizon.
+  _worksBackdrop(ctx, t) {
+    const wk = this.works;
+    // melt-glow horizon line behind everything
+    const gy = wk.baseY + this.cam.y * 0.85 * wk.layers[0].lag;
+    const hg = ctx.createLinearGradient(0, gy - 130, 0, gy + 40);
+    hg.addColorStop(0, 'rgba(255, 106, 42, 0)');
+    hg.addColorStop(1, 'rgba(255, 106, 42, .3)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(this.cam.x - 1700, gy - 130, 3400, 170);
+    for (const layer of wk.layers) {
+      const ox = this.cam.x * layer.lag, oy = this.cam.y * layer.lag * 0.85;
+      ctx.fillStyle = layer.fill;
+      for (const b of wk.bldgs) {
+        if (b.layer !== layer.i) continue;
+        const x = b.x + ox, yb = wk.baseY + oy;
+        if (b.kind === 0) {                        // blast furnace: flared stack
+          ctx.beginPath();
+          ctx.moveTo(x, yb);
+          ctx.lineTo(x + b.w * 0.16, yb - b.h * 0.62);
+          ctx.lineTo(x, yb - b.h * 0.74);
+          ctx.lineTo(x + b.w * 0.3, yb - b.h);
+          ctx.lineTo(x + b.w * 0.7, yb - b.h);
+          ctx.lineTo(x + b.w, yb - b.h * 0.74);
+          ctx.lineTo(x + b.w * 0.84, yb - b.h * 0.62);
+          ctx.lineTo(x + b.w, yb);
+          ctx.closePath(); ctx.fill();
+          const fl = 0.5 + 0.5 * Math.sin(t * 5 + b.ph);   // throat glow
+          ctx.fillStyle = `rgba(255, 140, 50, ${(0.25 + 0.3 * fl).toFixed(3)})`;
+          ctx.fillRect(x + b.w * 0.36, yb - b.h * 0.98, b.w * 0.28, b.h * 0.1);
+          ctx.fillStyle = layer.fill;
+        } else if (b.kind === 1) {                 // chimney trio with smoke
+          for (let c = 0; c < 3; c++) {
+            const cx = x + c * b.w * 0.38, chh = b.h * (1 - c * 0.14);
+            ctx.fillRect(cx, yb - chh, b.w * 0.22, chh);
+            for (let sPuff = 0; sPuff < 3; sPuff++) {   // drifting smoke puffs
+              const k = ((t * 0.09 + b.ph + sPuff / 3 + c * 0.21) % 1);
+              ctx.globalAlpha = 0.16 * (1 - k);
+              ctx.beginPath();
+              ctx.arc(cx + b.w * 0.11 + k * 34 + Math.sin(t * 0.5 + sPuff) * 6,
+                yb - chh - 8 - k * 90, 7 + k * 16, 0, 7);
+              ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+          }
+        } else {                                   // cooling tower: pinched waist
+          ctx.beginPath();
+          ctx.moveTo(x, yb);
+          ctx.quadraticCurveTo(x + b.w * 0.24, yb - b.h * 0.55, x + b.w * 0.16, yb - b.h);
+          ctx.lineTo(x + b.w * 0.84, yb - b.h);
+          ctx.quadraticCurveTo(x + b.w * 0.76, yb - b.h * 0.55, x + b.w, yb);
+          ctx.closePath(); ctx.fill();
+        }
+      }
+    }
+    // ladle crane crawling the mid-layer gantry rail, pouring a glow trail
+    const mid = wk.layers[1];
+    const ox = this.cam.x * mid.lag, oy = this.cam.y * mid.lag * 0.85;
+    const railY = wk.baseY + oy - 210;
+    ctx.strokeStyle = mid.fill;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(-1500 + ox, railY); ctx.lineTo(1500 + ox, railY);
+    ctx.stroke();
+    for (let px = -1400; px <= 1400; px += 350) {  // rail trestles
+      ctx.beginPath();
+      ctx.moveTo(px + ox, railY);
+      ctx.lineTo(px + ox, wk.baseY + oy);
+      ctx.stroke();
+    }
+    const lx = ox + Math.sin(t * 0.11) * 900;      // the ladle itself
+    ctx.fillStyle = mid.fill;
+    ctx.fillRect(lx - 26, railY, 52, 14);
+    ctx.strokeStyle = mid.fill;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(lx, railY + 14); ctx.lineTo(lx, railY + 44); ctx.stroke();
+    ctx.beginPath();                               // bucket, brimming
+    ctx.moveTo(lx - 20, railY + 44);
+    ctx.lineTo(lx + 20, railY + 44);
+    ctx.lineTo(lx + 13, railY + 74);
+    ctx.lineTo(lx - 13, railY + 74);
+    ctx.closePath(); ctx.fill();
+    const brim = 0.6 + 0.4 * Math.sin(t * 3.1);
+    ctx.fillStyle = `rgba(255, 150, 60, ${(0.55 + 0.3 * brim).toFixed(3)})`;
+    ctx.fillRect(lx - 17, railY + 44, 34, 5);
   }
 
   // Overgrown Eden: parallax rows of giant flora — towering stems, huge
@@ -1628,6 +1753,176 @@ export class Renderer {
     }
   }
 
+  // The Crucible: a slag-crusted pour deck over a churning lava moat, two
+  // riveted side perches, and the vent grates — glowing hotter through the
+  // telegraph, then erupting in a column of melt exactly where the sim says.
+  _crucibleStage(ctx, plats, tickF, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // churning lava moat under the deck: layered waves + drifting slag crust
+    const ly = m.y + 170;
+    const lg = ctx.createLinearGradient(0, ly - 30, 0, ly + 260);
+    lg.addColorStop(0, '#ff9a3d');
+    lg.addColorStop(0.35, '#e04b1c');
+    lg.addColorStop(1, '#5a1408');
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.moveTo(m.x - 640, ly + 260);
+    ctx.lineTo(m.x - 640, ly);
+    for (let wx = m.x - 640; wx <= m.x + m.w + 640; wx += 40) {
+      ctx.lineTo(wx, ly + Math.sin(wx * 0.013 + t * 1.1) * 9
+        + Math.sin(wx * 0.031 - t * 0.7) * 5);
+    }
+    ctx.lineTo(m.x + m.w + 640, ly + 260);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(30, 10, 6, .55)';        // slag crust plates adrift
+    for (let i = 0; i < 7; i++) {
+      const sx = m.x - 500 + i * 260 + Math.sin(t * 0.12 + i * 2.2) * 70;
+      const sy = ly + 26 + Math.sin(t * 0.8 + i) * 7 + (i % 3) * 24;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, 64 + (i % 3) * 22, 12, Math.sin(i * 5) * 0.08, 0, 7);
+      ctx.fill();
+    }
+    for (let i = 0; i < 4; i++) {                  // lazy lava bubbles
+      const k = (t * 0.5 + i * 0.77) % 1;
+      const bx = m.x - 300 + ((i * 731) % (m.w + 600));
+      ctx.globalAlpha = 0.5 * (1 - k);
+      ctx.strokeStyle = '#ffc46a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(bx, ly + 16 - k * 10, 4 + k * 12, 0, 7);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    const uw = ctx.createLinearGradient(0, m.y + m.h, 0, ly);   // updraft glow licking the deck
+    uw.addColorStop(0, 'rgba(255, 110, 40, .16)');
+    uw.addColorStop(1, 'rgba(255, 110, 40, 0)');
+    ctx.fillStyle = uw;
+    ctx.fillRect(m.x - 80, m.y + m.h, m.w + 160, ly - m.y - m.h);
+
+    // pour deck: scorched plate steel on riveted box girders
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(12, 6, 8, .6)';        // plate seams
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let px = m.x + 75; px < m.x + m.w - 20; px += 75) {
+      ctx.moveTo(px, m.y + 14); ctx.lineTo(px, m.y + m.h + 26);
+    }
+    ctx.moveTo(m.x + 6, m.y + 40); ctx.lineTo(m.x + m.w - 6, m.y + 40);
+    ctx.stroke();
+    ctx.fillStyle = '#211a1e';                     // rivet lines
+    for (let px = m.x + 22; px < m.x + m.w - 12; px += 37) {
+      ctx.beginPath(); ctx.arc(px, m.y + 47, 2.6, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = th.lip;                        // worn lip + hazard chevrons
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.rect(m.x + 4, m.y + 1, m.w - 8, 5); ctx.clip();
+    for (let cx = m.x - 20; cx < m.x + m.w + 20; cx += 26) {
+      ctx.fillStyle = ((cx - m.x) / 26 | 0) % 2 ? '#e8b23a' : '#242024';
+      ctx.beginPath();
+      ctx.moveTo(cx, m.y + 6); ctx.lineTo(cx + 13, m.y); ctx.lineTo(cx + 26, m.y + 6);
+      ctx.lineTo(cx + 26, m.y + 1); ctx.lineTo(cx + 13, m.y + 6); ctx.lineTo(cx, m.y + 1);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+
+    // vent grates & geysers, straight from the sim's shared clock
+    for (const h of hazardsAt(this.mapId, tickF)) {
+      const cx = h.x + h.w / 2;
+      if (h.state === 'erupt') {
+        // column of melt: core, sheath, crown splash — k eases it in/out
+        const grow = Math.min(1, h.k * 6) * (1 - Math.max(0, h.k - 0.82) / 0.18);
+        const hh = h.h * grow;
+        if (hh > 2) {
+          const jw = h.w * (0.62 + Math.sin(t * 21) * 0.05);
+          const cg = ctx.createLinearGradient(0, h.y - hh, 0, h.y);
+          cg.addColorStop(0, 'rgba(255, 210, 62, .1)');
+          cg.addColorStop(0.4, '#ffd23e');
+          cg.addColorStop(1, '#ff6a2a');
+          ctx.fillStyle = cg;
+          ctx.beginPath();                         // sheath, waisted by sine wobble
+          ctx.moveTo(cx - jw / 2, h.y);
+          ctx.quadraticCurveTo(cx - jw * 0.34 + Math.sin(t * 17) * 4, h.y - hh * 0.55,
+            cx - jw * 0.16, h.y - hh);
+          ctx.lineTo(cx + jw * 0.16, h.y - hh);
+          ctx.quadraticCurveTo(cx + jw * 0.34 - Math.sin(t * 15) * 4, h.y - hh * 0.5,
+            cx + jw / 2, h.y);
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#fff3c8';               // white-hot core
+          ctx.fillRect(cx - jw * 0.1, h.y - hh * 0.96, jw * 0.2, hh * 0.96);
+          for (let d = 0; d < 5; d++) {            // crown droplets
+            const dk = (t * 2.2 + d * 0.37) % 1;
+            ctx.globalAlpha = 0.9 * (1 - dk);
+            ctx.fillStyle = d % 2 ? '#ffd23e' : '#ff8a2e';
+            ctx.beginPath();
+            ctx.arc(cx + Math.sin(d * 2.4) * jw * (0.3 + dk * 0.5),
+              h.y - hh - 6 - dk * 40 + dk * dk * 70, 3.4 - dk * 1.6, 0, 7);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+          const wg = ctx.createRadialGradient(cx, h.y, 4, cx, h.y, h.w * 1.4);
+          wg.addColorStop(0, 'rgba(255, 170, 70, .5)');
+          wg.addColorStop(1, 'rgba(255, 170, 70, 0)');
+          ctx.fillStyle = wg;                      // eruption floods the deck with light
+          ctx.fillRect(cx - h.w * 1.4, h.y - h.w * 1.4, h.w * 2.8, h.w * 1.4);
+        }
+      } else if (h.state === 'warn') {
+        // telegraph: grate glows hotter, spits warning sparks, rising steam
+        const heat = h.k * h.k;
+        const wg = ctx.createRadialGradient(cx, h.y, 2, cx, h.y, h.w * (0.7 + heat * 0.5));
+        wg.addColorStop(0, `rgba(255, 130, 46, ${(0.2 + heat * 0.6).toFixed(3)})`);
+        wg.addColorStop(1, 'rgba(255, 130, 46, 0)');
+        ctx.fillStyle = wg;
+        ctx.fillRect(cx - h.w, h.y - h.w, h.w * 2, h.w);
+        for (let sp = 0; sp < 3; sp++) {           // spark spits, quickening
+          const sk = (t * (2 + heat * 3) + sp / 3) % 1;
+          ctx.globalAlpha = (1 - sk) * heat;
+          ctx.fillStyle = '#ffd23e';
+          ctx.fillRect(cx + Math.sin(sp * 4.2 + t * 3) * h.w * 0.3 - 1.5,
+            h.y - 4 - sk * 46, 3, 3);
+        }
+        ctx.globalAlpha = 1;
+      }
+      // the grate itself, always visible: recessed slot + crossbars
+      const glow = h.state === 'warn' ? h.k * h.k
+        : h.state === 'erupt' ? 1 : Math.max(0, 0.25 - h.k * 0.25);
+      ctx.fillStyle = '#171114';
+      roundRect(ctx, h.x, h.y - 5, h.w, 9, 3); ctx.fill();
+      for (let gx = 0; gx < 5; gx++) {
+        ctx.fillStyle = glow > 0.03
+          ? `rgba(255, ${Math.round(120 + glow * 90)}, 46, ${(0.35 + glow * 0.65).toFixed(3)})`
+          : '#2c2226';
+        ctx.fillRect(h.x + 5 + gx * (h.w - 10) / 5 + 2, h.y - 3.5, (h.w - 10) / 5 - 4, 6);
+      }
+    }
+
+    // side perches: riveted plates on angled gusset struts off the void
+    for (const p of plats) {
+      const inner = p.x > m.x + m.w / 2 ? p.x : p.x + p.w;   // strut anchors toward the deck
+      ctx.strokeStyle = '#241c20';
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(inner, p.y + 10);
+      ctx.lineTo(inner + (p.x > 0 ? -46 : 46), p.y + 78);
+      ctx.stroke();
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 14, 4); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      ctx.fillStyle = '#211a1e';                   // perch rivets
+      for (let rx = p.x + 12; rx < p.x + p.w - 8; rx += 24) {
+        ctx.beginPath(); ctx.arc(rx, p.y + 9, 2.2, 0, 7); ctx.fill();
+      }
+      const eg = ctx.createLinearGradient(0, p.y + 14, 0, p.y + 44);   // moat-glow underside
+      eg.addColorStop(0, 'rgba(255, 110, 40, .28)');
+      eg.addColorStop(1, 'rgba(255, 110, 40, 0)');
+      ctx.fillStyle = eg;
+      ctx.fillRect(p.x + 2, p.y + 14, p.w - 4, 30);
+    }
+  }
+
   // Overgrown Eden: a mossy root-shelf floor knotted with giant roots, a
   // fallen-log bridge, glowing toadstools, and two giant flower heads
   // bobbing off the lips as living platforms.
@@ -1750,6 +2045,35 @@ export class Renderer {
   // Ambient weather, per theme: embers & ash rising off the burning ruins,
   // or neon-lit rain sheeting down over the heights.
   _ambient(ctx, dt, t) {
+    if (this.theme.ambient === 'ashspark') {
+      // sparks climbing off the moat on the updraft; soot flakes sifting down
+      while (this.ambient.length < 40) {
+        const soot = Math.random() < 0.3;
+        this.ambient.push({
+          soot,
+          x: this.cam.x + (Math.random() - 0.5) * 2200,
+          y: soot ? this.cam.y - 650 - Math.random() * 300 : this.cam.y + 380 + Math.random() * 300,
+          vy: soot ? 30 + Math.random() * 26 : -(60 + Math.random() * 90),
+          sway: 12 + Math.random() * 26, ph: Math.random() * 7,
+          life: 4 + Math.random() * 4, t: 0, r: soot ? 1.8 : 2.4,
+        });
+      }
+      for (const e of this.ambient) {
+        e.t += dt;
+        e.y += e.vy * dt;
+        if (!e.soot) e.vy *= 1 - dt * 0.25;        // sparks ease off as they climb
+        const k = e.t / e.life;
+        if (k >= 1) continue;
+        const x = e.x + Math.sin(t * 1.1 + e.ph) * e.sway;
+        const glow = e.soot ? 0.3 : 0.5 + 0.5 * Math.sin(t * 8 + e.ph);
+        ctx.globalAlpha = (1 - k) * (e.soot ? 0.45 : 0.9) * Math.max(0.2, glow);
+        ctx.fillStyle = e.soot ? '#6d6068' : (glow > 0.75 ? '#ffd23e' : '#ff8a2e');
+        ctx.fillRect(x, e.y, e.r + (e.soot ? 0 : glow), e.r + (e.soot ? 0 : glow));
+      }
+      ctx.globalAlpha = 1;
+      this.ambient = this.ambient.filter(e => e.t < e.life);
+      return;
+    }
     if (this.theme.ambient === 'cloudwisp') {
       // thin wisps of cloud streaming past the bastion at fight height
       while (this.ambient.length < 10) {
@@ -2199,6 +2523,33 @@ function buildMesas() {
     }
   }
   return { baseY, layers, mill: { x: -900 + Math.floor(8451 % 7) * 260, h: 130 } };
+}
+
+// Deterministic foundry works: two parallax layers of blast furnaces,
+// chimney banks and cooling towers. Same seed every time, so all players
+// share the same skyline.
+function buildWorks() {
+  let s = 88007;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const layers = [
+    { i: 0, lag: 0.8,  fill: '#1c0f12' },
+    { i: 1, lag: 0.62, fill: '#120a0d' },
+  ];
+  const bldgs = [];
+  for (const layer of layers) {
+    let x = -1500 + rnd() * 150;
+    while (x < 1500) {
+      const w = 130 + rnd() * 170;
+      bldgs.push({
+        layer: layer.i, x, w,
+        h: 200 + rnd() * (200 + layer.i * 120),
+        kind: (rnd() * 3) | 0,
+        ph: rnd() * 7,
+      });
+      x += w + 60 + rnd() * 160;
+    }
+  }
+  return { baseY: 330, layers, bldgs };
 }
 
 // Deterministic floating archipelago: three parallax layers of drifting
