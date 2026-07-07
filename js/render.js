@@ -51,11 +51,12 @@ const THEMES = {
     plat: '#5b4245', platTop: '#7c5a5c',
   },
   garden: {
-    sky: ['#0b1f24', '#174034', '#071013'],
-    motif: 'aurora',
-    stars: 0.7,
-    deck: '#254033', lip: '#38644e', trim: '#b4e06f',
-    plat: '#38644e', platTop: '#4f896c',
+    sky: ['#1a1440', '#3c2b5c', '#0e2418'],
+    motif: 'duskmoth',
+    stars: 0.8,
+    ambient: 'fireflies',
+    deck: '#2e4a2c', lip: '#476b40', trim: '#ffd7f0',
+    plat: '#5c4632', platTop: '#7a5f44',
   },
 };
 
@@ -91,6 +92,7 @@ export class Renderer {
       : this.mapId === 'skyline' ? buildCityScape('neon')
       : null;
     this.mesas = this.mapId === 'flatlands' ? buildMesas() : null;
+    this.flora = this.mapId === 'garden' ? buildFlora() : null;
   }
 
   _resize() {
@@ -333,6 +335,7 @@ export class Renderer {
 
     if (this.city) this._cityBackdrop(ctx, t);
     if (this.mesas) this._mesaBackdrop(ctx, t);
+    if (this.flora) this._floraBackdrop(ctx, t);
     this._stage(ctx, view.tick ?? 0, t);
     if (this.theme.ambient) this._ambient(ctx, dt, t);
 
@@ -565,6 +568,36 @@ export class Renderer {
         ctx.quadraticCurveTo(bx, by + s * flap, bx + s, by - s * (0.3 - flap));
         ctx.stroke();
       }
+    } else if (this.theme.motif === 'duskmoth') {
+      // low honeyed dusk moon behind the flora, giant moths drifting past
+      const my = H * 0.34 - this.cam.y * 0.05 * this.dpr;
+      const R = r * 1.5;
+      const g = ctx.createRadialGradient(px, my, R * 0.5, px, my, R * 3);
+      g.addColorStop(0, 'rgba(255, 226, 170, .4)');
+      g.addColorStop(0.5, 'rgba(255, 200, 150, .14)');
+      g.addColorStop(1, 'rgba(255, 200, 150, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - R * 3, my - R * 3, R * 6, R * 6);
+      ctx.fillStyle = '#ffe9c4';
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath(); ctx.arc(px, my, R, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(220, 174, 130, .5)';     // maria
+      ctx.beginPath(); ctx.arc(px - R * 0.25, my - R * 0.1, R * 0.26, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(px + R * 0.3, my + R * 0.26, R * 0.17, 0, 7); ctx.fill();
+      ctx.globalAlpha = 1;
+      // moths: pale wings beating slow ellipses through the moonlight
+      for (let i = 0; i < 2; i++) {
+        const a = t * (0.22 + i * 0.09) + i * 3.1;
+        const mx = px + Math.cos(a) * R * (2.1 + i * 0.7);
+        const myy = my + Math.sin(a * 1.7) * R * 0.8 + i * R * 0.5;
+        const beat = Math.abs(Math.sin(t * (6 - i * 1.5) + i * 2));
+        const s = R * (0.14 - i * 0.03);
+        ctx.fillStyle = `rgba(240, 226, 200, ${0.5 + 0.3 * beat})`;
+        ctx.beginPath();                             // two wing lobes
+        ctx.ellipse(mx - s * 0.6, myy, s * (0.4 + 0.5 * beat), s, -0.5, 0, 7);
+        ctx.ellipse(mx + s * 0.6, myy, s * (0.4 + 0.5 * beat), s, 0.5, 0, 7);
+        ctx.fill();
+      }
     } else if (this.theme.motif === 'neonmoon') {
       // oversized rain-haloed moon hanging over the metropolis
       const R = r * 1.9;
@@ -622,6 +655,7 @@ export class Renderer {
     if (this.mapId === 'ruins') { this._ruinsStage(ctx, plats, t); return; }
     if (this.mapId === 'skyline') { this._skylineStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'flatlands') { this._flatlandsStage(ctx, t); return; }
+    if (this.mapId === 'garden') { this._gardenStage(ctx, plats, t); return; }
     const th = this.theme;
     const m = this.stage.main;
     // main platform with themed deck & lip
@@ -867,6 +901,76 @@ export class Renderer {
       }
       ctx.stroke();
     }
+  }
+
+  // Overgrown Eden: parallax rows of giant flora — towering stems, huge
+  // seed-head silhouettes, curling ferns — swaying on a slow breeze, with
+  // hanging vines and drifting pollen motes in the moonlight.
+  _floraBackdrop(ctx, t) {
+    const fl = this.flora;
+    for (const layer of fl.layers) {
+      const ox = this.cam.x * layer.lag, oy = this.cam.y * layer.lag * 0.85;
+      for (const p of layer.plants) {
+        const x = p.x + ox, yb = fl.baseY + oy;
+        const sway = Math.sin(t * p.spd + p.ph) * p.sway;
+        const topX = x + sway, topY = yb - p.h;
+        ctx.strokeStyle = layer.fill;
+        ctx.lineWidth = p.stem;
+        ctx.lineCap = 'round';
+        ctx.beginPath();                           // bowed stem
+        ctx.moveTo(x, yb);
+        ctx.quadraticCurveTo(x + sway * 0.3, yb - p.h * 0.6, topX, topY);
+        ctx.stroke();
+        ctx.fillStyle = layer.fill;
+        if (p.kind === 0) {                        // seed head: dandelion globe
+          ctx.globalAlpha = 0.55;
+          ctx.beginPath(); ctx.arc(topX, topY, p.head, 0, 7); ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.beginPath(); ctx.arc(topX, topY, p.head * 0.4, 0, 7); ctx.fill();
+        } else if (p.kind === 1) {                 // drooping bell bloom
+          ctx.beginPath();
+          ctx.moveTo(topX, topY);
+          ctx.quadraticCurveTo(topX + p.head, topY + p.head * 0.3, topX + p.head * 0.7, topY + p.head * 1.3);
+          ctx.lineTo(topX - p.head * 0.7, topY + p.head * 1.3);
+          ctx.quadraticCurveTo(topX - p.head, topY + p.head * 0.3, topX, topY);
+          ctx.fill();
+        } else {                                   // curled fern crook
+          ctx.lineWidth = p.stem * 0.75;
+          ctx.beginPath();
+          ctx.arc(topX, topY + p.head * 0.4, p.head * 0.55, -Math.PI * 0.5, Math.PI * 0.9);
+          ctx.stroke();
+        }
+      }
+      if (!layer.vines) continue;
+      for (const v of layer.vines) {               // vines swagged across the top
+        const x = v.x + ox, oyv = oy - 520;
+        ctx.strokeStyle = layer.fill;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x, oyv);
+        ctx.quadraticCurveTo(x + v.w / 2, oyv + v.sag + Math.sin(t * 0.5 + v.ph) * 6, x + v.w, oyv);
+        ctx.stroke();
+        for (let i = 1; i < 4; i++) {              // dangling leaf sprigs
+          const k = i / 4;
+          const lx = x + v.w * k;
+          const ly = oyv + v.sag * 4 * k * (1 - k) + Math.sin(t * 0.5 + v.ph) * 6 * k;
+          ctx.beginPath();
+          ctx.ellipse(lx, ly + 8, 3.5, 8, Math.sin(t * 0.8 + i) * 0.2, 0, 7);
+          ctx.fillStyle = layer.fill;
+          ctx.fill();
+        }
+      }
+    }
+    // pollen motes drifting through the moonbeams (stateless)
+    for (let i = 0; i < 14; i++) {
+      const k = (t * 0.03 + i / 14) % 1;
+      const x = this.cam.x + ((i * 419) % 2400) - 1200 + Math.sin(t * 0.4 + i * 2.2) * 60;
+      const y = this.cam.y - 500 + k * 900;
+      ctx.globalAlpha = 0.22 * Math.sin(k * Math.PI);
+      ctx.fillStyle = '#ffe9a8';
+      ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   _ruinsStage(ctx, plats, t) {
@@ -1295,9 +1399,161 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(kx + 4, ky - 5, 2, 0, 7); ctx.fill();
   }
 
+  // Overgrown Eden: a mossy root-shelf floor knotted with giant roots, a
+  // fallen-log bridge, glowing toadstools, and two giant flower heads
+  // bobbing off the lips as living platforms.
+  _gardenStage(ctx, plats, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // giant taproots anchoring the shelf into the dark below
+    ctx.strokeStyle = '#243c22';
+    ctx.lineCap = 'round';
+    for (const [fx, w, lean] of [[0.14, 34, -40], [0.4, 26, 20], [0.68, 30, -15], [0.9, 24, 45]]) {
+      const rx = m.x + m.w * fx;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(rx, m.y + 20);
+      ctx.quadraticCurveTo(rx + lean * 0.4, m.y + 210, rx + lean, m.y + 430);
+      ctx.stroke();
+    }
+
+    // mossy shelf
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 14); ctx.fill();
+    ctx.fillStyle = th.lip;                        // moss cap
+    roundRect(ctx, m.x, m.y, m.w, 13, 7); ctx.fill();
+    ctx.fillStyle = '#5fae4e';                     // bright moss fringe
+    for (let i = 0; i < Math.floor(m.w / 38); i++) {
+      const gx = m.x + 8 + i * 38 + ((i * 37) % 11);
+      ctx.beginPath();
+      ctx.arc(gx, m.y + 2, 4 + ((i * 13) % 3), Math.PI, 0);
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(20, 34, 18, .5)';      // root veins across the face
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(m.x + m.w * 0.22, m.y + 16);
+    ctx.quadraticCurveTo(m.x + m.w * 0.3, m.y + 38, m.x + m.w * 0.26, m.y + 66);
+    ctx.moveTo(m.x + m.w * 0.58, m.y + 14);
+    ctx.quadraticCurveTo(m.x + m.w * 0.52, m.y + 40, m.x + m.w * 0.6, m.y + 72);
+    ctx.stroke();
+    // glowing toadstool cluster by the west lip
+    for (const [dx, s, ph] of [[52, 1, 0], [72, 0.7, 2], [38, 0.55, 4]]) {
+      const tx = m.x + dx, glow = 0.5 + 0.35 * Math.sin(t * 1.6 + ph);
+      const g = ctx.createRadialGradient(tx, m.y - 8 * s, 1, tx, m.y - 8 * s, 26 * s);
+      g.addColorStop(0, `rgba(120, 240, 200, ${(0.35 * glow).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(120, 240, 200, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(tx - 26 * s, m.y - 8 * s - 26 * s, 52 * s, 52 * s);
+      ctx.fillStyle = '#d8e8dc';                   // stalk
+      ctx.fillRect(tx - 2.5 * s, m.y - 10 * s, 5 * s, 10 * s);
+      ctx.fillStyle = '#63d8b0';                   // cap
+      ctx.beginPath(); ctx.arc(tx, m.y - 10 * s, 8 * s, Math.PI, 0); ctx.fill();
+    }
+
+    for (const [i, p] of plats.entries()) {
+      const spec = this.stage.plats[i];
+      if (spec.move?.dy) {
+        // giant flower platform: stem rooted far below, petals cupping the pad
+        const cx = p.x + p.w / 2;
+        const sway = Math.sin(t * 0.7 + i * 3) * 8;
+        ctx.strokeStyle = '#3a5c34';               // stem down into the void
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.moveTo(cx, p.y + 12);
+        ctx.quadraticCurveTo(cx + sway, p.y + 220, cx + sway * 2, p.y + 480);
+        ctx.stroke();
+        ctx.lineWidth = 4;                         // leaf pair on the stem
+        ctx.beginPath();
+        ctx.moveTo(cx + sway * 0.5, p.y + 90);
+        ctx.quadraticCurveTo(cx + sway * 0.5 + 30, p.y + 74, cx + sway * 0.5 + 46, p.y + 86);
+        ctx.moveTo(cx + sway * 0.7, p.y + 150);
+        ctx.quadraticCurveTo(cx + sway * 0.7 - 30, p.y + 134, cx + sway * 0.7 - 44, p.y + 148);
+        ctx.stroke();
+        const bloom = ['#ff9ecf', '#b388ff'][i % 2];   // petal skirt under the pad
+        ctx.fillStyle = bloom;
+        for (let pe = 0; pe < 6; pe++) {
+          const a = Math.PI * (0.12 + 0.152 * pe) + Math.sin(t * 0.9 + pe) * 0.03;
+          ctx.beginPath();
+          ctx.ellipse(cx + Math.cos(a) * p.w * 0.34, p.y + 13 + Math.sin(a) * 13,
+            p.w * 0.2, 9, a * 0.5, 0, 7);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#ffd76a';                 // pollen disc = the pad
+        roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();
+        ctx.fillStyle = '#ffe9a8';
+        ctx.fillRect(p.x + 5, p.y + 1, p.w - 10, 3);
+        ctx.globalAlpha = 0.5;                     // pollen freckles
+        ctx.fillStyle = '#c98f2e';
+        for (let d = 0; d < 5; d++) {
+          ctx.beginPath();
+          ctx.arc(p.x + 12 + d * (p.w - 24) / 4, p.y + 7, 1.6, 0, 7);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        // fallen log bridge: bark shell, growth-ring ends, moss topside
+        ctx.fillStyle = th.plat;
+        roundRect(ctx, p.x, p.y, p.w, 16, 8); ctx.fill();
+        ctx.strokeStyle = 'rgba(30, 20, 12, .45)'; // bark grain
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        for (const gy of [5, 9, 13]) {
+          ctx.moveTo(p.x + 10, p.y + gy);
+          ctx.quadraticCurveTo(p.x + p.w / 2, p.y + gy + 2, p.x + p.w - 10, p.y + gy);
+        }
+        ctx.stroke();
+        for (const ex of [p.x + 4, p.x + p.w - 4]) {   // growth-ring end caps
+          ctx.fillStyle = '#8a6f4d';
+          ctx.beginPath(); ctx.ellipse(ex, p.y + 8, 5, 8, 0, 0, 7); ctx.fill();
+          ctx.strokeStyle = 'rgba(60, 44, 26, .6)';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.ellipse(ex, p.y + 8, 2.5, 4.5, 0, 0, 7); ctx.stroke();
+        }
+        ctx.fillStyle = '#5fae4e';                 // moss topside
+        for (let gx = p.x + 12; gx < p.x + p.w - 12; gx += 26) {
+          ctx.beginPath(); ctx.arc(gx, p.y + 1, 4, Math.PI, 0); ctx.fill();
+        }
+      }
+    }
+  }
+
   // Ambient weather, per theme: embers & ash rising off the burning ruins,
   // or neon-lit rain sheeting down over the heights.
   _ambient(ctx, dt, t) {
+    if (this.theme.ambient === 'fireflies') {
+      // fireflies wandering the gloom, pulsing green-gold as they drift
+      while (this.ambient.length < 26) {
+        this.ambient.push({
+          x: this.cam.x + (Math.random() - 0.5) * 2200,
+          y: this.cam.y + (Math.random() - 0.4) * 800,
+          wx: Math.random() * 7, wy: Math.random() * 7,
+          sx: 30 + Math.random() * 50, sy: 20 + Math.random() * 34,
+          ph: Math.random() * 7, blink: 0.5 + Math.random() * 1.4,
+          life: 7 + Math.random() * 6, t: 0,
+        });
+      }
+      for (const f of this.ambient) {
+        f.t += dt;
+        const k = f.t / f.life;
+        if (k >= 1) continue;
+        const x = f.x + Math.sin(t * 0.55 + f.wx) * f.sx;
+        const y = f.y + Math.sin(t * 0.4 + f.wy) * f.sy;
+        const pulse = Math.max(0, Math.sin(t * f.blink + f.ph));
+        const a = Math.sin(k * Math.PI) * (0.15 + 0.75 * pulse * pulse);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, 9);
+        g.addColorStop(0, `rgba(190, 255, 130, ${(a).toFixed(3)})`);
+        g.addColorStop(1, 'rgba(190, 255, 130, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x - 9, y - 9, 18, 18);
+        ctx.globalAlpha = Math.min(1, a * 1.6);
+        ctx.fillStyle = '#eaffbe';
+        ctx.fillRect(x - 1.2, y - 1.2, 2.4, 2.4);
+      }
+      ctx.globalAlpha = 1;
+      this.ambient = this.ambient.filter(f => f.t < f.life);
+      return;
+    }
     if (this.theme.ambient === 'dust') {
       // tumbleweeds bounding across the mesa, dropping off the west lip,
       // plus sun-lit grit streaming on the wind
@@ -1684,6 +1940,45 @@ function buildMesas() {
     }
   }
   return { baseY, layers, mill: { x: -900 + Math.floor(8451 % 7) * 260, h: 130 } };
+}
+
+// Deterministic giant flora: three parallax rows of towering stems —
+// dandelion globes, bell blooms, fern crooks — plus vines swagged across
+// the canopy. Same seed every time, so all players share the same garden.
+function buildFlora() {
+  let s = 60103;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const baseY = 450;
+  const layers = [
+    { lag: 0.8,  fill: '#1d1836', vines: null, plants: [] },   // far, violet dusk
+    { lag: 0.62, fill: '#20303c', vines: null, plants: [] },
+    { lag: 0.45, fill: '#14251a', vines: [], plants: [] },     // near, deep green
+  ];
+  for (const [li, layer] of layers.entries()) {
+    let x = -1550 + rnd() * 100;
+    while (x < 1550) {
+      const h = 260 + rnd() * (240 + li * 160);
+      layer.plants.push({
+        x, h,
+        kind: (rnd() * 3) | 0,
+        head: 26 + rnd() * (20 + li * 14),
+        stem: 5 + li * 3 + rnd() * 3,
+        sway: 6 + rnd() * (8 + li * 6),
+        spd: 0.25 + rnd() * 0.35,
+        ph: rnd() * 7,
+      });
+      x += 120 + rnd() * (180 + li * 80);
+    }
+    if (layer.vines) {
+      let vx = -1400 + rnd() * 200;
+      while (vx < 1400) {
+        const w = 380 + rnd() * 420;
+        layer.vines.push({ x: vx, w, sag: 60 + rnd() * 70, ph: rnd() * 7 });
+        vx += w * (0.7 + rnd() * 0.4);
+      }
+    }
+  }
+  return { baseY, layers };
 }
 
 function cross(ctx, x, y, s) {

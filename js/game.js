@@ -75,10 +75,13 @@ export const MAPS = {
     respawnY: -360,
   },
   garden: {
-    name: 'Garden',
-    main: { x: -460, y: 0, w: 920, h: 46 },              // long floor, one low bridge
+    name: 'Overgrown Eden',
+    main: { x: -460, y: 0, w: 920, h: 46 },              // mossy root-shelf, one log bridge
     plats: [
-      { x: -90,  y: -205, w: 180 },
+      { x: -90,  y: -205, w: 180 },                      // fallen log bridge
+      // giant flower heads swaying off each lip — slow, gentle bob
+      { x: -640, y: -120, w: 120, move: { dy: 70, period: 12 } },
+      { x: 520,  y: -120, w: 120, move: { dy: 70, period: 12, phase: 6 } },
     ],
     blast: { l: -1260, r: 1260, t: -940, b: 500 },
     spawns: [ -330, 330, -120, 120 ],

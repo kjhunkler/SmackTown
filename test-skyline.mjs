@@ -115,8 +115,8 @@ const players = [
 
 // --- 7. other maps unaffected ---
 {
-  check('battlefield/flatlands/foundry/garden stay static',
-    ['battlefield', 'flatlands', 'foundry', 'garden'].every(id =>
+  check('battlefield/flatlands/foundry stay static',
+    ['battlefield', 'flatlands', 'foundry'].every(id =>
       MAPS[id].plats.every(p => !p.move)));
   check('ruins still has its three movers', MAPS.ruins.plats.filter(p => p.move).length === 3);
   const g = new Game(players, 5, 'battlefield');

@@ -658,9 +658,16 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(255, 255, 255, .45) 0 17%, transparent 17% 83%,
     rgba(255, 255, 255, .45) 83% 100%);
 }
-.map-thumb-garden { background: linear-gradient(#0b1f24, #174034); }
-.map-thumb-garden::after { left: 10%; right: 10%; }
-.map-thumb-garden::before { left: 20%; right: 20%; top: 14px; }
+.map-thumb-garden { background: linear-gradient(#3c2b5c, #14251a); }
+.map-thumb-garden::after { left: 10%; right: 10%; background: #5fae4e; }
+/* log bridge centered, two flower pads at the edges */
+.map-thumb-garden::before {
+  left: 8%; right: 8%; top: 14px;
+  background: linear-gradient(90deg,
+    #ffd76a 0 14%, transparent 14% 38%,
+    rgba(255, 255, 255, .45) 38% 62%, transparent 62% 86%,
+    #ffd76a 86% 100%);
+}
 
 /* Landscape phones: short viewport — compact the chrome and lay the lobby
    out in two columns (room info + roster left, actions right) so nothing

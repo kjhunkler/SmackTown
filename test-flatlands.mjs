@@ -44,9 +44,9 @@ const players = [
 {
   check('neon heights keeps its movers', MAPS.skyline.plats.filter(p => p.move).length === 2);
   check('ruined city keeps its movers', MAPS.ruins.plats.filter(p => p.move).length === 3);
-  check('battlefield/foundry/garden static and intact',
-    MAPS.battlefield.plats.length === 3 && MAPS.foundry.plats.length === 2 && MAPS.garden.plats.length === 1
-    && [...MAPS.battlefield.plats, ...MAPS.foundry.plats, ...MAPS.garden.plats].every(p => !p.move));
+  check('battlefield/foundry static and intact',
+    MAPS.battlefield.plats.length === 3 && MAPS.foundry.plats.length === 2
+    && [...MAPS.battlefield.plats, ...MAPS.foundry.plats].every(p => !p.move));
 }
 
 console.log(fails ? `\n${fails}/${n} FAILED` : `\nAll ${n} checks passed.`);
