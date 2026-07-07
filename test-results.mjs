@@ -122,12 +122,13 @@ const players = [
 {
   const g = new Game(players, 7, 'battlefield');
   const [a, b] = g.fighters;
-  a.state = 'duck'; a.grounded = true;
+  a.state = 'duck'; a.grounded = true; a.facing = -1;   // looking away from the roll
   const ia = g.inputs.get('A');
   ia.roll = 1; ia.bufR = 0.15;
   const x0 = a.x;
   g.step();
   check('duck + sideways = dodge roll', a.state === 'roll' && a.rollDir === 1);
+  check('roll faces its direction from the first frame', a.facing === 1);
   check('roll grants i-frames', a.invuln > 0.2);
   check('roll bites the guard', Math.abs(a.guard - 78) < 0.01);
   for (let i = 0; i < 30; i++) g.step();

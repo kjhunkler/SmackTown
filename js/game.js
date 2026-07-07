@@ -610,6 +610,7 @@ export class Game {
       // getup roll: pop onto the stage and tumble inward, briefly invulnerable
       f.state = 'roll'; f.stateT = 0;
       f.rollDir = -f.ledge;
+      f.facing = f.rollDir;            // face the tumble so the spin reads right
       f.ridePlat = null;               // getup rolls always ride the main floor
       f.y = m.y - F_H / 2;
       f.grounded = true;
@@ -634,6 +635,7 @@ export class Game {
     f.state = 'roll';
     f.stateT = 0;
     f.rollDir = dir;
+    f.facing = dir;      // face the tumble so the spin animation reads right
     f.standT = 0;
     f.vx = 0; f.vy = 0;
     f.invuln = Math.max(f.invuln, ROLL_TIME * ROLL_IFRAMES);
