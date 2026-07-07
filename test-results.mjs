@@ -1,6 +1,6 @@
 // Headless smoke test: match stats (KOs/damage), score snapshot round-trip,
 // and rejoin dedupe via rebindFighter. Run: node test-results.mjs
-import { Game, gameFromSnapshot, restoreFighter, platsAt } from './js/game.js';
+import { Game, gameFromSnapshot, restoreFighter, platsAt, MAPS, MAP_IDS } from './js/game.js';
 
 let n = 0, fails = 0;
 function check(name, ok) {
@@ -162,7 +162,34 @@ const players = [
   check('platform roll stops at the edge', a.x >= pNow.x && a.x <= pNow.x + pNow.w);
 }
 
-// --- 10. sim still runs & finishes with scores ---
+// --- 10. training room: free play on a hidden map ---
+{
+  check('training map exists but is out of rotation',
+    !!MAPS.training && MAPS.training.hidden && !MAP_IDS.includes('training'));
+  const g = new Game([
+    players[0],
+    { id: 'S', name: 'Sandbag', sandbag: true, build: build() },
+  ], 7, 'training');
+  check('training map id sticks (no fallback)', g.map === 'training');
+  const [a, s] = g.fighters;
+  check('sandbag flag rides the spawn', s.sandbag === true);
+  for (let i = 0; i < 5; i++) {
+    s.lastHitBy = 'A';
+    s.state = 'air'; s.invuln = 0; s.grounded = false;
+    s.x = g.stage.blast.l - 60;
+    g._checkBlast();
+  }
+  check('sandbag respawns forever, no stock loss', s.stocks === 3 && !s.dead && s.state === 'respawn');
+  check('KOs still tallied for practice feedback', a.score.ko === 5);
+  a.state = 'air'; a.invuln = 0; a.grounded = false;
+  a.y = g.stage.blast.b + 60;
+  g._checkBlast();
+  check('players fall free in training too', a.stocks === 3 && !a.dead);
+  g.step();
+  check('training never ends', !g.over && g.winner === null);
+}
+
+// --- 11. sim still runs & finishes with scores ---
 {
   const g = new Game(players.slice(0, 2), 7, 'arena');
   const [a, b] = g.fighters;

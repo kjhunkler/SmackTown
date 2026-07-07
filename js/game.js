@@ -94,9 +94,21 @@ export const MAPS = {
     spawns: [ -330, 330, -120, 120 ],
     respawnY: -320,
   },
+  training: {
+    name: 'Training Room',
+    hidden: true,                     // never in the vote grid or random rotation
+    main: { x: -430, y: 0, w: 860, h: 46 },              // one wide mat, one practice perch
+    plats: [
+      { x: -85, y: -150, w: 170 },
+    ],
+    blast: { l: -1150, r: 1150, t: -950, b: 500 },
+    spawns: [ -140, 140, -300, 300 ],
+    respawnY: -320,
+  },
 };
 export const DEFAULT_MAP = 'battlefield';
-export const MAP_IDS = Object.keys(MAPS);
+// Rotation/votes skip hidden maps (training is reachable only by mode)
+export const MAP_IDS = Object.keys(MAPS).filter(id => !MAPS[id].hidden);
 
 // Moving platforms: move = {dx?, dy?, period, phase?} oscillates the platform
 // around its base spot on a sine wave. Position is a pure function of the sim
@@ -242,7 +254,7 @@ export class Game {
   _spawnFighter(p, i) {
     const st = derivedStats(p.build);
     return {
-      id: p.id, name: p.name, color: p.color, isBot: !!p.isBot, st,
+      id: p.id, name: p.name, color: p.color, isBot: !!p.isBot, sandbag: !!p.sandbag, st,
       x: this.stage.spawns[i % this.stage.spawns.length], y: -F_H / 2,
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
@@ -1211,10 +1223,13 @@ export class Game {
 
   _checkBlast() {
     const b = this.stage.blast;
+    // training room is free play: falls respawn everyone, nobody loses a
+    // stock, and the match never ends — you leave when you're done
+    const freeplay = this.map === 'training';
     for (const f of this.fighters) {
       if (f.dead || f.state === 'respawn') continue;
       if (f.x < b.l || f.x > b.r || f.y < b.t || f.y > b.b) {
-        f.stocks--;
+        if (!freeplay) f.stocks--;
         this.events.push({ e: 'ko', x: clamp(f.x, b.l, b.r), y: clamp(f.y, b.t, b.b), id: f.id, stocks: f.stocks });
         // podium stats: the last hitter gets the KO; nobody means an SD
         const credit = f.lastHitBy ? this.fighters.find(k => k.id === f.lastHitBy) : null;
@@ -1226,7 +1241,7 @@ export class Game {
           this.events.push({ e: 'augment', aug: 'reaper', id: credit.id, x: credit.x, y: credit.y });
         }
         f.lastHitBy = null;
-        if (f.stocks <= 0) {
+        if (!freeplay && f.stocks <= 0) {
           f.dead = true;
           f.state = 'dead';
         } else {

@@ -60,6 +60,13 @@ const THEMES = {
     deck: '#2e4a2c', lip: '#476b40', trim: '#ffd7f0',
     plat: '#5c4632', platTop: '#7a5f44',
   },
+  training: {
+    sky: ['#0d1126', '#1a2142', '#0e1524'],
+    motif: 'moon',
+    stars: 0.55,
+    deck: '#2a3150', lip: '#3c466f', trim: '#5ee1b0',
+    plat: '#3c466f', platTop: '#5a67a0',
+  },
 };
 
 export class Renderer {
@@ -743,6 +750,7 @@ export class Renderer {
     if (this.mapId === 'flatlands') { this._flatlandsStage(ctx, t); return; }
     if (this.mapId === 'garden') { this._gardenStage(ctx, plats, t); return; }
     if (this.mapId === 'foundry') { this._crucibleStage(ctx, plats, tickF, t); return; }
+    if (this.mapId === 'training') { this._trainingStage(ctx, plats, t); return; }
     const th = this.theme;
     const m = this.stage.main;
     // main platform with themed deck & lip
@@ -753,6 +761,67 @@ export class Renderer {
     ctx.fillStyle = th.trim;
     ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
 
+    for (const p of plats) {
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+    }
+  }
+
+  // Training Room: a quiet holo-dojo — drifting grid panels, pulsing target
+  // rings off each wing, and a padded mat with range ticks every 100 units
+  // so knockback distances read at a glance.
+  _trainingStage(ctx, plats, t) {
+    const th = this.theme;
+    const m = this.stage.main;
+
+    // holo grid backdrop on a light parallax
+    const ox = this.cam.x * 0.25, oy = this.cam.y * 0.2;
+    ctx.strokeStyle = 'rgba(94, 225, 176, .07)';
+    ctx.lineWidth = 2;
+    for (let gx = -1200; gx <= 1200; gx += 120) {
+      ctx.beginPath(); ctx.moveTo(gx + ox, -900 + oy); ctx.lineTo(gx + ox, 260 + oy); ctx.stroke();
+    }
+    for (let gy = -840; gy <= 240; gy += 120) {
+      ctx.beginPath(); ctx.moveTo(-1200 + ox, gy + oy); ctx.lineTo(1200 + ox, gy + oy); ctx.stroke();
+    }
+
+    // practice targets hovering off each wing, breathing slowly
+    for (const [tx, ty, ph] of [[-560, -300, 0], [560, -240, 2.1]]) {
+      const px = tx + ox * 0.6, py = ty + oy * 0.6;
+      const pulse = 0.5 + 0.25 * Math.sin(t * 1.6 + ph);
+      ctx.lineWidth = 3;
+      for (let i = 3; i >= 1; i--) {
+        ctx.strokeStyle = `rgba(94, 225, 176, ${(pulse * 0.05 * i).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(px, py, i * 26, 0, 7); ctx.stroke();
+      }
+      ctx.fillStyle = `rgba(94, 225, 176, ${(pulse * 0.7).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(px, py, 7, 0, 7); ctx.fill();
+    }
+
+    // padded mat deck
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.fillStyle = th.lip;
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.fillStyle = th.trim;
+    ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+
+    // mat seams
+    ctx.fillStyle = 'rgba(0, 0, 0, .18)';
+    for (let x = m.x + 120; x < m.x + m.w - 20; x += 120) ctx.fillRect(x, m.y + 20, 4, m.h + 6);
+
+    // range ticks out from the center line
+    ctx.fillStyle = 'rgba(234, 247, 255, .5)';
+    ctx.fillRect(-2, m.y + 5, 4, 14);
+    ctx.fillStyle = 'rgba(234, 247, 255, .26)';
+    for (let d = 100; d <= m.w / 2 - 30; d += 100) {
+      ctx.fillRect(d - 1.5, m.y + 7, 3, 10);
+      ctx.fillRect(-d - 1.5, m.y + 7, 3, 10);
+    }
+
+    // practice perch
     for (const p of plats) {
       ctx.fillStyle = th.plat;
       roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();

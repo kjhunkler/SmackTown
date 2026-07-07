@@ -49,6 +49,7 @@ let session = null;         // active game session
 let voice = null;           // lobby voice chat channel (lives with net)
 let presence = null;        // town-square presence (menu roster + invites)
 let pendingInvite = null;   // {id, name} to ping once our fresh room opens
+let pendingTraining = false; // start the training room once our room opens
 const touch = new TouchInput(document);
 touch.onPad = on => UI.banner(
   on ? '🎮 Controller connected — stick moves · A jumps · X quick · B/Y smash · bumpers = abilities'
@@ -565,6 +566,26 @@ $('#menu-solo').addEventListener('click', () => {
   });
 });
 
+// Training room: hosts a normal joinable room, but skips the lobby and
+// starts straight on the hidden training map with an endlessly
+// respawning sandbag. Friends can drop in like any running fight.
+$('#menu-training').addEventListener('click', () => {
+  pendingTraining = true;
+  enterRoom(null);
+});
+
+function startTraining() {
+  const players = [
+    {
+      id: net.myId, pid: profile.pid || null, name: profile.name, color: profile.color,
+      build: sanitizeBuild(profile.build), hat: sanitizeHat(profile.hat),
+    },
+    { id: 'sandbag', name: 'Sandbag', sandbag: true, color: '#d9b45c', build: emptyBuild() },
+  ];
+  const seed = (Math.random() * 1e9) | 0;
+  startSession({ mode: 'host', myId: net.myId, players, seed, map: 'training' });
+}
+
 $('#menu-join').addEventListener('click', () => {
   const code = $('#menu-code').value.trim().toUpperCase();
   if (!code) return enterRoom(null);          // no code — host a fresh room
@@ -595,6 +616,13 @@ function enterRoom(joinCode) {
   });
 
   net.on('room', () => {
+    // training: skip the lobby — the room exists purely so friends can
+    // drop into the session, which starts the moment the room opens
+    if (pendingTraining && net.isHost) {
+      pendingTraining = false;
+      startTraining();
+      return;
+    }
     renderLobby();
     UI.showScreen('lobby');
     presence?.update();               // advertise the joinable room
@@ -617,6 +645,7 @@ function enterRoom(joinCode) {
     voice?.destroy(); voice = null;
     net?.leave(); net = null;
     pendingInvite = null;
+    pendingTraining = false;
     presence?.update();
   });
   net.on('banner', (text, kind) => UI.banner(text, kind));
@@ -1126,7 +1155,8 @@ class Session {
     // Authoritative side: fighters whose player vanished forfeit their stocks.
     if (!net || !this.game || this.mode === 'solo' || this.ended) return;
     for (const f of this.game.fighters) {
-      if (f.dead || f.isBot || f.id === this.myId) continue;
+      // sandbags and bots have no peer to lose — never forfeit them
+      if (f.dead || f.isBot || f.sandbag || f.id === this.myId) continue;
       const m = net.members.get(f.id);
       const connLost = !m || (m.status === 'gone' && !net.conns.get(f.id)?.open);
       if (connLost) {

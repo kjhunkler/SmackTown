@@ -369,6 +369,7 @@ export function renderLobby(net, onVote = null) {
   const active = roster.filter(m => m.status !== 'gone');
   const myVote = net.members.get(net.myId)?.vote || null;
   for (const [id, map] of Object.entries(MAPS)) {
+    if (map.hidden) continue;               // training room isn't votable
     const votes = active.filter(m => m.vote === id).length;
     const card = document.createElement('button');
     card.className = 'map-card' + (myVote === id ? ' voted' : '');
