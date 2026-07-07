@@ -639,7 +639,16 @@ input[type=text]:focus { border-color: var(--accent); }
   border-radius: 2px;
   background: rgba(255, 255, 255, .45);
 }
-.map-thumb-battlefield { background: linear-gradient(#141a38, #1c1430); }
+.map-thumb-battlefield { background: linear-gradient(#191a4e, #7c4468); }
+.map-thumb-battlefield::after { background: #e6c26a; }
+/* the classic triplat: two low pads and the top pad hinted above */
+.map-thumb-battlefield::before {
+  left: 22%; right: 22%; top: 15px;
+  background: linear-gradient(90deg,
+    rgba(143, 211, 255, .8) 0 30%, transparent 30% 70%,
+    rgba(143, 211, 255, .8) 70% 100%);
+  box-shadow: 0 -7px 0 -1px rgba(143, 211, 255, .55);
+}
 .map-thumb-flatlands { background: linear-gradient(#5fb0dc, #e8cf9a); }
 .map-thumb-flatlands::after { left: 8%; right: 8%; background: #b5854f; }
 .map-thumb-flatlands::before { display: none; }

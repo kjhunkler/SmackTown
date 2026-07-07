@@ -12,9 +12,9 @@ export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
 // drop-through, blast KOs) work everywhere. Visual themes live in render.js.
 export const MAPS = {
   battlefield: {
-    name: 'Battlefield',
+    name: 'Sky Bastion',
     main: { x: -340, y: 0, w: 680, h: 46 },              // solid ground (top at y=0)
-    plats: [                                             // drop-through platforms
+    plats: [                                             // the classic triplat — static, sacred
       { x: -230, y: -130, w: 170 },
       { x: 60,   y: -130, w: 170 },
       { x: -85,  y: -250, w: 170 },

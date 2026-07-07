@@ -13,11 +13,12 @@ const F_W = 46, F_H = 64;
 // game.js; looks live here.
 const THEMES = {
   battlefield: {
-    sky: ['#141a38', '#1c1430', '#090a14'],
-    motif: 'moon',
-    stars: 1,
-    deck: '#2a3154', lip: '#3b4573', trim: '#ffb02e',
-    plat: '#3b4573', platTop: '#556099',
+    sky: ['#191a4e', '#3c2a6a', '#7c4468'],
+    motif: 'ringworld',
+    stars: 0.9,
+    ambient: 'cloudwisp',
+    deck: '#3a3d6b', lip: '#585d9e', trim: '#e6c26a',
+    plat: '#585d9e', platTop: '#7d82c4',
   },
   flatlands: {
     sky: ['#5fb0dc', '#a5d2e4', '#e8cf9a'],
@@ -93,6 +94,7 @@ export class Renderer {
       : null;
     this.mesas = this.mapId === 'flatlands' ? buildMesas() : null;
     this.flora = this.mapId === 'garden' ? buildFlora() : null;
+    this.isles = this.mapId === 'battlefield' ? buildSkyIsles() : null;
   }
 
   _resize() {
@@ -336,6 +338,7 @@ export class Renderer {
     if (this.city) this._cityBackdrop(ctx, t);
     if (this.mesas) this._mesaBackdrop(ctx, t);
     if (this.flora) this._floraBackdrop(ctx, t);
+    if (this.isles) this._isleBackdrop(ctx, t);
     this._stage(ctx, view.tick ?? 0, t);
     if (this.theme.ambient) this._ambient(ctx, dt, t);
 
@@ -506,7 +509,54 @@ export class Renderer {
     const px = W * 0.72 - this.cam.x * 0.05 * this.dpr;
     const py = H * 0.26 - this.cam.y * 0.05 * this.dpr;
     const r = Math.min(W, H) * 0.09;
-    if (this.theme.motif === 'moon') {
+    if (this.theme.motif === 'ringworld') {
+      // vast ringed gas giant looming over the cloud sea, twin moons circling
+      const gy = H * 0.3 - this.cam.y * 0.05 * this.dpr;
+      const R = r * 2.3;
+      const g = ctx.createRadialGradient(px, gy, R * 0.3, px, gy, R * 2.6);
+      g.addColorStop(0, 'rgba(255, 190, 150, .22)');
+      g.addColorStop(1, 'rgba(255, 190, 150, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - R * 2.6, gy - R * 2.6, R * 5.2, R * 5.2);
+      const body = ctx.createLinearGradient(px, gy - R, px, gy + R);
+      body.addColorStop(0, '#f2b98e');
+      body.addColorStop(0.45, '#d98a70');
+      body.addColorStop(0.75, '#9c5e78');
+      body.addColorStop(1, '#6b4a7c');
+      ctx.fillStyle = body;
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath(); ctx.arc(px, gy, R, 0, 7); ctx.fill();
+      ctx.globalAlpha = 0.35;                          // banded weather stripes
+      ctx.strokeStyle = '#7c4458';
+      ctx.lineWidth = R * 0.09;
+      for (const [dy, sw] of [[-0.42, 0.85], [-0.1, 0.98], [0.28, 0.92]]) {
+        ctx.beginPath();
+        ctx.ellipse(px, gy + R * dy, R * sw, R * 0.13, 0, 0, 7);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.save();                                      // ring plane, tilted
+      ctx.translate(px, gy);
+      ctx.rotate(-0.22);
+      ctx.strokeStyle = 'rgba(240, 214, 170, .55)';
+      ctx.lineWidth = R * 0.1;
+      ctx.beginPath(); ctx.ellipse(0, 0, R * 1.75, R * 0.42, 0, 0, 7); ctx.stroke();
+      ctx.strokeStyle = 'rgba(240, 214, 170, .25)';
+      ctx.lineWidth = R * 0.05;
+      ctx.beginPath(); ctx.ellipse(0, 0, R * 2.05, R * 0.5, 0, 0, 7); ctx.stroke();
+      ctx.fillStyle = body;                            // planet hides the far ring arc
+      ctx.beginPath(); ctx.arc(0, 0, R * 0.99, Math.PI, 0); ctx.fill();
+      ctx.restore();
+      for (let i = 0; i < 2; i++) {                    // twin moons on slow orbits
+        const a = t * (0.1 + i * 0.06) + i * 2.6;
+        const mx = px + Math.cos(a) * R * (2.3 + i * 0.5);
+        const my = gy + Math.sin(a) * R * 0.35;
+        ctx.fillStyle = i ? '#cfd6f2' : '#f2e6cf';
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.arc(mx, my, r * (0.16 - i * 0.05), 0, 7); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if (this.theme.motif === 'moon') {
       ctx.fillStyle = '#e8ecff';
       ctx.globalAlpha = 0.9;
       ctx.beginPath(); ctx.arc(px, py, r, 0, 7); ctx.fill();
@@ -652,6 +702,7 @@ export class Renderer {
 
   _stage(ctx, tickF = 0, t = 0) {
     const plats = platsAt(this.mapId, tickF);
+    if (this.mapId === 'battlefield') { this._bastionStage(ctx, plats, t); return; }
     if (this.mapId === 'ruins') { this._ruinsStage(ctx, plats, t); return; }
     if (this.mapId === 'skyline') { this._skylineStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'flatlands') { this._flatlandsStage(ctx, t); return; }
@@ -900,6 +951,69 @@ export class Renderer {
         s ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy);
       }
       ctx.stroke();
+    }
+  }
+
+  // Sky Bastion: an archipelago of floating islands drifting over a sea of
+  // moonlit cloud — rocky keels trailing waterfalls that mist away into the
+  // void, distant banner spires, and slow cloud banks rolling beneath.
+  _isleBackdrop(ctx, t) {
+    const sk = this.isles;
+    // rolling cloud sea below the fight, three banks deep
+    for (const bank of sk.banks) {
+      const ox = this.cam.x * bank.lag, oy = this.cam.y * bank.lag * 0.85;
+      ctx.fillStyle = bank.fill;
+      for (const c of bank.puffs) {
+        const x = c.x + ox + Math.sin(t * c.spd + c.ph) * c.drift;
+        const y = sk.seaY + c.dy + oy + Math.sin(t * c.spd * 0.6 + c.ph * 2) * 6;
+        ctx.beginPath();
+        ctx.ellipse(x, y, c.w, c.h, 0, 0, 7);
+        ctx.fill();
+      }
+    }
+    // floating islands, far to near
+    for (const layer of sk.layers) {
+      const ox = this.cam.x * layer.lag, oy = this.cam.y * layer.lag * 0.85;
+      for (const isle of layer.isles) {
+        const bob = Math.sin(t * isle.spd + isle.ph) * isle.bob;
+        const x = isle.x + ox, y = isle.y + oy + bob;
+        ctx.fillStyle = layer.rock;
+        ctx.beginPath();                       // jagged keel hanging below
+        ctx.moveTo(x - isle.w / 2, y);
+        ctx.lineTo(x - isle.w * 0.24, y + isle.d * 0.55);
+        ctx.lineTo(x - isle.w * 0.05, y + isle.d);
+        ctx.lineTo(x + isle.w * 0.18, y + isle.d * 0.45);
+        ctx.lineTo(x + isle.w / 2, y);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = layer.turf;            // grassy cap
+        ctx.beginPath();
+        ctx.ellipse(x, y, isle.w / 2, isle.h, 0, Math.PI, 0);
+        ctx.fill();
+        ctx.fillRect(x - isle.w / 2, y - 3, isle.w, 4);
+        if (isle.spire) {                      // watch-spire with a snapping banner
+          const sx = x + isle.w * 0.16;
+          ctx.strokeStyle = layer.rock;
+          ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(sx, y - 2); ctx.lineTo(sx, y - isle.sp); ctx.stroke();
+          ctx.fillStyle = layer.flag;
+          ctx.beginPath();
+          const fw = 16 + Math.sin(t * 3.2 + isle.ph) * 3;
+          ctx.moveTo(sx, y - isle.sp);
+          ctx.lineTo(sx + fw, y - isle.sp + 5 + Math.sin(t * 5 + isle.ph) * 2);
+          ctx.lineTo(sx, y - isle.sp + 10);
+          ctx.closePath(); ctx.fill();
+        }
+        if (isle.fall) {                       // waterfall misting off the rim
+          const fx = x - isle.w * 0.22;
+          const grad = ctx.createLinearGradient(0, y, 0, y + isle.fallLen);
+          grad.addColorStop(0, 'rgba(190, 220, 255, .5)');
+          grad.addColorStop(1, 'rgba(190, 220, 255, 0)');
+          ctx.fillStyle = grad;
+          const wob = Math.sin(t * 2 + isle.ph) * 1.5;
+          ctx.fillRect(fx + wob, y, 5, isle.fallLen);
+          ctx.fillRect(fx + 8 - wob, y, 3, isle.fallLen * 0.75);
+        }
+      }
     }
   }
 
@@ -1399,6 +1513,121 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(kx + 4, ky - 5, 2, 0, 7); ctx.fill();
   }
 
+  // Sky Bastion: the classic triplat reimagined as a fortress isle — stone
+  // block face with a rocky keel, waterfalls off both lips, lantern posts,
+  // and rune-lit floating stone platforms. Geometry is untouched.
+  _bastionStage(ctx, plats, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // jagged rock keel under the fortress, tapering into the void
+    ctx.fillStyle = '#2b2547';
+    ctx.beginPath();
+    ctx.moveTo(m.x + 6, m.y + m.h + 24);
+    ctx.lineTo(m.x + m.w * 0.2, m.y + 190);
+    ctx.lineTo(m.x + m.w * 0.42, m.y + 320);
+    ctx.lineTo(m.x + m.w * 0.52, m.y + 430);
+    ctx.lineTo(m.x + m.w * 0.62, m.y + 300);
+    ctx.lineTo(m.x + m.w * 0.82, m.y + 160);
+    ctx.lineTo(m.x + m.w - 6, m.y + m.h + 24);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(120, 110, 180, .25)';    // keel cracks
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(m.x + m.w * 0.3, m.y + 120);
+    ctx.lineTo(m.x + m.w * 0.44, m.y + 260);
+    ctx.moveTo(m.x + m.w * 0.68, m.y + 110);
+    ctx.lineTo(m.x + m.w * 0.58, m.y + 240);
+    ctx.stroke();
+
+    // fortress deck: dressed stone blocks
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(20, 18, 44, .5)';        // masonry joints
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let row = 0; row < 2; row++) {
+      const jy = m.y + 22 + row * 26;
+      ctx.moveTo(m.x + 6, jy); ctx.lineTo(m.x + m.w - 6, jy);
+      const off = row % 2 ? 45 : 0;
+      for (let jx = m.x + 45 + off; jx < m.x + m.w - 20; jx += 90) {
+        ctx.moveTo(jx, jy - (row ? 26 : 22) + 4); ctx.lineTo(jx, jy);
+      }
+    }
+    ctx.stroke();
+    ctx.fillStyle = th.lip;                          // parapet lip
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.fillStyle = th.trim;                         // gilded edge
+    ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+
+    // waterfalls spilling off both lips, misting into the cloud sea
+    for (const [fx, dir] of [[m.x + 3, -1], [m.x + m.w - 3, 1]]) {
+      const grad = ctx.createLinearGradient(0, m.y, 0, m.y + 300);
+      grad.addColorStop(0, 'rgba(190, 220, 255, .55)');
+      grad.addColorStop(1, 'rgba(190, 220, 255, 0)');
+      ctx.fillStyle = grad;
+      const wob = Math.sin(t * 2.4 + dir) * 2;
+      ctx.fillRect(fx + wob - 3, m.y + 4, 6, 300);
+      ctx.fillRect(fx + dir * 7 - wob - 2, m.y + 4, 4, 220);
+      for (let i = 0; i < 3; i++) {                  // mist puffs where it fades
+        const k = (t * 0.5 + i / 3) % 1;
+        ctx.globalAlpha = 0.2 * (1 - k);
+        ctx.fillStyle = '#cfe0ff';
+        ctx.beginPath();
+        ctx.arc(fx + dir * k * 26, m.y + 230 + k * 90, 8 + k * 14, 0, 7);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // lantern posts flanking the deck, flames breathing slow
+    for (const lx of [m.x + 40, m.x + m.w - 40]) {
+      ctx.strokeStyle = '#242043';
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(lx, m.y); ctx.lineTo(lx, m.y - 40); ctx.stroke();
+      const breathe = 0.75 + 0.25 * Math.sin(t * 2.2 + lx);
+      const lg = ctx.createRadialGradient(lx, m.y - 48, 1, lx, m.y - 48, 24 * breathe);
+      lg.addColorStop(0, 'rgba(255, 205, 110, .5)');
+      lg.addColorStop(1, 'rgba(255, 205, 110, 0)');
+      ctx.fillStyle = lg;
+      ctx.fillRect(lx - 24, m.y - 72, 48, 48);
+      ctx.fillStyle = '#242043';                     // cage
+      roundRect(ctx, lx - 7, m.y - 56, 14, 17, 4); ctx.fill();
+      ctx.fillStyle = `rgba(255, 205, 110, ${0.6 + 0.4 * breathe})`;
+      ctx.fillRect(lx - 3.5, m.y - 52, 7, 9);
+    }
+
+    // floating stone platforms: rune-lit slabs with small pebble keels,
+    // hovering exactly where the sim says they are (visual-only shimmer)
+    for (const [i, p] of plats.entries()) {
+      const cx = p.x + p.w / 2;
+      ctx.fillStyle = th.plat;                       // stone slab
+      roundRect(ctx, p.x, p.y, p.w, 14, 5); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      ctx.fillStyle = '#2b2547';                     // pebble keel
+      ctx.beginPath();
+      ctx.moveTo(p.x + p.w * 0.28, p.y + 14);
+      ctx.lineTo(cx, p.y + 30);
+      ctx.lineTo(p.x + p.w * 0.72, p.y + 14);
+      ctx.closePath(); ctx.fill();
+      const pulse = 0.45 + 0.4 * Math.sin(t * 1.8 + i * 2.1);   // rune glow
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#8fd3ff';
+      for (let rn = 0; rn < 3; rn++) {
+        const rx = p.x + p.w * (0.25 + 0.25 * rn);
+        ctx.fillRect(rx - 1.5, p.y + 6, 3, 5);
+        ctx.fillRect(rx - 4, p.y + 8, 8, 2);
+      }
+      ctx.globalAlpha = Math.min(0.5, pulse * 0.5);  // under-glow
+      const ug = ctx.createRadialGradient(cx, p.y + 20, 2, cx, p.y + 20, p.w * 0.4);
+      ug.addColorStop(0, 'rgba(143, 211, 255, .5)');
+      ug.addColorStop(1, 'rgba(143, 211, 255, 0)');
+      ctx.fillStyle = ug;
+      ctx.fillRect(cx - p.w * 0.4, p.y + 6, p.w * 0.8, p.w * 0.5);
+      ctx.globalAlpha = 1;
+    }
+  }
+
   // Overgrown Eden: a mossy root-shelf floor knotted with giant roots, a
   // fallen-log bridge, glowing toadstools, and two giant flower heads
   // bobbing off the lips as living platforms.
@@ -1521,6 +1750,36 @@ export class Renderer {
   // Ambient weather, per theme: embers & ash rising off the burning ruins,
   // or neon-lit rain sheeting down over the heights.
   _ambient(ctx, dt, t) {
+    if (this.theme.ambient === 'cloudwisp') {
+      // thin wisps of cloud streaming past the bastion at fight height
+      while (this.ambient.length < 10) {
+        this.ambient.push({
+          x: this.cam.x + (Math.random() < 0.5 ? -1 : 1) * (700 + Math.random() * 500),
+          y: this.cam.y + (Math.random() - 0.55) * 700,
+          vx: 26 + Math.random() * 40,
+          w: 70 + Math.random() * 130, h: 7 + Math.random() * 9,
+          a: 0.05 + Math.random() * 0.08,
+          life: 16 + Math.random() * 10, t: 0,
+        });
+      }
+      for (const c of this.ambient) {
+        c.t += dt;
+        c.x += c.vx * dt;
+        const k = c.t / c.life;
+        if (k >= 1) continue;
+        ctx.globalAlpha = Math.sin(k * Math.PI) * c.a * 3;
+        ctx.fillStyle = '#d8dcf2';
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y, c.w, c.h, 0, 0, 7);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(c.x - c.w * 0.4, c.y + c.h * 0.6, c.w * 0.5, c.h * 0.6, 0, 0, 7);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      this.ambient = this.ambient.filter(c => c.t < c.life);
+      return;
+    }
     if (this.theme.ambient === 'fireflies') {
       // fireflies wandering the gloom, pulsing green-gold as they drift
       while (this.ambient.length < 26) {
@@ -1940,6 +2199,59 @@ function buildMesas() {
     }
   }
   return { baseY, layers, mill: { x: -900 + Math.floor(8451 % 7) * 260, h: 130 } };
+}
+
+// Deterministic floating archipelago: three parallax layers of drifting
+// islands (rock keels, turf caps, spires, waterfalls) over a three-bank
+// rolling cloud sea. Same seed every time, so all players share the sky.
+function buildSkyIsles() {
+  let s = 77003;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const layers = [
+    { lag: 0.82, rock: '#221d40', turf: '#2c2a58', flag: '#54517e', isles: [] },   // far haze
+    { lag: 0.66, rock: '#2a2450', turf: '#37346e', flag: '#6f68a8', isles: [] },
+    { lag: 0.5,  rock: '#332b60', turf: '#434083', flag: '#8f86c9', isles: [] },   // near
+  ];
+  for (const [li, layer] of layers.entries()) {
+    let x = -1500 + rnd() * 200;
+    while (x < 1500) {
+      const w = 130 + rnd() * (150 + li * 90);
+      layer.isles.push({
+        x, w,
+        y: -420 + rnd() * 520 - li * 40,
+        h: 10 + rnd() * 8,
+        d: w * (0.5 + rnd() * 0.45),
+        bob: 4 + rnd() * (5 + li * 4),
+        spd: 0.18 + rnd() * 0.22,
+        ph: rnd() * 7,
+        spire: rnd() < 0.4,
+        sp: 40 + rnd() * 36,
+        fall: rnd() < 0.45,
+        fallLen: 90 + rnd() * 110,
+      });
+      x += w + 190 + rnd() * (260 + li * 120);
+    }
+  }
+  const banks = [
+    { lag: 0.75, fill: 'rgba(90, 82, 150, .35)',  puffs: [] },
+    { lag: 0.58, fill: 'rgba(120, 108, 190, .3)', puffs: [] },
+    { lag: 0.42, fill: 'rgba(165, 150, 225, .25)', puffs: [] },
+  ];
+  for (const [bi, bank] of banks.entries()) {
+    let x = -1600 + rnd() * 120;
+    while (x < 1600) {
+      bank.puffs.push({
+        x,
+        dy: bi * 55 + rnd() * 70,
+        w: 130 + rnd() * 190, h: 26 + rnd() * 26,
+        drift: 14 + rnd() * 26,
+        spd: 0.1 + rnd() * 0.16,
+        ph: rnd() * 7,
+      });
+      x += 150 + rnd() * 200;
+    }
+  }
+  return { seaY: 360, layers, banks };
 }
 
 // Deterministic giant flora: three parallax rows of towering stems —
