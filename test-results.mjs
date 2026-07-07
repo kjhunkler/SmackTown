@@ -189,7 +189,44 @@ const players = [
   check('training never ends', !g.over && g.winner === null);
 }
 
-// --- 11. sim still runs & finishes with scores ---
+// --- 11. quick fall + waveland ---
+{
+  const g = new Game(players, 7, 'flatlands');
+  const [a, b, c] = g.fighters;
+  // quick fall: down mid-rise kills the rest of the jump
+  a.grounded = false; a.state = 'air'; a.vy = -700; a.y = -200;
+  g.inputs.get('A').ff = true;
+  g.step();
+  check('quick fall cancels the jump ascent', a.fastfall && a.vy >= 0);
+  // …but never cancels a launch: hitstun keeps its lift
+  const h = g.fighters[2];
+  h.grounded = false; h.state = 'hitstun'; h.hitstunFor = 1; h.stateT = 0;
+  h.vy = -900; h.y = -200;
+  g.inputs.get('C').ff = true;
+  g.step();
+  check('quick fall cannot ditch hitstun lift', h.vy < -700);
+  // waveland: fast-fallen landing with drift keeps sliding
+  a.state = 'air'; a.grounded = false; a.fastfall = true;
+  a.x = 0; a.y = -40; a.vy = 600; a.vx = 300;
+  // plain landing at the same drift, no fastfall: control group
+  b.state = 'air'; b.grounded = false; b.fastfall = false;
+  b.x = 300; b.y = -40; b.vy = 600; b.vx = 300;
+  g.step();
+  check('waveland arms on a drifting fast-fall landing', a.grounded && a.slideT > 0);
+  check('plain landings do not slide', b.grounded && b.slideT === 0);
+  for (let i = 0; i < 10; i++) g.step();
+  check('waveland keeps the slide slick', a.vx > 100 && b.vx < 40);
+  // attacking mid-waveland skips the landing plant
+  const v0 = a.vx;
+  g._startAttack(a, { kind: 'tap', dx: 0, dy: 0 });
+  check('waveland attack keeps its glide', a.vx === v0);
+  // and a plain grounded attack still plants
+  c.grounded = true; c.vx = 250;
+  g._startAttack(c, { kind: 'tap', dx: 0, dy: 0 });
+  check('normal grounded attack still plants', Math.abs(c.vx - 250 * 0.35) < 0.01);
+}
+
+// --- 12. sim still runs & finishes with scores ---
 {
   const g = new Game(players.slice(0, 2), 7, 'arena');
   const [a, b] = g.fighters;

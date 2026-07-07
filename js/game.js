@@ -212,6 +212,12 @@ const DASH_ATK_FRICTION = 0.3;       // slide keeps rolling through the swing
 const ROLL_GUARD_COST = 22;
 const ROLL_IFRAMES = 0.7;            // leading fraction of the roll with i-frames
 
+// Waveland: touch down mid-fastfall with real drift and the landing keeps
+// your slide — low traction for a beat, fully actionable, and attacks
+// started during it skip the usual landing plant.
+const WAVELAND_TIME = 0.3;
+const WAVELAND_MIN_VX = 160;         // drift needed for a landing to slide
+
 const ABILITY_DEFS = {
   fireball:  { cd: 3.0 },
   dashstrike:{ cd: 4.0 },
@@ -267,7 +273,7 @@ export class Game {
       atkSpd: 0,                    // speed when the swing began (momentum augment)
       chg: 0,                       // charge fraction baked into the live attack
       chgAim: null,                 // 8-way aim captured when the charge began
-      invuln: 0, counterT: 0, dashT: 0,
+      invuln: 0, counterT: 0, dashT: 0, slideT: 0,
       guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
       usedSecondWind: false,
@@ -401,6 +407,7 @@ export class Game {
     f.invuln = Math.max(0, f.invuln - TICK);
     f.counterT = Math.max(0, f.counterT - TICK);
     f.dashT = Math.max(0, f.dashT - TICK);
+    f.slideT = f.grounded ? Math.max(0, f.slideT - TICK) : 0;
     f.dropT = Math.max(0, f.dropT - TICK);
     f.burnT = Math.max(0, f.burnT - TICK);
     f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
@@ -474,9 +481,9 @@ export class Game {
           f.facing = Math.sign(inp.mx) || f.facing;
           f.state = 'run';
         } else {
-          // a dash attack slides on reduced friction — the whiff carries you
-          const fr = inAttack && f.atk === 'dash' ? FRICTION * DASH_ATK_FRICTION : FRICTION;
-          f.vx = approach(f.vx, 0, fr * TICK);
+          // dash attacks and wavelands slide on reduced friction
+          const slick = (inAttack && f.atk === 'dash') || f.slideT > 0;
+          f.vx = approach(f.vx, 0, (slick ? FRICTION * DASH_ATK_FRICTION : FRICTION) * TICK);
           if (canAct && !ducking) f.state = 'idle';
         }
       } else {
@@ -498,7 +505,13 @@ export class Game {
       inp.jump = false;
       this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
     }
-    if (inp.ff && !f.grounded && f.vy > -200) f.fastfall = true;
+    // quick fall: down mid-jump cancels the rest of the ascent on the spot.
+    // Only when actionable — a launch's lift can't be ditched mid-hitstun,
+    // which would neuter every vertical KO.
+    if (inp.ff && !f.grounded) {
+      if (canAct && f.vy < 0) { f.vy = 0; f.fastfall = true; }
+      else if (f.vy > -200) f.fastfall = true;
+    }
     if (inp.drop && f.grounded) f.dropT = 0.25;    // fall through platforms
     inp.ff = inp.drop = false;
 
@@ -590,6 +603,8 @@ export class Game {
 
     if (f.grounded && !wasGrounded) {
       f.jumps = f.st.maxJumps;
+      // waveland: a fast-fallen touchdown with drift keeps sliding
+      if (f.fastfall && Math.abs(f.vx) > WAVELAND_MIN_VX) f.slideT = WAVELAND_TIME;
       f.fastfall = false;
       if (f.state === 'air' || f.state === 'hitstun') f.state = 'idle';
       this.events.push({ e: 'land', id: f.id, x: f.x, y: f.y + F_H / 2 });
@@ -749,7 +764,8 @@ export class Game {
     f.lowJab = fromDuck && name === 'jab';
     f.atkHit.clear();
     f.atkSpd = Math.hypot(f.vx, f.vy);   // momentum: judge the run-up, not the plant
-    if (f.grounded && name !== 'dash') f.vx *= 0.35;   // dash attacks keep the slide
+    // dash attacks keep their slide; so do attacks thrown mid-waveland
+    if (f.grounded && name !== 'dash' && f.slideT <= 0) f.vx *= 0.35;
     // upward swipe in the air boosts you like an air jump — and costs none.
     // The lift itself is on a short cooldown so chained up-smashes can't be
     // spammed to fly forever; the swing still comes out either way.
@@ -779,7 +795,7 @@ export class Game {
     f.atkDir = (dx || dy) ? { x: dx, y: dy } : null;
     f.chgAim = { dx, dy };
     f.atkHit.clear();
-    if (f.grounded) f.vx *= 0.35;
+    if (f.grounded && f.slideT <= 0) f.vx *= 0.35;   // charging mid-waveland glides
     this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
   }
 
@@ -1349,6 +1365,7 @@ export class Game {
           f.ridePlat == null ? -1 : f.ridePlat,
           [f.score.ko, f.score.fall, f.score.sd, r1(f.score.dmg), r1(f.score.taken), r1(f.score.maxHit)],
           r2(f.burnT),
+          r2(f.slideT),
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -1396,6 +1413,7 @@ export function restoreFighter(f, row) {
     const sc = row[34];
     if (sc) f.score = { ko: sc[0] | 0, fall: sc[1] | 0, sd: sc[2] | 0, dmg: +sc[3] || 0, taken: +sc[4] || 0, maxHit: +sc[5] || 0 };
     f.burnT = +row[35] || 0;
+    f.slideT = +row[36] || 0;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.
