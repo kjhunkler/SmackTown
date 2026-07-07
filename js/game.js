@@ -171,6 +171,12 @@ const CHARGE_KB = 0.35;              // +35% knockback at full charge
 const DASH_ATK_MIN = 320;
 const DASH_ATK_FRICTION = 0.3;       // slide keeps rolling through the swing
 
+// Dodge roll: shove the stick sideways out of a duck to tumble along the
+// ground. Invulnerable through the front of the roll, punishable at the
+// tail, and it bites the guard meter — regen is the spam limiter.
+const ROLL_GUARD_COST = 22;
+const ROLL_IFRAMES = 0.7;            // leading fraction of the roll with i-frames
+
 const ABILITY_DEFS = {
   fireball:  { cd: 3.0 },
   dashstrike:{ cd: 4.0 },
@@ -304,6 +310,7 @@ export class Game {
     cur.ff ||= !!inp.ff;
     cur.drop ||= !!inp.drop;
     if (inp.atk) { cur.atk = inp.atk; cur.bufA = BUFFER; } // {kind:'tap'|'up'|'down'|'side', dir}
+    if (inp.roll) { cur.roll = inp.roll; cur.bufR = BUFFER; } // dodge roll: -1 | 1
     // charge is level-triggered like the stick; re-arms on release
     cur.chg = inp.chg || null;
     if (!cur.chg) cur.chgArm = true;
@@ -379,6 +386,19 @@ export class Game {
     const canAct = !inHitstun && !inAttack && !inCharge && !inCrush;
 
     if (Math.abs(inp.mx) > 0.15) f.lastDir = { x: Math.sign(inp.mx), y: inp.my };
+
+    // --- dodge roll: shove the stick sideways out of a duck ---
+    // Also honored through the brief stand-up window, so a hard sideways
+    // slam that drops the duck a tick before the flick edge lands still
+    // rolls instead of standing up into the hit.
+    if (inp.roll && canAct && f.grounded
+        && (f.state === 'duck' || f.standT > 0)
+        && f.guard >= GUARD_REDUCK) {
+      this._startRoll(f, inp.roll < 0 ? -1 : 1);
+      inp.roll = 0; inp.bufR = 0;
+      this._decayInput(inp);
+      return;
+    }
 
     // --- ducking (hold the stick mostly-down while grounded) ---
     const wantDuck = f.grounded && inp.my > 0.6 && inp.my >= Math.abs(inp.mx);
@@ -484,6 +504,7 @@ export class Game {
     inp.ff = inp.drop = false;
     if ((inp.bufJ -= TICK) <= 0) inp.jump = false;
     if ((inp.bufA -= TICK) <= 0) inp.atk = null;
+    if ((inp.bufR -= TICK) <= 0) inp.roll = 0;
     if ((inp.buf0 -= TICK) <= 0) inp.ab0 = false;
     if ((inp.buf1 -= TICK) <= 0) inp.ab1 = false;
   }
@@ -589,6 +610,7 @@ export class Game {
       // getup roll: pop onto the stage and tumble inward, briefly invulnerable
       f.state = 'roll'; f.stateT = 0;
       f.rollDir = -f.ledge;
+      f.ridePlat = null;               // getup rolls always ride the main floor
       f.y = m.y - F_H / 2;
       f.grounded = true;
       f.invuln = Math.max(f.invuln, ROLL_TIME + 0.1);
@@ -605,11 +627,32 @@ export class Game {
     this._decayInput(inp);
   }
 
+  // Duck dodge roll (ledge getups enter 'roll' from _stepLedge with full
+  // invulnerability; this one leaves a punishable tail and costs guard).
+  _startRoll(f, dir) {
+    f.guard = Math.max(0, f.guard - ROLL_GUARD_COST);
+    f.state = 'roll';
+    f.stateT = 0;
+    f.rollDir = dir;
+    f.standT = 0;
+    f.vx = 0; f.vy = 0;
+    f.invuln = Math.max(f.invuln, ROLL_TIME * ROLL_IFRAMES);
+    this.events.push({ e: 'roll', id: f.id, x: f.x, y: f.y });
+  }
+
   _stepRoll(f, inp) {
-    const m = this.stage.main;
-    f.x = clamp(f.x + f.rollDir * (ROLL_DIST / ROLL_TIME) * TICK,
-      m.x + F_W / 2, m.x + m.w - F_W / 2);
-    f.y = m.y - F_H / 2;
+    const step = f.rollDir * (ROLL_DIST / ROLL_TIME) * TICK;
+    const p = f.ridePlat != null ? this.platsNow()[f.ridePlat] : null;
+    if (p) {
+      // rolling on a platform: ride its drift, stop at its edges
+      const was = platPos(this.stage.plats[f.ridePlat], this.tick - 1);
+      f.x = clamp(f.x + step + (p.x - was.x), p.x + F_W / 4, p.x + p.w - F_W / 4);
+      f.y = p.y - F_H / 2;
+    } else {
+      const m = this.stage.main;
+      f.x = clamp(f.x + step, m.x + F_W / 2, m.x + m.w - F_W / 2);
+      f.y = m.y - F_H / 2;
+    }
     f.vx = 0; f.vy = 0;
     f.grounded = true;
     if (f.stateT >= ROLL_TIME) { f.state = 'idle'; f.facing = f.rollDir; }
@@ -1284,8 +1327,8 @@ export function restoreFighter(f, row) {
 
 export function blankInput() {
   return {
-    mx: 0, my: 0, jump: false, ff: false, drop: false, atk: null,
-    ab0: false, ab1: false, bufJ: 0, bufA: 0, buf0: 0, buf1: 0,
+    mx: 0, my: 0, jump: false, ff: false, drop: false, atk: null, roll: 0,
+    ab0: false, ab1: false, bufJ: 0, bufA: 0, buf0: 0, buf1: 0, bufR: 0,
     chg: null,      // {dx,dy} while the strong-attack control is held
     chgArm: true,   // must see a release before the next charge can start
   };

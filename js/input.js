@@ -1,5 +1,6 @@
 // Touch controls tuned for one-thumb-per-side play:
 //   left zone  — drag = virtual stick · flick up = jump · flick down = fast-fall/drop
+//                flick sideways while ducked (stick pinned down) = dodge roll
 //   right zone — tap = quick attack aimed by the movement stick (8-way)
 //                swipe = smash attack in the swipe direction (8-way);
 //                detected the moment the drag crosses the swipe threshold —
@@ -8,8 +9,10 @@
 // Keyboard fallback (desktop testing): arrows/WASD move, space jump,
 // J = tap attack, K = smash (hold to charge, release to fire; aimed by held
 // direction at press, 8-way), L and ; = abilities. Z/X/C/V mirror J/K/L/;.
+// Hold down + press a direction = dodge roll.
 // Gamepad (standard layout, polled each frame alongside touch/keys):
-// left stick / dpad move — hold down to duck, flick
+// left stick / dpad move — hold down to duck, tilt sideways while
+// ducked = dodge roll, flick
 // down = fast-fall/drop · A = quick attack · B = smash (hold to charge,
 // release to fire; aimed by the stick at press, 8-way) · Y = jump ·
 // X / LB / RB = ability 1 · LT / RT = ability 2 · right stick = instant
@@ -45,6 +48,7 @@ export class TouchInput {
     this.keyChg = null;              // charge aim held via keyboard (K/X)
     this.padChg = null;              // charge aim held via gamepad (B)
     this.padRHeld = false;           // right stick currently tilted (re-arm)
+    this.padRolled = false;          // ducked sideways tilt fired (re-arm)
 
     this.stickZone = root.querySelector('#stick-zone');
     this.actionZone = root.querySelector('#action-zone');
@@ -94,6 +98,7 @@ export class TouchInput {
       const rec = which === 'stick' ? this.stick : this.swipe;
       if (!rec || rec.id !== e.pointerId) return;
       const dt = Math.max(1, e.timeStamp - rec.lastT);
+      const vx = (e.clientX - rec.lastX) / dt;
       const vy = (e.clientY - rec.lastY) / dt;
       rec.moved = Math.max(rec.moved, Math.hypot(e.clientX - rec.ox, e.clientY - rec.oy));
       rec.lastX = e.clientX; rec.lastY = e.clientY; rec.lastT = e.timeStamp;
@@ -120,10 +125,15 @@ export class TouchInput {
         this.state.my = dy / STICK_RADIUS;
         this.stickKnob.style.transform =
           `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-        // vertical flicks on the movement thumb = jump / fast-fall+drop
-        if (!rec.flicked && vy < -FLICK_SPEED) { rec.flicked = true; this.queue.push({ jump: true }); }
+        // vertical flicks on the movement thumb = jump / fast-fall+drop;
+        // a sideways flick while the stick is pinned down = dodge roll
+        if (!rec.flicked && this.state.my > 0.6
+            && Math.abs(vx) > FLICK_SPEED && Math.abs(vx) > Math.abs(vy)) {
+          rec.flicked = true; this.queue.push({ roll: Math.sign(vx) });
+        }
+        else if (!rec.flicked && vy < -FLICK_SPEED) { rec.flicked = true; this.queue.push({ jump: true }); }
         else if (!rec.flicked && vy > FLICK_SPEED) { rec.flicked = true; this.queue.push({ ff: true, drop: true }); }
-        else if (rec.flicked && Math.abs(vy) < 0.12) rec.flicked = false; // re-arm
+        else if (rec.flicked && Math.abs(vy) < 0.12 && Math.abs(vx) < 0.12) rec.flicked = false; // re-arm
       }
     });
     const end = e => {
@@ -178,6 +188,10 @@ export class TouchInput {
     }
     if (k === ' ') this.queue.push({ jump: true });
     if (k === 'arrowdown' || k === 's') this.queue.push({ ff: true, drop: true });
+    // a fresh sideways press while holding duck (down) = dodge roll
+    if ((k === 'arrowleft' || k === 'a' || k === 'arrowright' || k === 'd') && this.state.my > 0.6) {
+      this.queue.push({ roll: (k === 'arrowright' || k === 'd') ? 1 : -1 });
+    }
     const aim = { dx: dir, dy: this.state.my };
     if (k === 'j' || k === 'z') this.queue.push({ atk: { kind: 'tap', ...aim } });
     if (k === 'k' || k === 'x') this.keyChg = aim;   // hold to charge the smash
@@ -190,7 +204,7 @@ export class TouchInput {
   // same edge actions the other sources produce.
   _pollGamepad() {
     const pad = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
-    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; this.padRHeld = false; return null; }
+    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; this.padRHeld = false; this.padRolled = false; return null; }
 
     let mx = pad.axes[0] || 0, my = pad.axes[1] || 0;
     if (Math.hypot(mx, my) < PAD_DEAD) { mx = 0; my = 0; }
@@ -205,6 +219,11 @@ export class TouchInput {
       // down flicks mirror the touch stick: fast-fall/drop (up no longer jumps)
       if (!this.padFlicked && my > PAD_FLICK) { this.padFlicked = true; this.queue.push({ ff: true, drop: true }); }
       else if (this.padFlicked && Math.abs(my) < PAD_AIM_DEAD) this.padFlicked = false;
+      // sideways tilt while ducked (stick or dpad pinned down) = dodge roll;
+      // re-arms once the stick returns toward center
+      if (!this.padRolled && my > PAD_FLICK && Math.abs(mx) > PAD_FLICK) {
+        this.padRolled = true; this.queue.push({ roll: Math.sign(mx) });
+      } else if (this.padRolled && Math.abs(mx) < PAD_AIM_DEAD) this.padRolled = false;
 
       for (const [i, act] of Object.entries(PAD_BTN)) {
         const down = !!pad.buttons[i]?.pressed;
@@ -236,6 +255,7 @@ export class TouchInput {
       this.padFlicked = Math.abs(my) > PAD_FLICK;
       this.padChg = null;
       this.padRHeld = rTilt;
+      this.padRolled = my > PAD_FLICK && Math.abs(mx) > PAD_FLICK;
     }
     return { mx, my };
   }

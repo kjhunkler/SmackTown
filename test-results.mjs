@@ -1,6 +1,6 @@
 // Headless smoke test: match stats (KOs/damage), score snapshot round-trip,
 // and rejoin dedupe via rebindFighter. Run: node test-results.mjs
-import { Game, gameFromSnapshot, restoreFighter } from './js/game.js';
+import { Game, gameFromSnapshot, restoreFighter, platsAt } from './js/game.js';
 
 let n = 0, fails = 0;
 function check(name, ok) {
@@ -118,7 +118,50 @@ const players = [
   check('unknown attack fizzles to neutral', a.atk === null && a.state !== 'attack');
 }
 
-// --- 8. sim still runs & finishes with scores ---
+// --- 8. dodge roll out of a duck ---
+{
+  const g = new Game(players, 7, 'battlefield');
+  const [a, b] = g.fighters;
+  a.state = 'duck'; a.grounded = true;
+  const ia = g.inputs.get('A');
+  ia.roll = 1; ia.bufR = 0.15;
+  const x0 = a.x;
+  g.step();
+  check('duck + sideways = dodge roll', a.state === 'roll' && a.rollDir === 1);
+  check('roll grants i-frames', a.invuln > 0.2);
+  check('roll bites the guard', Math.abs(a.guard - 78) < 0.01);
+  for (let i = 0; i < 30; i++) g.step();
+  check('roll travels the ground', a.x - x0 > 100);
+  check('roll ends back in neutral', a.state === 'idle' && a.facing === 1);
+  b.state = 'duck'; b.grounded = true; b.guard = 10;
+  const ib = g.inputs.get('B');
+  ib.roll = 1; ib.bufR = 0.15;
+  g.step();
+  check('worn-out guard cannot roll', b.state !== 'roll');
+  const c = g.fighters[2];
+  c.state = 'idle'; c.grounded = true;
+  const ic = g.inputs.get('C');
+  ic.roll = 1; ic.bufR = 0.15;
+  g.step();
+  check('no roll without a duck', c.state !== 'roll');
+}
+
+// --- 9. dodge roll on a platform stays on the platform ---
+{
+  const g = new Game(players, 7, 'battlefield');
+  const a = g.fighters[0];
+  const p = platsAt('battlefield', 1)[0];
+  a.x = p.x + p.w / 2; a.y = p.y - 32; a.grounded = true; a.ridePlat = 0;
+  a.state = 'duck';
+  const ia = g.inputs.get('A');
+  ia.roll = -1; ia.bufR = 0.15;
+  for (let i = 0; i < 30; i++) g.step();
+  const pNow = platsAt('battlefield', g.tick)[0];
+  check('platform roll follows the platform top', Math.abs(a.y - (pNow.y - 32)) < 1);
+  check('platform roll stops at the edge', a.x >= pNow.x && a.x <= pNow.x + pNow.w);
+}
+
+// --- 10. sim still runs & finishes with scores ---
 {
   const g = new Game(players.slice(0, 2), 7, 'arena');
   const [a, b] = g.fighters;
