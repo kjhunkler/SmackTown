@@ -640,8 +640,8 @@ input[type=text]:focus { border-color: var(--accent); }
   background: rgba(255, 255, 255, .45);
 }
 .map-thumb-battlefield { background: linear-gradient(#141a38, #1c1430); }
-.map-thumb-flatlands { background: linear-gradient(#2c1a3e, #e8703a); }
-.map-thumb-flatlands::after { left: 8%; right: 8%; }
+.map-thumb-flatlands { background: linear-gradient(#5fb0dc, #e8cf9a); }
+.map-thumb-flatlands::after { left: 8%; right: 8%; background: #b5854f; }
 .map-thumb-flatlands::before { display: none; }
 .map-thumb-skyline { background: linear-gradient(#060a1c, #1c0e38); }
 .map-thumb-skyline::after { left: 28%; right: 28%; box-shadow: 0 0 6px #00e5ff; }

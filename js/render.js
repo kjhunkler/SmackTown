@@ -20,11 +20,12 @@ const THEMES = {
     plat: '#3b4573', platTop: '#556099',
   },
   flatlands: {
-    sky: ['#2c1a3e', '#83303c', '#e8703a'],
-    motif: 'sun',
-    stars: 0.25,
-    deck: '#4a2b33', lip: '#6b3a40', trim: '#ffd23e',
-    plat: '#6b3a40', platTop: '#8a4f52',
+    sky: ['#5fb0dc', '#a5d2e4', '#e8cf9a'],
+    motif: 'noon',
+    stars: 0,
+    ambient: 'dust',
+    deck: '#b5854f', lip: '#8f6238', trim: '#c0452e',
+    plat: '#8f6238', platTop: '#a8794a',
   },
   skyline: {
     sky: ['#060a1c', '#101540', '#1c0e38'],
@@ -89,6 +90,7 @@ export class Renderer {
     this.city = this.mapId === 'ruins' ? buildCityScape('ruins')
       : this.mapId === 'skyline' ? buildCityScape('neon')
       : null;
+    this.mesas = this.mapId === 'flatlands' ? buildMesas() : null;
   }
 
   _resize() {
@@ -330,6 +332,7 @@ export class Renderer {
     ctx.translate(-this.cam.x, -this.cam.y);
 
     if (this.city) this._cityBackdrop(ctx, t);
+    if (this.mesas) this._mesaBackdrop(ctx, t);
     this._stage(ctx, view.tick ?? 0, t);
     if (this.theme.ambient) this._ambient(ctx, dt, t);
 
@@ -532,6 +535,36 @@ export class Renderer {
         }
         ctx.stroke();
       }
+    } else if (this.theme.motif === 'noon') {
+      // white-hot noon sun, high and merciless, buzzards riding the thermals
+      const sx = W * 0.62 - this.cam.x * 0.04 * this.dpr;
+      const sy = H * 0.13 - this.cam.y * 0.04 * this.dpr;
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 4);
+      g.addColorStop(0, 'rgba(255, 252, 235, .95)');
+      g.addColorStop(0.25, 'rgba(255, 244, 200, .45)');
+      g.addColorStop(1, 'rgba(255, 244, 200, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(sx - r * 4, sy - r * 4, r * 8, r * 8);
+      ctx.fillStyle = '#fffdf2';
+      ctx.beginPath(); ctx.arc(sx, sy, r * 0.85, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 250, 220, .5)';   // glare ring
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(sx, sy, r * 1.5 + Math.sin(t * 0.9) * r * 0.08, 0, 7); ctx.stroke();
+      // buzzards: lazy dark chevrons wheeling under the glare
+      ctx.strokeStyle = 'rgba(40, 30, 24, .75)';
+      ctx.lineWidth = Math.max(2, r * 0.045);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        const a = t * (0.14 + i * 0.05) + i * 2.4;
+        const bx = sx + Math.cos(a) * r * (2.6 + i * 0.8);
+        const by = sy + r * (1.7 + i * 0.5) + Math.sin(a) * r * 0.5;
+        const flap = Math.sin(t * (2.2 + i * 0.5) + i) * 0.35;
+        const s = r * (0.16 - i * 0.03);
+        ctx.beginPath();
+        ctx.moveTo(bx - s, by - s * (0.3 - flap));
+        ctx.quadraticCurveTo(bx, by + s * flap, bx + s, by - s * (0.3 - flap));
+        ctx.stroke();
+      }
     } else if (this.theme.motif === 'neonmoon') {
       // oversized rain-haloed moon hanging over the metropolis
       const R = r * 1.9;
@@ -588,6 +621,7 @@ export class Renderer {
     const plats = platsAt(this.mapId, tickF);
     if (this.mapId === 'ruins') { this._ruinsStage(ctx, plats, t); return; }
     if (this.mapId === 'skyline') { this._skylineStage(ctx, plats, tickF, t); return; }
+    if (this.mapId === 'flatlands') { this._flatlandsStage(ctx, t); return; }
     const th = this.theme;
     const m = this.stage.main;
     // main platform with themed deck & lip
@@ -748,6 +782,90 @@ export class Renderer {
       ctx.fillStyle = '#ffffff';
       ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill();
       ctx.globalAlpha = 1;
+    }
+  }
+
+  // Dust Divide: hazy parallax buttes receding into the noon glare, a
+  // lonely ghost-town windmill, and heat shimmer crawling the horizon.
+  _mesaBackdrop(ctx, t) {
+    const ms = this.mesas;
+    for (const layer of ms.layers) {
+      const ox = this.cam.x * layer.lag, oy = this.cam.y * layer.lag * 0.85;
+      ctx.fillStyle = layer.fill;
+      for (const b of layer.buttes) {
+        const x = b.x + ox, yb = ms.baseY + oy, yt = yb - b.h;
+        ctx.beginPath();                       // flat-top butte with talus skirts
+        ctx.moveTo(x - b.skirt, yb);
+        ctx.lineTo(x + b.w * 0.08, yt + 6);
+        ctx.lineTo(x + b.w * 0.16, yt);
+        ctx.lineTo(x + b.w * 0.84, yt);
+        ctx.lineTo(x + b.w * 0.92, yt + 6);
+        ctx.lineTo(x + b.w + b.skirt, yb);
+        ctx.closePath(); ctx.fill();
+        if (layer.strata) {                    // banded rock strata
+          ctx.strokeStyle = layer.strata;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (let i = 1; i <= 2; i++) {
+            const sy = yt + b.h * 0.22 * i;
+            const inset = b.h * 0.05 * i;
+            ctx.moveTo(x + b.w * 0.12 - inset, sy);
+            ctx.lineTo(x + b.w * 0.88 + inset, sy);
+          }
+          ctx.stroke();
+        }
+      }
+      if (!layer.props) continue;
+      for (const c of layer.cacti) {           // saguaro silhouettes
+        const x = c.x + ox, yb = ms.baseY + oy;
+        ctx.strokeStyle = layer.propFill;
+        ctx.lineWidth = c.w;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, yb); ctx.lineTo(x, yb - c.h);
+        ctx.moveTo(x - c.h * 0.3, yb - c.h * 0.62);
+        ctx.lineTo(x - c.h * 0.3, yb - c.h * 0.8); ctx.lineTo(x, yb - c.h * 0.72);
+        ctx.moveTo(x + c.h * 0.26, yb - c.h * 0.5);
+        ctx.lineTo(x + c.h * 0.26, yb - c.h * 0.66); ctx.lineTo(x, yb - c.h * 0.58);
+        ctx.stroke();
+      }
+      // ghost-town windmill: lattice tower, spinning fan, kicking vane
+      const w = ms.mill, wx = w.x + ox, wy = ms.baseY + oy;
+      ctx.strokeStyle = layer.propFill;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(wx - 16, wy); ctx.lineTo(wx, wy - w.h);
+      ctx.moveTo(wx + 16, wy); ctx.lineTo(wx, wy - w.h);
+      ctx.moveTo(wx - 10, wy - w.h * 0.4); ctx.lineTo(wx + 10, wy - w.h * 0.4);
+      ctx.stroke();
+      const hub = { x: wx, y: wy - w.h };
+      const spin = t * 1.1;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = spin + i * Math.PI / 3;
+        ctx.moveTo(hub.x, hub.y);
+        ctx.lineTo(hub.x + Math.cos(a) * 22, hub.y + Math.sin(a) * 22);
+      }
+      ctx.stroke();
+      ctx.beginPath();                          // tail vane wags in the gusts
+      ctx.moveTo(hub.x, hub.y);
+      ctx.lineTo(hub.x + 30, hub.y + Math.sin(t * 0.7) * 6);
+      ctx.stroke();
+    }
+    // heat shimmer: translucent ripple bands crawling above the horizon
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+      const oy = this.cam.y * 0.5 * 0.85;
+      const y = ms.baseY + oy - 40 - i * 26;
+      ctx.strokeStyle = `rgba(255, 248, 224, ${0.05 + 0.03 * Math.sin(t * 2.2 + i * 2)})`;
+      ctx.beginPath();
+      for (let s = 0; s <= 16; s++) {
+        const x = this.cam.x + (s / 16 - 0.5) * 2600;
+        const yy = y + Math.sin(t * (3 + i) + s * 1.7 + i * 3) * 3.5;
+        s ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy);
+      }
+      ctx.stroke();
     }
   }
 
@@ -1085,9 +1203,162 @@ export class Renderer {
     }
   }
 
+  // Dust Divide: one huge mesa table under the noon sun — banded strata
+  // flanks, a sun-cracked hardpan top with old wagon ruts, dry brush
+  // hissing in the wind, and a longhorn skull bleaching by the east lip.
+  _flatlandsStage(ctx, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // mesa body: strata bands stepping down into the haze
+    const BANDS = ['#a8794a', '#96684a', '#875b40', '#7a5138', '#6e4832'];
+    let by = m.y + 14;
+    for (const [i, c] of BANDS.entries()) {
+      const bh = 30 + i * 26;
+      const inset = i * 9;
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.moveTo(m.x + inset, by);
+      ctx.lineTo(m.x + m.w - inset, by);
+      ctx.lineTo(m.x + m.w - inset - 7, by + bh);
+      ctx.lineTo(m.x + inset + 7, by + bh);
+      ctx.closePath(); ctx.fill();
+      by += bh;
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,.28)';          // erosion gullies
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (const fx of [0.16, 0.38, 0.63, 0.86]) {
+      const gx = m.x + m.w * fx;
+      ctx.moveTo(gx, m.y + 20);
+      ctx.quadraticCurveTo(gx + 10, m.y + 90, gx - 6, m.y + 170);
+    }
+    ctx.stroke();
+
+    // hardpan top
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, 18, 8); ctx.fill();
+    ctx.fillStyle = '#c99a5f';                    // sun-bleached crust
+    ctx.fillRect(m.x + 4, m.y, m.w - 8, 7);
+    ctx.strokeStyle = 'rgba(122, 81, 56, .55)';   // cracked-earth web
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    for (let i = 0; i < 11; i++) {
+      const cx = m.x + 50 + i * (m.w - 100) / 10 + ((i * 73) % 17) - 8;
+      ctx.moveTo(cx, m.y + 1);
+      ctx.lineTo(cx + ((i * 41) % 13) - 6, m.y + 8);
+      if (i % 3 !== 2) ctx.lineTo(cx + ((i * 29) % 19) - 9, m.y + 16);
+    }
+    for (let i = 0; i < 5; i++) {                 // linking cross-cracks
+      const cx = m.x + 90 + i * (m.w - 180) / 4;
+      ctx.moveTo(cx, m.y + 8 + (i % 3) * 3);
+      ctx.lineTo(cx + 34 + (i % 2) * 12, m.y + 6 + ((i + 1) % 3) * 3);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 0.4;                        // old wagon ruts
+    ctx.strokeStyle = '#8f6238';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(m.x + 30, m.y + 5); ctx.lineTo(m.x + m.w - 30, m.y + 3);
+    ctx.moveTo(m.x + 30, m.y + 12); ctx.lineTo(m.x + m.w - 30, m.y + 10);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // dry brush tufts hissing in the wind
+    for (const [fx, s] of [[0.08, 1], [0.27, 0.7], [0.52, 0.85], [0.71, 0.65], [0.93, 1.1]]) {
+      const bx = m.x + m.w * fx, sway = Math.sin(t * 2.1 + fx * 20) * 2.5;
+      ctx.strokeStyle = '#a8905c';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = -2; i <= 2; i++) {
+        ctx.moveTo(bx, m.y + 1);
+        ctx.quadraticCurveTo(bx + i * 3, m.y - 8 * s, bx + i * 4.5 + sway, m.y - 15 * s);
+      }
+      ctx.stroke();
+    }
+
+    // longhorn skull bleaching by the east lip
+    const kx = m.x + m.w - 84, ky = m.y - 7;
+    ctx.strokeStyle = '#f2ead8';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();                              // horns
+    ctx.moveTo(kx - 16, ky - 2);
+    ctx.quadraticCurveTo(kx - 26, ky - 12, kx - 22, ky - 16);
+    ctx.moveTo(kx + 16, ky - 2);
+    ctx.quadraticCurveTo(kx + 26, ky - 12, kx + 22, ky - 16);
+    ctx.stroke();
+    ctx.fillStyle = '#f2ead8';                    // cranium + snout
+    ctx.beginPath(); ctx.arc(kx, ky - 4, 9, 0, 7); ctx.fill();
+    ctx.fillRect(kx - 4.5, ky - 2, 9, 9);
+    ctx.fillStyle = '#3a2c22';                    // eye sockets
+    ctx.beginPath(); ctx.arc(kx - 4, ky - 5, 2, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(kx + 4, ky - 5, 2, 0, 7); ctx.fill();
+  }
+
   // Ambient weather, per theme: embers & ash rising off the burning ruins,
   // or neon-lit rain sheeting down over the heights.
   _ambient(ctx, dt, t) {
+    if (this.theme.ambient === 'dust') {
+      // tumbleweeds bounding across the mesa, dropping off the west lip,
+      // plus sun-lit grit streaming on the wind
+      const m = this.stage.main;
+      while (this.ambient.length < 26) {
+        const weed = this.ambient.filter(a => a.weed).length < 2 && Math.random() < 0.15;
+        this.ambient.push(weed
+          ? {
+            weed: true, x: m.x + m.w + 60 + Math.random() * 500, y: m.y - 14,
+            vx: -(150 + Math.random() * 90), vy: 0, r: 11 + Math.random() * 7,
+            rot: Math.random() * 7, life: 14, t: 0,
+          }
+          : {
+            x: this.cam.x + (Math.random() - 0.5) * 2600,
+            y: this.cam.y + (Math.random() - 0.7) * 900,
+            vx: -(60 + Math.random() * 70), vy: 0,
+            sway: 6 + Math.random() * 12, ph: Math.random() * 7,
+            life: 4 + Math.random() * 4, t: 0, r: 1.3 + Math.random() * 1.2,
+          });
+      }
+      for (const a of this.ambient) {
+        a.t += dt;
+        const k = a.t / a.life;
+        if (k >= 1) continue;
+        if (a.weed) {
+          a.x += a.vx * dt;
+          const onMesa = a.x > m.x && a.x < m.x + m.w;
+          if (onMesa && a.y >= m.y - a.r - 3 && a.vy >= 0) {
+            a.vy = -(120 + Math.random() * 130);   // bounce off the hardpan
+          } else {
+            a.vy += 900 * dt;                      // off the lip: tumble away
+          }
+          a.y = Math.min(a.y + a.vy * dt, onMesa ? m.y - a.r : 1e9);
+          a.rot -= dt * 6;
+          if (a.y > m.y + 900) { a.t = a.life; continue; }
+          ctx.save();
+          ctx.translate(a.x, a.y);
+          ctx.rotate(a.rot);
+          ctx.strokeStyle = 'rgba(150, 112, 58, .8)';
+          ctx.lineWidth = 1.8;
+          ctx.beginPath();
+          ctx.arc(0, 0, a.r, 0, 7);
+          for (let i = 0; i < 4; i++) {
+            const ang = i * Math.PI / 4;
+            ctx.moveTo(Math.cos(ang) * a.r, Math.sin(ang) * a.r);
+            ctx.lineTo(-Math.cos(ang) * a.r, -Math.sin(ang) * a.r);
+          }
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          a.x += a.vx * dt;
+          const y = a.y + Math.sin(t * 1.4 + a.ph) * a.sway;
+          ctx.globalAlpha = 0.28 * Math.sin(k * Math.PI);
+          ctx.fillStyle = '#f4dfb0';
+          ctx.fillRect(a.x, y, a.r * 2.2, a.r);
+        }
+      }
+      ctx.globalAlpha = 1;
+      this.ambient = this.ambient.filter(a => a.t < a.life);
+      return;
+    }
     if (this.theme.ambient === 'rain') {
       while (this.ambient.length < 64) {
         this.ambient.push({
@@ -1386,6 +1657,35 @@ function buildCityScape(style) {
   if (!neon && !fires.length) fires.push({ x: -260, y: -420, lag: 0.5 });
   return { style, baseY, layers, fires };
 }
+// Deterministic badlands: three parallax rows of flat-top buttes fading
+// into the noon haze, saguaros and a windmill in the near row. Same seed
+// every time, so all players squint at the same desert.
+function buildMesas() {
+  let s = 8451;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const baseY = 430;
+  const layers = [
+    { lag: 0.85, fill: '#cbb896', strata: null, props: false, buttes: [], cacti: [] },
+    { lag: 0.68, fill: '#bd9a70', strata: 'rgba(122, 81, 56, .25)', props: false, buttes: [], cacti: [] },
+    { lag: 0.5,  fill: '#a97e54', strata: 'rgba(90, 58, 38, .35)', props: true, propFill: '#6e4a30', buttes: [], cacti: [] },
+  ];
+  for (const [li, layer] of layers.entries()) {
+    let x = -1600 + rnd() * 120;
+    while (x < 1600) {
+      const w = 280 + rnd() * 420;
+      const h = 90 + rnd() * (150 + li * 60);
+      layer.buttes.push({ x, w, h, skirt: 40 + rnd() * 70 });
+      x += w + 140 + rnd() * 320;
+    }
+    if (layer.props) {
+      for (let i = 0; i < 7; i++) {
+        layer.cacti.push({ x: -1500 + rnd() * 3000, h: 40 + rnd() * 46, w: 5 + rnd() * 3 });
+      }
+    }
+  }
+  return { baseY, layers, mill: { x: -900 + Math.floor(8451 % 7) * 260, h: 130 } };
+}
+
 function cross(ctx, x, y, s) {
   ctx.beginPath();
   ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s);

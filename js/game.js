@@ -24,7 +24,7 @@ export const MAPS = {
     respawnY: -320,
   },
   flatlands: {
-    name: 'Flatlands',
+    name: 'Dust Divide',
     main: { x: -520, y: 0, w: 1040, h: 46 },             // wide open ground, no plats
     plats: [],
     blast: { l: -1300, r: 1300, t: -950, b: 500 },
