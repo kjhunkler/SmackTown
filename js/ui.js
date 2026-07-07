@@ -500,7 +500,7 @@ function pickAwards(rows) {
   return out;
 }
 
-export function renderResults(players, winnerId, finalFighters) {
+export function renderResults(players, winnerId, finalFighters, { myId = null, onCopy = null } = {}) {
   $('#results-title').textContent = winnerId
     ? `${esc(players.find(p => p.id === winnerId)?.name || '???')} wins!`
     : players.length === 1 ? 'Practice complete!'
@@ -523,7 +523,7 @@ export function renderResults(players, winnerId, finalFighters) {
     const li = document.createElement('li');
     li.innerHTML = `
       <span class="r-score">${p.id === winnerId ? '🏆' : '#' + (i + 1)}</span>
-      <span class="r-swatch" style="background:${p.color}"></span>
+      <span class="r-fig"></span>
       <span class="r-col">
         <span class="r-name">${esc(p.name)}</span>
         ${chips ? `<span class="r-awards">${chips}</span>` : ''}
@@ -532,6 +532,19 @@ export function renderResults(players, winnerId, finalFighters) {
         <span>${f ? (f.stocks > 0 ? f.stocks + (f.stocks === 1 ? ' stock' : ' stocks') + ' left' : 'KO’d') : ''}</span>
         <span>👊 ${s.ko} KO${s.ko === 1 ? '' : 's'} · 💥 ${Math.round(s.dmg)} dmg</span>
       </span>`;
+    li.querySelector('.r-fig').appendChild(fighterThumb(p.color, p.hat));
+    if (onCopy && p.id !== myId) {
+      const copy = document.createElement('button');
+      copy.className = 'r-copy';
+      copy.title = `Copy ${p.name} to my characters`;
+      copy.textContent = '📋';
+      copy.addEventListener('click', () => {
+        if (!onCopy(p)) return;
+        copy.textContent = '✓';
+        copy.disabled = true;
+      });
+      li.querySelector('.r-fig').appendChild(copy);
+    }
     list.appendChild(li);
   });
 }

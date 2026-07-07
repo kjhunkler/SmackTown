@@ -282,7 +282,7 @@ export function derivedStats(build) {
 // Nicknamed presets the player can stash and swap between in the workshop.
 
 const LOADOUT_KEY = 'smacktown.loadouts.v1';
-export const MAX_LOADOUTS = 8;
+export const MAX_LOADOUTS = 24;
 
 export function validLoadoutName(name) {
   const n = String(name || '').trim();

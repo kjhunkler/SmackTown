@@ -1219,7 +1219,7 @@ class Session {
     this.ended = true;
     setTimeout(() => {
       this.stop();
-      UI.renderResults(this.players, winnerId, finalFighters);
+      UI.renderResults(this.players, winnerId, finalFighters, { myId: this.myId, onCopy: copyCharacter });
       $('#results-again').textContent = this.mode === 'solo' ? 'Rematch' : 'Back to Lobby';
       UI.showScreen('results');
       session = null;
@@ -1234,6 +1234,45 @@ class Session {
       }
     }, 1600);
   }
+}
+
+// ---------------- results: copy a character off the leaderboard ----------------
+
+// A copied character keeps its owner's name unless I already have a saved
+// build called that — then it gets bumped to "Name 2", "Name 3", …
+function uniqueLoadoutName(raw) {
+  const base = String(raw).replace(/[^\w \-'!.]/g, '').trim().slice(0, 16) || 'Fighter';
+  const taken = new Set(loadLoadouts().map(l => l.name.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) {
+    const tag = ' ' + n;
+    const name = base.slice(0, 16 - tag.length).trimEnd() + tag;
+    if (!taken.has(name.toLowerCase())) return name;
+  }
+}
+
+// Adopt a leaderboard player wholesale: their hat lands in my library (reused
+// if I already own the same art), and their color + build + name become a new
+// saved character. Returns true so the button can flip to a checkmark.
+function copyCharacter(p) {
+  const art = sanitizeHat(p.hat);
+  let hatId = null;
+  if (art) {
+    hatId = loadHats().find(h => h.art === art)?.id || null;
+    if (!hatId) {
+      const res = saveHat(art);
+      if (!res.ok) { UI.banner(res.error, 'bad'); return false; }
+      hatId = res.id;
+      publishHats();
+    }
+  }
+  const name = uniqueLoadoutName(p.name);
+  const res = saveLoadout(name, p.color, p.build, hatId);
+  if (!res.ok) { UI.banner(res.error, 'bad'); return false; }
+  UI.banner(name === String(p.name).trim()
+    ? `Copied ${p.name} to your characters! 🥊`
+    : `Copied ${p.name} to your characters as “${name}”!`, 'good');
+  return true;
 }
 
 // ---------------- game screen buttons ----------------
