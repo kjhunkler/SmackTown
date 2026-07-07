@@ -89,7 +89,36 @@ const players = [
   check('rebind of unknown id falls back to addFighter', g.rebindFighter('ZZZ', { id: 'D', name: 'Dee', color: '#fff', build: build() }) !== null && g.fighters.length === 4);
 }
 
-// --- 6. sim still runs & finishes with scores ---
+// --- 6. dash attack: momentum-gated tap conversion ---
+{
+  const g = new Game(players, 7, 'arena');
+  const [a, b, c] = g.fighters;
+  a.grounded = true; a.vx = 380; a.facing = 1;
+  g._startAttack(a, { kind: 'tap', dx: 1, dy: 0 });
+  check('running tap becomes dash attack', a.atk === 'dash');
+  check('dash attack keeps the slide', a.vx === 380);
+  check('dash launches along the run', a.atkDir && a.atkDir.x === 1);
+  b.grounded = true; b.vx = 0;
+  g._startAttack(b, { kind: 'tap', dx: 1, dy: 0 });
+  check('standstill tap stays a jab', b.atk === 'jab');
+  check('jab still plants (speed cut)', b.vx === 0);
+  c.grounded = true; c.vx = 380; c.facing = 1;
+  g._startAttack(c, { kind: 'tap', dx: -1, dy: 0 });
+  check('backward tap opts out of the dash', c.atk === 'jab');
+}
+
+// --- 7. unknown attack names (newer peer) fizzle instead of crashing ---
+{
+  const g = new Game(players, 7, 'arena');
+  const a = g.fighters[0];
+  a.state = 'attack'; a.atk = 'from-the-future'; a.stateT = 0.05;
+  let ok = true;
+  try { g.hitboxFor(a); g._resolveAttacks(); g.step(); } catch (_) { ok = false; }
+  check('unknown attack never throws', ok);
+  check('unknown attack fizzles to neutral', a.atk === null && a.state !== 'attack');
+}
+
+// --- 8. sim still runs & finishes with scores ---
 {
   const g = new Game(players.slice(0, 2), 7, 'arena');
   const [a, b] = g.fighters;

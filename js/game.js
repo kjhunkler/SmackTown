@@ -140,6 +140,10 @@ const CRUSH_KB_TAKEN = 1.3;         // knockback penalty while crushed
 // attack archetypes: [damage, baseKb, kbScale, startup, active, recover, reach, angle]
 const ATTACKS = {
   jab:    { dmg: 4,  kb: 130, ks: 9,  startup: .05, active: .09, rec: .12, rx: 52, ry: 26, ang: -10 },
+  // dash attack: a tap thrown at run speed. Slides with your momentum and
+  // launches up-forward for juggles, but carries the longest recovery of
+  // any normal — whiff it and you slide past your target wide open.
+  dash:   { dmg: 8,  kb: 200, ks: 15, startup: .07, active: .12, rec: .30, rx: 56, ry: 30, ang: -50 },
   fsmash: { dmg: 13, kb: 240, ks: 22, startup: .16, active: .10, rec: .26, rx: 68, ry: 34, ang: -35 },
   usmash: { dmg: 11, kb: 230, ks: 21, startup: .14, active: .11, rec: .24, rx: 46, ry: 60, ang: -85, up: true },
   dsmash: { dmg: 10, kb: 210, ks: 19, startup: .13, active: .10, rec: .24, rx: 76, ry: 26, ang: -160, both: true },
@@ -158,6 +162,11 @@ const ATTACKS = {
 const CHARGE_MAX = 1.2;              // seconds to full charge (auto-fire cap)
 const CHARGE_DMG = 0.5;              // +50% damage at full charge
 const CHARGE_KB = 0.35;              // +35% knockback at full charge
+
+// A grounded tap converts to a dash attack above this speed (~85% of base
+// run, same bar the momentum augment uses) — you need a genuine run-up.
+const DASH_ATK_MIN = 320;
+const DASH_ATK_FRICTION = 0.3;       // slide keeps rolling through the swing
 
 const ABILITY_DEFS = {
   fireball:  { cd: 3.0 },
@@ -404,7 +413,9 @@ export class Game {
           f.facing = Math.sign(inp.mx) || f.facing;
           f.state = 'run';
         } else {
-          f.vx = approach(f.vx, 0, FRICTION * TICK);
+          // a dash attack slides on reduced friction — the whiff carries you
+          const fr = inAttack && f.atk === 'dash' ? FRICTION * DASH_ATK_FRICTION : FRICTION;
+          f.vx = approach(f.vx, 0, fr * TICK);
           if (canAct && !ducking) f.state = 'idle';
         }
       } else {
@@ -444,10 +455,10 @@ export class Game {
       inp.atk = null; inp.bufA = 0;
     }
 
-    // attack state machine
+    // attack state machine (unknown names — a newer peer's move — fizzle)
     if (inAttack) {
       const a = ATTACKS[f.atk];
-      const total = a.startup + a.active + a.rec;
+      const total = a ? a.startup + a.active + a.rec : 0;
       if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.lowJab = false; f.atkHit.clear(); f.chg = 0; f.atkSpd = 0; }
     }
     if (inHitstun && f.stateT >= f.hitstunFor) { f.state = 'air'; }
@@ -632,6 +643,14 @@ export class Game {
       name = (!dx && !dy && !f.grounded) ? 'nspin' : 'jab';
       // grounded straight-down tap: angle it forward so it isn't in the floor
       if (dy > 0 && !dx && f.grounded) dx = f.facing;
+      // tap at run speed: dash attack — the jab rides the momentum instead
+      // of planting. Vertical or against-the-run aims fall through to the
+      // normal jab, so aiming backward is the escape hatch to stop and poke.
+      if (name === 'jab' && !fromDuck && f.grounded && !dy
+          && Math.abs(f.vx) >= DASH_ATK_MIN && (!dx || dx === Math.sign(f.vx))) {
+        name = 'dash';
+        dx = Math.sign(f.vx);
+      }
     } else if (dy < 0 && !dx) name = 'usmash';
     else if (dy > 0 && !dx) name = f.grounded ? 'dsmash' : 'dair';
     else name = 'fsmash';
@@ -644,7 +663,7 @@ export class Game {
     f.lowJab = fromDuck && name === 'jab';
     f.atkHit.clear();
     f.atkSpd = Math.hypot(f.vx, f.vy);   // momentum: judge the run-up, not the plant
-    if (f.grounded) f.vx *= 0.35;
+    if (f.grounded && name !== 'dash') f.vx *= 0.35;   // dash attacks keep the slide
     // upward swipe in the air boosts you like an air jump — and costs none.
     // The lift itself is on a short cooldown so chained up-smashes can't be
     // spammed to fly forever; the swing still comes out either way.
@@ -839,11 +858,12 @@ export class Game {
     // charging smash: telegraph with a 0..1 charge level for the renderer
     if (f.state === 'charge' && f.atk) {
       const a = ATTACKS[f.atk];
+      if (!a) return null;              // move from a newer version — no box
       return { ...meleeHitbox(f, a, f.atkDir), active: false, chg: clamp(f.stateT / CHARGE_MAX, 0, 1) };
     }
     if (f.state === 'attack' && f.atk) {
       const a = ATTACKS[f.atk];
-      if (f.stateT <= a.startup + a.active) {
+      if (a && f.stateT <= a.startup + a.active) {
         return { ...meleeHitbox(f, a, f.atkDir), active: f.stateT >= a.startup, round: !!a.rehit };
       }
     }
@@ -863,7 +883,7 @@ export class Game {
       // normal attacks during active window
       if (f.state === 'attack' && f.atk) {
         const a = ATTACKS[f.atk];
-        if (f.stateT >= a.startup && f.stateT <= a.startup + a.active) {
+        if (a && f.stateT >= a.startup && f.stateT <= a.startup + a.active) {
           let spec = a;
           if (a.rehit) {
             // multi-hit: split the active window into rehit-sized slices and
@@ -1251,6 +1271,11 @@ export function restoreFighter(f, row) {
     f.grounded = false;
   }
   if (f.atk && f.state !== 'attack' && f.state !== 'charge') f.atk = null;
+  // a move this build doesn't know (newer peer): drop to neutral, not crash
+  if (f.atk && !ATTACKS[f.atk]) {
+    f.atk = null;
+    f.state = f.grounded ? 'idle' : 'air';
+  }
   if (!f.atk) { f.atkDir = null; f.lowJab = false; f.chg = 0; f.chgAim = null; }
 }
 
