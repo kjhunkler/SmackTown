@@ -32,13 +32,16 @@ export const MAPS = {
     respawnY: -320,
   },
   skyline: {
-    name: 'Skyline',
-    main: { x: -250, y: 0, w: 500, h: 46 },              // tight ground, aerial towers
+    name: 'Neon Heights',
+    main: { x: -250, y: 0, w: 500, h: 46 },              // mega-tower helipad, aerial towers
     plats: [
-      { x: -350, y: -160, w: 150 },
-      { x: 200,  y: -160, w: 150 },
-      { x: -80,  y: -300, w: 160 },
-      { x: -80,  y: -440, w: 160 },
+      { x: -350, y: -160, w: 150 },                      // west rooftop terrace
+      { x: 200,  y: -160, w: 150 },                      // east rooftop terrace
+      { x: -80,  y: -300, w: 160 },                      // billboard catwalk
+      // sky-tram: a hover-shuttle gliding the high lane between the towers
+      { x: -80,  y: -450, w: 160, move: { dx: 190, period: 11 } },
+      // window-washer gondola: rides its drone cables off the west lip
+      { x: -460, y: -210, w: 110, move: { dy: 150, period: 9 } },
     ],
     blast: { l: -1100, r: 1100, t: -1050, b: 500 },
     spawns: [ -180, 180, -60, 60 ],

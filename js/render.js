@@ -8,8 +8,9 @@ import { SFX } from './sfx.js';
 
 const F_W = 46, F_H = 64;
 
-// Per-map look: background gradient, celestial motif, star behavior, and
-// stage palette. Geometry comes from MAPS in game.js; looks live here.
+// Per-map look: background gradient, celestial motif, star behavior, stage
+// palette, and optional ambient weather. Geometry comes from MAPS in
+// game.js; looks live here.
 const THEMES = {
   battlefield: {
     sky: ['#141a38', '#1c1430', '#090a14'],
@@ -26,16 +27,18 @@ const THEMES = {
     plat: '#6b3a40', platTop: '#8a4f52',
   },
   skyline: {
-    sky: ['#04141c', '#0a2a30', '#071018'],
-    motif: 'aurora',
-    stars: 1,
-    deck: '#173a42', lip: '#20545c', trim: '#3ddca4',
-    plat: '#20545c', platTop: '#2e7880',
+    sky: ['#060a1c', '#101540', '#1c0e38'],
+    motif: 'neonmoon',
+    stars: 0.35,
+    ambient: 'rain',
+    deck: '#20263f', lip: '#303a63', trim: '#00e5ff',
+    plat: '#303a63', platTop: '#48548c',
   },
   ruins: {
     sky: ['#241521', '#54222a', '#120c10'],
     motif: 'eclipse',
     stars: 0.45,
+    ambient: 'embers',
     deck: '#3f3a42', lip: '#5a525c', trim: '#d0a35a',
     plat: '#5a525c', platTop: '#7a6f78',
   },
@@ -66,7 +69,7 @@ export class Renderer {
     this.flash = new Map();          // fighter id -> hit-flash time left
     this.auras = new Map();          // fighter id -> {kind, t} bubble/counter overlays
     this.rings = [];                 // expanding shock rings {x,y,r0,r1,t,life,color,w}
-    this.embers = [];                // ambient drifting embers/ash (ruins)
+    this.ambient = [];               // ambient weather: embers & ash (ruins), rain (neon heights)
     this.setMap(DEFAULT_MAP);
     this.stars = Array.from({ length: 90 }, () => ({
       x: Math.random() * 2900 - 1450,
@@ -82,8 +85,10 @@ export class Renderer {
     this.mapId = MAPS[id] ? id : DEFAULT_MAP;
     this.stage = MAPS[this.mapId];
     this.theme = THEMES[this.mapId] || THEMES[DEFAULT_MAP];
-    this.embers = [];
-    this.city = this.mapId === 'ruins' ? buildCity() : null;
+    this.ambient = [];
+    this.city = this.mapId === 'ruins' ? buildCityScape('ruins')
+      : this.mapId === 'skyline' ? buildCityScape('neon')
+      : null;
   }
 
   _resize() {
@@ -326,7 +331,7 @@ export class Renderer {
 
     if (this.city) this._cityBackdrop(ctx, t);
     this._stage(ctx, view.tick ?? 0, t);
-    if (this.city) this._embers(ctx, dt, t);
+    if (this.theme.ambient) this._ambient(ctx, dt, t);
 
     // tick down hit flashes
     for (const [id, v] of this.flash) {
@@ -527,6 +532,33 @@ export class Renderer {
         }
         ctx.stroke();
       }
+    } else if (this.theme.motif === 'neonmoon') {
+      // oversized rain-haloed moon hanging over the metropolis
+      const R = r * 1.9;
+      const g = ctx.createRadialGradient(px, py, R * 0.5, px, py, R * 2.6);
+      g.addColorStop(0, 'rgba(150, 200, 255, .30)');
+      g.addColorStop(0.5, 'rgba(120, 150, 255, .10)');
+      g.addColorStop(1, 'rgba(120, 150, 255, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - R * 2.6, py - R * 2.6, R * 5.2, R * 5.2);
+      ctx.fillStyle = '#cfe0ff';
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath(); ctx.arc(px, py, R, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(140, 160, 210, .5)';       // maria
+      ctx.beginPath(); ctx.arc(px - R * 0.3, py - R * 0.15, R * 0.3, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(px + R * 0.25, py + R * 0.3, R * 0.2, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(px + R * 0.1, py - R * 0.42, R * 0.13, 0, 7); ctx.fill();
+      // cloud shreds dragging across the face
+      ctx.fillStyle = this.theme.sky[1];
+      ctx.globalAlpha = 0.75;
+      for (let i = 0; i < 3; i++) {
+        const cx = px + (((t * (14 + i * 5) + i * 300) % (R * 6)) - R * 3);
+        const cy = py - R * 0.4 + i * R * 0.42;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, R * (0.7 - i * 0.12), R * 0.11, 0, 0, 7);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
     } else if (this.theme.motif === 'eclipse') {
       // eclipsed sun: searing corona bleeding around a black disc
       const breathe = 1 + Math.sin(t * 0.8) * 0.05;
@@ -555,6 +587,7 @@ export class Renderer {
   _stage(ctx, tickF = 0, t = 0) {
     const plats = platsAt(this.mapId, tickF);
     if (this.mapId === 'ruins') { this._ruinsStage(ctx, plats, t); return; }
+    if (this.mapId === 'skyline') { this._skylineStage(ctx, plats, tickF, t); return; }
     const th = this.theme;
     const m = this.stage.main;
     // main platform with themed deck & lip
@@ -578,6 +611,7 @@ export class Renderer {
   // rubble chunks bobbing on failing grav-thrusters off each lip.
   _cityBackdrop(ctx, t) {
     const c = this.city;
+    if (c.style === 'neon') { this._neonBackdrop(ctx, c, t); return; }
     for (const layer of c.layers) {
       const ox = this.cam.x * layer.lag, oy = this.cam.y * layer.lag * 0.85;
       ctx.fillStyle = layer.fill;
@@ -631,6 +665,88 @@ export class Renderer {
         ctx.fillStyle = '#4a3f4a';
         ctx.beginPath(); ctx.arc(sx, sy, 9 + k * 30, 0, 7); ctx.fill();
       }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Neon Heights: intact mega-towers in three parallax rows — windows
+  // burning through the rain, neon edge strips, holo-billboards, beacons,
+  // and air traffic threading the lanes between the spires.
+  _neonBackdrop(ctx, c, t) {
+    for (const layer of c.layers) {
+      const ox = this.cam.x * layer.lag, oy = this.cam.y * layer.lag * 0.85;
+      ctx.fillStyle = layer.fill;
+      for (const b of layer.bldgs) {
+        const x = b.x + ox, yb = c.baseY + oy, yt = b.yTop + oy;
+        ctx.fillRect(x, yt, b.w, yb - yt);
+        if (b.spire) {                             // antenna + warning beacon
+          ctx.strokeStyle = layer.fill;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(x + b.w / 2, yt); ctx.lineTo(x + b.w / 2, yt - 52);
+          ctx.stroke();
+          if (Math.sin(t * 2.4 + b.x) > 0.4) {
+            ctx.fillStyle = '#ff3d5e';
+            ctx.beginPath(); ctx.arc(x + b.w / 2, yt - 56, 3.5, 0, 7); ctx.fill();
+            ctx.fillStyle = layer.fill;
+          }
+        }
+      }
+      if (!layer.windows) continue;
+      for (const b of layer.bldgs) {
+        const x = b.x + ox, yt = b.yTop + oy, yb = c.baseY + oy;
+        for (const w of b.wins) {
+          const fl = 0.55 + 0.45 * Math.sin(t * w.spd + w.ph);
+          ctx.globalAlpha = Math.min(0.8, Math.max(0.12, fl));
+          ctx.fillStyle = w.c;
+          ctx.fillRect(x + w.dx, yt + w.dy, 8, 12);
+        }
+        ctx.globalAlpha = 1;
+        if (b.strip) {                             // neon edge strip + spill
+          const sx = x + (b.strip.side > 0 ? b.w - 4 : 1);
+          ctx.globalAlpha = 0.25;
+          ctx.fillStyle = b.strip.color;
+          ctx.fillRect(sx - 2, yt + 6, 8, yb - yt - 12);
+          ctx.globalAlpha = 0.9;
+          ctx.fillRect(sx, yt + 6, 2.5, yb - yt - 12);
+          ctx.globalAlpha = 1;
+        }
+        if (b.board) {                             // holo-billboard
+          const bx = x + b.board.dx, by = yt + b.board.dy;
+          const pulse = 0.55 + 0.45 * Math.sin(t * 1.1 + b.board.ph);
+          ctx.globalAlpha = 0.14 * pulse;
+          ctx.fillStyle = b.board.c1;
+          ctx.fillRect(bx - 8, by - 8, b.board.w + 16, b.board.h + 16);
+          ctx.globalAlpha = 0.55 + 0.3 * pulse;
+          const g = ctx.createLinearGradient(bx, by, bx, by + b.board.h);
+          g.addColorStop(0, b.board.c1);
+          g.addColorStop(1, b.board.c2);
+          ctx.fillStyle = g;
+          ctx.fillRect(bx, by, b.board.w, b.board.h);
+          ctx.globalAlpha = 0.25;                  // scanlines
+          ctx.fillStyle = '#061020';
+          for (let sy = by + 3; sy < by + b.board.h; sy += 7) ctx.fillRect(bx, sy, b.board.w, 2);
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+    // air traffic: running lights sliding the lanes between the spires
+    for (let i = 0; i < 6; i++) {
+      const dir = i % 2 ? 1 : -1;
+      const lag = 0.5 + (i % 3) * 0.1;
+      const span = 3400;
+      const prog = ((t * (60 + (i % 3) * 38) + i * 700) % span) - span / 2;
+      const x = dir * prog + this.cam.x * lag;
+      const y = -420 + i * 64 + Math.sin(t * 0.5 + i * 2.2) * 16 + this.cam.y * lag * 0.85;
+      ctx.globalAlpha = 0.45;                      // light trail
+      ctx.strokeStyle = i % 2 ? '#ff9ecf' : '#8fd3ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x - dir * 46, y);
+      ctx.stroke();
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill();
       ctx.globalAlpha = 1;
     }
   }
@@ -789,11 +905,219 @@ export class Renderer {
     }
   }
 
-  // Ambient embers rising off the burning city and ash sifting down.
-  _embers(ctx, dt, t) {
-    while (this.embers.length < 44) {
+  // Neon Heights: a mega-tower helipad over a rain-slick metropolis.
+  // Rooftop terraces flank the pad, a holo-ad catwalk hangs mid-air, a
+  // sky-tram glides the high lane, and a washer gondola rides its cables.
+  _skylineStage(ctx, plats, tickF, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // mega-tower shaft carrying the pad down into the streets
+    ctx.fillStyle = '#141830';
+    ctx.fillRect(m.x + 46, m.y + 30, m.w - 92, 450);
+    ctx.fillStyle = '#0d1122';                     // inset core
+    ctx.fillRect(m.x + 92, m.y + 30, m.w - 184, 450);
+    for (let i = 0; i < 4; i++) {                  // lit shaft floors
+      const wy = m.y + 74 + i * 96;
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t * 0.7 + i * 2.6);
+      ctx.fillStyle = '#ffc46a';
+      for (let wx = m.x + 104; wx < m.x + m.w - 110; wx += 34) {
+        ctx.fillRect(wx, wy, 10, 14);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.globalAlpha = 0.7;                         // neon corner pipes
+    ctx.fillStyle = th.trim;
+    ctx.fillRect(m.x + 46, m.y + 30, 3, 450);
+    ctx.fillRect(m.x + m.w - 49, m.y + 30, 3, 450);
+    ctx.globalAlpha = 1;
+
+    // helipad deck
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.fillStyle = th.lip;
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.35)';           // deck panel seams
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const fx of [0.25, 0.5, 0.75]) {
+      ctx.moveTo(m.x + m.w * fx, m.y + 14);
+      ctx.lineTo(m.x + m.w * fx, m.y + m.h + 22);
+    }
+    ctx.stroke();
+    // chase lights racing along the lip toward the pad center
+    for (let i = 0; i < 12; i++) {
+      const lx = m.x + 14 + i * (m.w - 28) / 11;
+      const on = Math.sin(t * 5 - Math.abs(i - 5.5) * 0.9) > 0.2;
+      ctx.globalAlpha = on ? 0.9 : 0.18;
+      ctx.fillStyle = on ? '#aef4ff' : th.trim;
+      ctx.fillRect(lx - 2.5, m.y + 2, 5, 3.5);
+    }
+    ctx.globalAlpha = 1;
+    const cxH = m.x + m.w / 2;                     // glowing 'H' pad sign
+    ctx.fillStyle = th.trim;
+    ctx.globalAlpha = 0.14;
+    ctx.fillRect(cxH - 30, m.y + 22, 60, 46);
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(cxH - 22, m.y + 26, 7, 38);
+    ctx.fillRect(cxH + 15, m.y + 26, 7, 38);
+    ctx.fillRect(cxH - 15, m.y + 42, 30, 6);
+    ctx.globalAlpha = 1;
+
+    for (const [i, p] of plats.entries()) {
+      const spec = this.stage.plats[i];
+      if (spec.move?.dx) {
+        // sky-tram: hover shuttle skimming its light-rail lane
+        const cx = p.x + p.w / 2;
+        ctx.strokeStyle = 'rgba(0, 229, 255, .16)';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(spec.x - spec.move.dx - 40, p.y + 13);
+        ctx.lineTo(spec.x + spec.w + spec.move.dx + 40, p.y + 13);
+        ctx.stroke();
+        ctx.fillStyle = '#232a4d';                  // shuttle hull
+        roundRect(ctx, p.x, p.y, p.w, 26, 12); ctx.fill();
+        ctx.fillStyle = '#39437a';
+        ctx.fillRect(p.x + 6, p.y + 2, p.w - 12, 4);
+        ctx.globalAlpha = 0.85;                     // cabin windows
+        ctx.fillStyle = '#ffd76a';
+        for (let wx = p.x + 14; wx < p.x + p.w - 18; wx += 24) {
+          ctx.fillRect(wx, p.y + 9, 14, 8);
+        }
+        ctx.globalAlpha = 1;
+        if (Math.sin(t * 4.6) > 0) {                // wingtip strobes
+          ctx.fillStyle = '#ff3d5e';
+          ctx.beginPath(); ctx.arc(p.x + 3, p.y + 13, 3, 0, 7); ctx.fill();
+          ctx.fillStyle = '#3dff7c';
+          ctx.beginPath(); ctx.arc(p.x + p.w - 3, p.y + 13, 3, 0, 7); ctx.fill();
+        }
+        const wash = 0.6 + 0.4 * Math.sin(t * 9);   // thruster wash
+        const g = ctx.createRadialGradient(cx, p.y + 30, 4, cx, p.y + 30, 60);
+        g.addColorStop(0, `rgba(0, 229, 255, ${(0.4 * wash).toFixed(3)})`);
+        g.addColorStop(1, 'rgba(0, 229, 255, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - 60, p.y + 18, 120, 70);
+      } else if (spec.move?.dy) {
+        // window-washer gondola riding its cables
+        const topY = -700;
+        ctx.strokeStyle = '#3a4468';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(p.x + 10, p.y); ctx.lineTo(p.x + 18, topY);
+        ctx.moveTo(p.x + p.w - 10, p.y); ctx.lineTo(p.x + p.w - 18, topY);
+        ctx.stroke();
+        ctx.fillStyle = '#2a3153';                  // winch block overhead
+        roundRect(ctx, p.x + p.w / 2 - 30, topY - 10, 60, 14, 5); ctx.fill();
+        ctx.fillStyle = '#232a4d';                  // bucket
+        roundRect(ctx, p.x, p.y, p.w, 30, 5); ctx.fill();
+        ctx.fillStyle = '#39437a';
+        ctx.fillRect(p.x + 4, p.y + 1, p.w - 8, 3);
+        ctx.fillStyle = '#ffb02e';                  // hazard stripe
+        for (let sx = p.x + 4; sx < p.x + p.w - 8; sx += 18) {
+          ctx.fillRect(sx, p.y + 21, 9, 5);
+        }
+        const lam = 0.55 + 0.2 * Math.sin(t * 1.7); // work lamp pooling down
+        const g = ctx.createRadialGradient(p.x + p.w / 2, p.y + 34, 6, p.x + p.w / 2, p.y + 34, 70);
+        g.addColorStop(0, `rgba(255, 214, 106, ${(0.4 * lam).toFixed(3)})`);
+        g.addColorStop(1, 'rgba(255, 214, 106, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(p.x + p.w / 2 - 70, p.y + 24, 140, 80);
+      } else if (i === 2) {
+        // billboard catwalk: grated walkway over a giant holo-ad
+        ctx.fillStyle = th.plat;
+        roundRect(ctx, p.x, p.y, p.w, 10, 4); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,.4)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let gx = p.x + 8; gx < p.x + p.w - 4; gx += 12) {
+          ctx.moveTo(gx, p.y + 2); ctx.lineTo(gx - 5, p.y + 9);
+        }
+        ctx.stroke();
+        const bx = p.x + 12, bw = p.w - 24, by = p.y + 18, bh = 52;
+        ctx.strokeStyle = '#3a4468';                // hanger struts
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(bx + 8, p.y + 10); ctx.lineTo(bx + 8, by);
+        ctx.moveTo(bx + bw - 8, p.y + 10); ctx.lineTo(bx + bw - 8, by);
+        ctx.stroke();
+        const cyc = 0.5 + 0.5 * Math.sin(t * 1.3);
+        ctx.globalAlpha = 0.18 + 0.12 * cyc;        // spill glow
+        ctx.fillStyle = '#ff2e8a';
+        ctx.fillRect(bx - 10, by - 8, bw + 20, bh + 16);
+        ctx.globalAlpha = 0.85;
+        const bg = ctx.createLinearGradient(bx, by, bx + bw, by + bh);
+        bg.addColorStop(0, '#ff2e8a');
+        bg.addColorStop(1, '#00e5ff');
+        ctx.fillStyle = bg;
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.globalAlpha = 0.9;                      // ad copy
+        ctx.fillStyle = '#eaf7ff';
+        ctx.font = 'italic 900 20px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('SMACK', bx + bw / 2, by + 22);
+        ctx.fillText('TOWN', bx + bw / 2, by + 43);
+        ctx.globalAlpha = 0.3;                      // scanlines
+        ctx.fillStyle = '#061020';
+        for (let sy = by + 3; sy < by + bh; sy += 6) ctx.fillRect(bx, sy, bw, 2);
+        ctx.globalAlpha = 1;
+      } else {
+        // rooftop terrace: slab, glass railing, and a humming AC unit
+        ctx.fillStyle = th.plat;
+        roundRect(ctx, p.x, p.y, p.w, 12, 5); ctx.fill();
+        ctx.fillStyle = th.platTop;
+        ctx.fillRect(p.x + 5, p.y + 1, p.w - 10, 3);
+        const out = i === 0 ? 1 : -1;               // rail hugs the outer edge
+        const rx = i === 0 ? p.x + 6 : p.x + p.w - 6;
+        ctx.strokeStyle = 'rgba(159, 216, 255, .5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(rx, p.y); ctx.lineTo(rx, p.y - 22);
+        ctx.moveTo(rx + out * 30, p.y); ctx.lineTo(rx + out * 30, p.y - 22);
+        ctx.moveTo(rx, p.y - 22); ctx.lineTo(rx + out * 34, p.y - 22);
+        ctx.stroke();
+        ctx.fillStyle = '#2a3153';                  // AC husk
+        const ax = i === 0 ? p.x + p.w - 36 : p.x + 10;
+        ctx.fillRect(ax, p.y - 13, 26, 13);
+        ctx.globalAlpha = Math.sin(t * 3 + i * 2) > 0 ? 0.9 : 0.2;
+        ctx.fillStyle = th.trim;                    // status LED
+        ctx.fillRect(ax + 18, p.y - 9, 3, 3);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // Ambient weather, per theme: embers & ash rising off the burning ruins,
+  // or neon-lit rain sheeting down over the heights.
+  _ambient(ctx, dt, t) {
+    if (this.theme.ambient === 'rain') {
+      while (this.ambient.length < 64) {
+        this.ambient.push({
+          x: this.cam.x + (Math.random() - 0.5) * 2600,
+          y: this.cam.y - 750 - Math.random() * 500,
+          vx: -140, vy: 1150 + Math.random() * 350,
+          life: 1.4, t: Math.random() * 0.4,
+        });
+      }
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = '#9fd8ff';
+      for (const d of this.ambient) {
+        d.t += dt;
+        d.x += d.vx * dt; d.y += d.vy * dt;
+        const k = d.t / d.life;
+        if (k >= 1) continue;
+        ctx.globalAlpha = 0.08 + 0.16 * Math.sin(k * Math.PI);
+        ctx.beginPath();
+        ctx.moveTo(d.x, d.y);
+        ctx.lineTo(d.x - d.vx * 0.016, d.y - d.vy * 0.016);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      this.ambient = this.ambient.filter(d => d.t < d.life);
+      return;
+    }
+    // embers rising off the burning city & ash sifting down
+    while (this.ambient.length < 44) {
       const ash = Math.random() < 0.35;
-      this.embers.push({
+      this.ambient.push({
         ash,
         x: this.cam.x + (Math.random() - 0.5) * 2400,
         y: ash ? this.cam.y - 700 - Math.random() * 300 : this.cam.y + 420 + Math.random() * 320,
@@ -802,7 +1126,7 @@ export class Renderer {
         life: 5 + Math.random() * 5, t: 0, r: ash ? 1.6 : 2.2,
       });
     }
-    for (const e of this.embers) {
+    for (const e of this.ambient) {
       e.t += dt;
       e.y += e.vy * dt;
       const k = e.t / e.life;
@@ -814,7 +1138,7 @@ export class Renderer {
       ctx.fillRect(x, e.y, e.r + (e.ash ? 0 : glow), e.r + (e.ash ? 0 : glow));
     }
     ctx.globalAlpha = 1;
-    this.embers = this.embers.filter(e => e.t < e.life);
+    this.ambient = this.ambient.filter(e => e.t < e.life);
   }
 
   _fighter(ctx, f, isMe, t) {
@@ -986,51 +1310,81 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Deterministic ruined skyline: two parallax layers of collapsed towers
-// with lit windows, plus a couple of floors left burning. Same seed every
-// time, so all players stand in the same dead city.
-function buildCity() {
-  let s = 1337;
+// Deterministic parallax cityscapes — same seed every time, so all players
+// stand in the same city. 'ruins' builds two rows of collapsed towers with
+// scattered survivor lights and a couple of burning floors; 'neon' builds
+// three rows of intact mega-towers with dense lit windows, neon edge
+// strips, holo-billboards, and antenna beacons.
+function buildCityScape(style) {
+  const neon = style === 'neon';
+  let s = neon ? 20177 : 1337;
   const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
   const baseY = 440;
-  const layers = [
-    { lag: 0.72, fill: '#17101c', windows: false, bldgs: [] },  // far, dead
-    { lag: 0.5,  fill: '#241a26', windows: true,  bldgs: [] },  // near, lit
-  ];
+  const layers = neon
+    ? [
+      { lag: 0.78, fill: '#0b0f24', windows: false, bldgs: [] },  // far, dark
+      { lag: 0.6,  fill: '#141a3a', windows: true,  bldgs: [] },
+      { lag: 0.42, fill: '#1d2450', windows: true,  bldgs: [] },  // near, blazing
+    ]
+    : [
+      { lag: 0.72, fill: '#17101c', windows: false, bldgs: [] },  // far, dead
+      { lag: 0.5,  fill: '#241a26', windows: true,  bldgs: [] },  // near, lit
+    ];
   const fires = [];
-  for (const layer of layers) {
+  const NEON = ['#00e5ff', '#ff2e8a', '#b6ff3d', '#ffb02e'];
+  const WIN = ['#ffc46a', '#9fd8ff'];
+  for (const [li, layer] of layers.entries()) {
     let x = -1500 + rnd() * 80;
     while (x < 1500) {
-      const w = 130 + rnd() * (layer.windows ? 190 : 150);
-      const h = (layer.windows ? 300 : 420) + rnd() * (layer.windows ? 330 : 360);
-      const b = {
-        x, w, yTop: baseY - h,
-        brk: 0.25 + rnd() * 0.5,               // where the collapse peak sits
-        lgap: rnd() * 60, rgap: 20 + rnd() * 90,
-        spire: rnd() < 0.3, wins: [],
-      };
+      const w = neon ? 90 + rnd() * 130 : 130 + rnd() * (layer.windows ? 190 : 150);
+      const h = neon
+        ? 260 + rnd() * (300 + li * 200)
+        : (layer.windows ? 300 : 420) + rnd() * (layer.windows ? 330 : 360);
+      const b = { x, w, yTop: baseY - h, wins: [] };
+      if (neon) {
+        b.spire = rnd() < 0.4;
+        b.strip = layer.windows && rnd() < 0.5
+          ? { side: rnd() < 0.5 ? -1 : 1, color: NEON[(rnd() * NEON.length) | 0] } : null;
+        b.board = layer.windows && rnd() < 0.3
+          ? {
+            dx: w * (0.15 + rnd() * 0.2), dy: h * (0.12 + rnd() * 0.3),
+            w: w * 0.55, h: 34 + rnd() * 30,
+            c1: NEON[(rnd() * NEON.length) | 0], c2: NEON[(rnd() * NEON.length) | 0],
+            ph: rnd() * 7,
+          } : null;
+      } else {
+        b.brk = 0.25 + rnd() * 0.5;               // where the collapse peak sits
+        b.lgap = rnd() * 60; b.rgap = 20 + rnd() * 90;
+        b.spire = rnd() < 0.3;
+      }
       if (layer.windows) {
-        const cols = Math.max(2, Math.floor(w / 46));
-        const rows = Math.max(3, Math.floor(h / 64));
+        const cols = Math.min(6, Math.max(2, Math.floor(w / (neon ? 26 : 46))));
+        const rows = Math.min(14, Math.max(3, Math.floor(h / (neon ? 46 : 64))));
+        const keep = neon ? 0.34 : 0.16;          // most ruined windows are dead
         for (let cx = 0; cx < cols; cx++) {
           for (let ry = 0; ry < rows; ry++) {
-            if (rnd() > 0.16) continue;        // most windows are dead
-            b.wins.push({
-              dx: 12 + cx * (w - 24) / cols, dy: 46 + ry * (h - 70) / rows,
-              spd: 0.4 + rnd() * 1.4, ph: rnd() * 7, fire: rnd() < 0.12,
-            });
+            if (rnd() > keep) continue;
+            b.wins.push(neon
+              ? {
+                dx: 8 + cx * (w - 16) / cols, dy: 20 + ry * (h - 40) / rows,
+                spd: 0.2 + rnd() * 0.9, ph: rnd() * 7, c: WIN[rnd() < 0.75 ? 0 : 1],
+              }
+              : {
+                dx: 12 + cx * (w - 24) / cols, dy: 46 + ry * (h - 70) / rows,
+                spd: 0.4 + rnd() * 1.4, ph: rnd() * 7, fire: rnd() < 0.12,
+              });
           }
         }
-        if (fires.length < 2 && rnd() < 0.35) {
+        if (!neon && fires.length < 2 && rnd() < 0.35) {
           fires.push({ x: x + w * (0.3 + rnd() * 0.4), y: baseY - h + 14, lag: layer.lag });
         }
       }
       layer.bldgs.push(b);
-      x += w + 24 + rnd() * 90;
+      x += w + (neon ? 10 + rnd() * 40 : 24 + rnd() * 90);
     }
   }
-  if (!fires.length) fires.push({ x: -260, y: -420, lag: 0.5 });
-  return { baseY, layers, fires };
+  if (!neon && !fires.length) fires.push({ x: -260, y: -420, lag: 0.5 });
+  return { style, baseY, layers, fires };
 }
 function cross(ctx, x, y, s) {
   ctx.beginPath();

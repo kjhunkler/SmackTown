@@ -643,8 +643,8 @@ input[type=text]:focus { border-color: var(--accent); }
 .map-thumb-flatlands { background: linear-gradient(#2c1a3e, #e8703a); }
 .map-thumb-flatlands::after { left: 8%; right: 8%; }
 .map-thumb-flatlands::before { display: none; }
-.map-thumb-skyline { background: linear-gradient(#04141c, #0a2a30); }
-.map-thumb-skyline::after { left: 28%; right: 28%; }
+.map-thumb-skyline { background: linear-gradient(#060a1c, #1c0e38); }
+.map-thumb-skyline::after { left: 28%; right: 28%; box-shadow: 0 0 6px #00e5ff; }
 .map-thumb-skyline::before { top: 8px; }
 .map-thumb-ruins { background: linear-gradient(#241521, #54222a); }
 .map-thumb-ruins::after { left: 14%; right: 14%; }
