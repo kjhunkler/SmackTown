@@ -206,6 +206,13 @@ export function sanitizeBuild(raw) {
 const KEY = 'smacktown.profile.v1';
 let profile = null;
 
+// Stable identity that survives leaving/rejoining a room (peer ids don't):
+// lets the host recognize a returning player and swap them in, not duplicate.
+function genPid() {
+  try { return crypto.randomUUID(); }
+  catch (_) { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+}
+
 export function loadProfile() {
   if (profile) return profile;
   try {
@@ -222,6 +229,7 @@ export function loadProfile() {
         build: sanitizeBuild(raw.build),
         hatId,
         hat: hatArt(hatId),                  // resolved art — what the room sees
+        pid: typeof raw.pid === 'string' && raw.pid ? raw.pid.slice(0, 40) : genPid(),
       };
       localStorage.setItem(KEY, JSON.stringify(profile));
       return profile;
@@ -238,6 +246,7 @@ export function saveProfile(p) {
     build: sanitizeBuild(p.build),
     hatId,
     hat: hatArt(hatId),
+    pid: profile?.pid || (typeof p.pid === 'string' && p.pid) || genPid(),
   };
   localStorage.setItem(KEY, JSON.stringify(profile));
   return profile;

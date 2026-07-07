@@ -571,6 +571,21 @@ input[type=text]:focus { border-color: var(--accent); }
 .roster .r-meta { font-size: 11px; color: var(--ink-dim); text-align: right; }
 .roster .r-ready { color: var(--good); font-weight: 800; font-size: 12px; }
 .roster .r-score { font-weight: 900; font-size: 18px; color: var(--accent); }
+
+/* results leaderboard */
+#results-list .r-col { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#results-list .r-col .r-name { flex: none; }
+#results-list .r-meta { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+#results-list .r-awards { display: flex; flex-wrap: wrap; gap: 4px; }
+.r-award {
+  font-size: 10px; font-weight: 800;
+  color: var(--warn);
+  background: rgba(255, 176, 46, .1);
+  border: 1px solid rgba(255, 176, 46, .35);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
 .lobby-status { text-align: center; font-size: 13px; color: var(--ink-dim); min-height: 18px; }
 
 /* map vote grid */

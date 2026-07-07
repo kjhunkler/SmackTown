@@ -624,7 +624,7 @@ function enterRoom(joinCode) {
     // A player walked in while a fight is running: as host, drop them into
     // the live game and re-broadcast the player list so everyone syncs up.
     if (!session || session.ended || !net.isHost || session.mode === 'solo') return;
-    session.addPlayer({ id: rec.peerId, name: rec.name, color: rec.color, build: sanitizeBuild(rec.build), hat: sanitizeHat(rec.hat) });
+    session.addPlayer({ id: rec.peerId, pid: rec.pid || null, name: rec.name, color: rec.color, build: sanitizeBuild(rec.build), hat: sanitizeHat(rec.hat) });
     net.broadcast({ t: 'start', players: session.players, seed: session.seed, map: session.map });
     UI.banner(`${rec.name} joined the fight!`, 'good');
   });
@@ -773,7 +773,7 @@ function startFight() {
   // authoritative session so friends can drop in mid-fight.
   if (!active.length || !active.every(m => m.ready)) return;
   const players = active.map(m => ({
-    id: m.peerId, name: m.name, color: m.color, build: sanitizeBuild(m.build), hat: sanitizeHat(m.hat),
+    id: m.peerId, pid: m.pid || null, name: m.name, color: m.color, build: sanitizeBuild(m.build), hat: sanitizeHat(m.hat),
   }));
   const seed = (Math.random() * 1e9) | 0;
   const votedMap = tallyMapVotes(active);
@@ -929,6 +929,7 @@ class Session {
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
         color: this.meta.get(f.id)?.color, hat: this.meta.get(f.id)?.hat, cds: f.cds,
+        score: f.score,
       })),
       projectiles: this.game.projectiles,
     };
@@ -1068,10 +1069,25 @@ class Session {
 
   // Host: admit a late joiner into the running fight.
   addPlayer(p) {
-    if (this.meta.has(p.id) || this.ended) return;
+    if (this.meta.has(p.id) || this.ended || this.game?.over) return;
+    // Same human back under a fresh peer id? Hand them their old fighter
+    // so the results screen doesn't seat a ghost duplicate of them.
+    const old = p.pid ? this.players.find(x => x.pid && x.pid === p.pid && x.id !== p.id) : null;
+    if (old) { this.rebindPlayer(old.id, p); return; }
     this.players.push(p);
     this.meta.set(p.id, p);
     this.game?.addFighter(p);
+    UI.buildHud(this.players);
+  }
+
+  // Host: swap a leaver's seat over to their rejoined self.
+  rebindPlayer(oldId, p) {
+    const i = this.players.findIndex(x => x.id === oldId);
+    if (i >= 0) this.players[i] = p; else this.players.push(p);
+    this.meta.delete(oldId);
+    this.meta.set(p.id, p);
+    this.acks.delete(oldId);
+    this.game?.rebindFighter(oldId, p);
     UI.buildHud(this.players);
   }
 
@@ -1091,6 +1107,16 @@ class Session {
       this.meta.set(p.id, p);
       this.pred?.addFighter(p);
       this.game?.addFighter(p);
+      changed = true;
+    }
+    // The host's list is authoritative: drop anyone it no longer carries
+    // (e.g. a leaver whose fighter was handed to their rejoined self).
+    const ids = new Set(players.map(p => p.id));
+    for (let i = this.players.length - 1; i >= 0; i--) {
+      const p = this.players[i];
+      if (ids.has(p.id) || p.id === this.myId) continue;
+      this.players.splice(i, 1);
+      this.meta.delete(p.id);
       changed = true;
     }
     if (changed) UI.buildHud(this.players);
@@ -1121,6 +1147,7 @@ class Session {
       hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', chg: r[14][5] || 0 } : null,
       guard: r[28],
       color: this.meta.get(r[0])?.color, hat: this.meta.get(r[0])?.hat,
+      score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5] } : null,
     }));
   }
 

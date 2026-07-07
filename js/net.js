@@ -61,6 +61,7 @@ export class Net {
   _me(joinOrder) {
     return {
       peerId: this.myId,
+      pid: this.profile.pid || null,   // stable identity across rejoins
       name: this.profile.name,
       color: this.profile.color,
       build: this.profile.build,
@@ -222,6 +223,7 @@ export class Net {
         rec.color = msg.profile?.color || '#f5f5f5';
         rec.build = msg.profile?.build || null;
         rec.hat = msg.profile?.hat || null;
+        rec.pid = typeof msg.profile?.pid === 'string' ? msg.profile.pid.slice(0, 40) : null;
         this.members.set(pid, rec);
         this.send(pid, {
           t: 'welcome',
@@ -276,6 +278,7 @@ export class Net {
         if (!this.members.has(pid)) {
           this.members.set(pid, {
             peerId: pid,
+            pid: typeof msg.profile?.pid === 'string' ? msg.profile.pid.slice(0, 40) : null,
             name: String(msg.profile?.name || 'Fighter').slice(0, 14),
             color: msg.profile?.color || '#f5f5f5',
             build: msg.profile?.build || null,
@@ -397,7 +400,7 @@ export class Net {
 
   _rosterWire() {
     return this.rosterList().map(r => ({
-      peerId: r.peerId, name: r.name, color: r.color,
+      peerId: r.peerId, pid: r.pid || null, name: r.name, color: r.color,
       build: r.build, hat: r.hat || null, joinOrder: r.joinOrder, ready: r.ready,
       vote: r.vote || null, voice: !!r.voice, status: r.status,
     }));
@@ -411,7 +414,7 @@ export class Net {
       const cur = this.members.get(w.peerId);
       if (cur) {
         const hadVoice = !!cur.voice;
-        Object.assign(cur, { name: w.name, color: w.color, build: w.build, hat: w.hat || null, joinOrder: w.joinOrder, ready: w.ready, vote: w.vote || null, voice: !!w.voice });
+        Object.assign(cur, { pid: w.pid || cur.pid || null, name: w.name, color: w.color, build: w.build, hat: w.hat || null, joinOrder: w.joinOrder, ready: w.ready, vote: w.vote || null, voice: !!w.voice });
         if (hadVoice !== cur.voice && w.peerId !== this.myId) this.emit('voice', w.peerId, cur.voice);
       } else {
         this.members.set(w.peerId, { ...w, voice: !!w.voice, ping: 0, lastSeen: Date.now(), status: w.status || 'online' });

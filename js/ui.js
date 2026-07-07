@@ -463,6 +463,43 @@ export function updateAbilityButtons(cds) {
 
 // ---------- results ----------
 
+// Funny podium awards. Each picks a strict (untied) leader in some stat,
+// with a floor so a quiet match doesn't hand out embarrassing trophies.
+const AWARD_DEFS = [
+  { icon: '🩸', name: 'Bloodthirsty', pick: rows => topBy(rows, s => s.ko, 2) },
+  { icon: '🔨', name: 'Wrecking Ball', pick: rows => topBy(rows, s => s.maxHit, 14) },
+  { icon: '🧲', name: 'Damage Magnet', pick: rows => topBy(rows, s => s.taken, 80) },
+  { icon: '🕳️', name: 'Gravity’s Friend', pick: rows => topBy(rows, s => s.sd, 1) },
+  { icon: '🕊️', name: 'Pacifist',
+    pick: rows => rows.length >= 3 && Math.max(...rows.map(r => r.s.dmg)) >= 60
+      ? topBy(rows, s => -s.dmg, -Infinity) : null },
+];
+
+// Strict leader by stat (ties award nothing), meeting a minimum.
+function topBy(rows, stat, min) {
+  let best = null, bv = -Infinity, tie = false;
+  for (const r of rows) {
+    const v = stat(r.s);
+    if (v === bv) tie = true;
+    else if (v > bv) { bv = v; best = r; tie = false; }
+  }
+  return best && !tie && bv >= min ? best : null;
+}
+
+function pickAwards(rows) {
+  const out = new Map();             // player id -> [{icon,name}]
+  if (rows.length < 2) return out;
+  for (const def of AWARD_DEFS) {
+    const r = def.pick(rows);
+    if (!r) continue;
+    const got = out.get(r.p.id) || [];
+    if (got.length >= 2) continue;   // spread the glory around
+    got.push(def);
+    out.set(r.p.id, got);
+  }
+  return out;
+}
+
 export function renderResults(players, winnerId, finalFighters) {
   $('#results-title').textContent = winnerId
     ? `${esc(players.find(p => p.id === winnerId)?.name || '???')} wins!`
@@ -470,19 +507,31 @@ export function renderResults(players, winnerId, finalFighters) {
     : 'Draw!';
   const list = $('#results-list');
   list.innerHTML = '';
-  const rows = [...players].sort((a, b) => {
-    const fa = finalFighters.find(f => f.id === a.id) || { stocks: 0, pct: 999 };
-    const fb = finalFighters.find(f => f.id === b.id) || { stocks: 0, pct: 999 };
-    return (fb.stocks - fa.stocks) || (fa.pct - fb.pct);
+  const blank = { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0 };
+  const rows = [...players].map(p => {
+    const f = finalFighters.find(x => x.id === p.id) || null;
+    return { p, f, s: f?.score || blank };
+  }).sort((a, b) => {
+    const fa = a.f || { stocks: 0, pct: 999 };
+    const fb = b.f || { stocks: 0, pct: 999 };
+    return (fb.stocks - fa.stocks) || (b.s.ko - a.s.ko) || (fa.pct - fb.pct);
   });
-  rows.forEach((p, i) => {
-    const f = finalFighters.find(x => x.id === p.id);
+  const awards = pickAwards(rows);
+  rows.forEach(({ p, f, s }, i) => {
+    const chips = (awards.get(p.id) || [])
+      .map(a => `<span class="r-award">${a.icon} ${esc(a.name)}</span>`).join('');
     const li = document.createElement('li');
     li.innerHTML = `
       <span class="r-score">${p.id === winnerId ? '🏆' : '#' + (i + 1)}</span>
       <span class="r-swatch" style="background:${p.color}"></span>
-      <span class="r-name">${esc(p.name)}</span>
-      <span class="r-meta">${f ? (f.stocks > 0 ? f.stocks + ' stocks left' : 'KO’d') : ''}</span>`;
+      <span class="r-col">
+        <span class="r-name">${esc(p.name)}</span>
+        ${chips ? `<span class="r-awards">${chips}</span>` : ''}
+      </span>
+      <span class="r-meta">
+        <span>${f ? (f.stocks > 0 ? f.stocks + (f.stocks === 1 ? ' stock' : ' stocks') + ' left' : 'KO’d') : ''}</span>
+        <span>👊 ${s.ko} KO${s.ko === 1 ? '' : 's'} · 💥 ${Math.round(s.dmg)} dmg</span>
+      </span>`;
     list.appendChild(li);
   });
 }

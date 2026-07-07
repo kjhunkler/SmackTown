@@ -224,6 +224,7 @@ export class Game {
       rollDir: 0,
       dead: false,
       lastDir: { x: 1, y: 0 },
+      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0 }, // podium stats
     };
   }
 
@@ -240,6 +241,39 @@ export class Game {
     f.invuln = RESPAWN_INVULN;
     this.fighters.push(f);
     this.inputs.set(f.id, blankInput());
+    return f;
+  }
+
+  // A player who left is back under a fresh peer id: hand their old fighter
+  // over instead of spawning a doppelgänger. If the disconnect already
+  // forfeited their stocks, re-admit them like a late joiner — but their
+  // match stats ride along either way.
+  rebindFighter(oldId, p) {
+    const f = this.fighters.find(x => x.id === oldId);
+    if (!f) return this.addFighter(p);
+    f.id = p.id;
+    f.name = p.name;
+    f.color = p.color;
+    this.inputs.delete(oldId);
+    this.inputs.set(p.id, blankInput());
+    this.lagComp.delete(oldId);
+    for (const o of this.fighters) if (o.lastHitBy === oldId) o.lastHitBy = p.id;
+    if (f.dead || f.stocks <= 0) {
+      f.dead = false;
+      f.stocks = STOCKS;
+      f.pct = 0;
+      f.guard = GUARD_MAX; f.standT = 0;
+      f.usedSecondWind = false;
+      f.x = this.stage.spawns[this.fighters.indexOf(f) % this.stage.spawns.length];
+      f.y = this.stage.respawnY;
+      f.vx = 0; f.vy = 0;
+      f.grounded = false;
+      f.state = 'respawn';
+      f.stateT = 0;
+      f.invuln = RESPAWN_INVULN;
+      f.jumps = f.st.maxJumps;
+      f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0; f.chgAim = null;
+    }
     return f;
   }
 
@@ -930,6 +964,9 @@ export class Game {
       const raw = dmg;
       dmg *= DUCK_DMG_TAKEN;
       vic.pct = Math.min(999, vic.pct + dmg);
+      att.score.dmg += dmg;
+      vic.score.taken += dmg;
+      if (dmg > att.score.maxHit) att.score.maxHit = dmg;
       const kb = (spec.kb + spec.ks * dmg * (1 + vic.pct / 90))
         * att.st.kbMult * vic.st.kbTaken * DUCK_KB_TAKEN;
       vic.vx = Math.cos(angRad) * kb * dirX;
@@ -950,6 +987,9 @@ export class Game {
     }
 
     vic.pct = Math.min(999, vic.pct + dmg);
+    att.score.dmg += dmg;
+    vic.score.taken += dmg;
+    if (dmg > att.score.maxHit) att.score.maxHit = dmg;
 
     // acrobat: connecting resets your air jumps, enabling aerial chases
     if (att.st.augments.includes('acrobat') && att.jumps < att.st.maxJumps) {
@@ -1046,11 +1086,14 @@ export class Game {
       if (f.x < b.l || f.x > b.r || f.y < b.t || f.y > b.b) {
         f.stocks--;
         this.events.push({ e: 'ko', x: clamp(f.x, b.l, b.r), y: clamp(f.y, b.t, b.b), id: f.id, stocks: f.stocks });
+        // podium stats: the last hitter gets the KO; nobody means an SD
+        const credit = f.lastHitBy ? this.fighters.find(k => k.id === f.lastHitBy) : null;
+        f.score.fall++;
+        if (credit) credit.score.ko++; else f.score.sd++;
         // reaper: whoever landed the last hit drinks deep on the KO
-        const reaper = f.lastHitBy ? this.fighters.find(k => k.id === f.lastHitBy && !k.dead) : null;
-        if (reaper && reaper.st.augments.includes('reaper')) {
-          reaper.pct = Math.max(0, reaper.pct - 25);
-          this.events.push({ e: 'augment', aug: 'reaper', id: reaper.id, x: reaper.x, y: reaper.y });
+        if (credit && !credit.dead && credit.st.augments.includes('reaper')) {
+          credit.pct = Math.max(0, credit.pct - 25);
+          this.events.push({ e: 'augment', aug: 'reaper', id: credit.id, x: credit.x, y: credit.y });
         }
         f.lastHitBy = null;
         if (f.stocks <= 0) {
@@ -1151,6 +1194,7 @@ export class Game {
           f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
           r1(f.guard), r2(f.standT), r2(f.chg), r2(f.riseT), f.lastHitBy || 0,
           f.ridePlat == null ? -1 : f.ridePlat,
+          [f.score.ko, f.score.fall, f.score.sd, r1(f.score.dmg), r1(f.score.taken), r1(f.score.maxHit)],
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -1195,6 +1239,8 @@ export function restoreFighter(f, row) {
     f.lastHitBy = row[32] || null;
     f.ridePlat = (row[33] ?? -1) >= 0 ? row[33] : null;
     f.chgAim = f.state === 'charge' ? { dx: row[26] | 0, dy: row[27] | 0 } : null;
+    const sc = row[34];
+    if (sc) f.score = { ko: sc[0] | 0, fall: sc[1] | 0, sd: sc[2] | 0, dmg: +sc[3] || 0, taken: +sc[4] || 0, maxHit: +sc[5] || 0 };
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.
