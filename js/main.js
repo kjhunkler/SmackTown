@@ -1051,6 +1051,7 @@ class Session {
     // can outpace sim ticks.
     for (const k of ['jump', 'ff', 'drop', 'ab0', 'ab1']) if (inp[k]) this.pendActs[k] = true;
     if (inp.atk) this.pendActs.atk = inp.atk;
+    if (inp.roll) this.pendActs.roll = inp.roll;   // signed edge (-1|1), like atk
     this.acc += dt;
     while (this.acc >= TICK) {
       this.acc -= TICK;
@@ -1067,7 +1068,7 @@ class Session {
     // ship inputs to the host (fresh actions immediately, stick at ~30 Hz)
     const chgEdge = !!inp.chg !== !!this.wasChg;
     this.wasChg = !!inp.chg;
-    const hasAction = inp.jump || inp.ff || inp.atk || inp.ab0 || inp.ab1 || inp.drop || chgEdge;
+    const hasAction = inp.jump || inp.ff || inp.atk || inp.ab0 || inp.ab1 || inp.drop || inp.roll || chgEdge;
     if (hasAction || t - this.lastInputSend > 33) {
       this.lastInputSend = t;
       net?.sendToHost({ t: 'input', inp, seq: this.inputSeq });
