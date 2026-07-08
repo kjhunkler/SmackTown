@@ -2391,6 +2391,24 @@ export class Renderer {
     const bw = duck ? F_W + 10 : F_W, bh = duck ? 24 : F_H;
     const bTop = F_H / 2 - bh;
 
+    // worn blade: a hilt over the back shoulder marks sword users at rest;
+    // it disappears while the blade itself is out (charging or slashing)
+    if (f.weapon === 'sword' && f.atk !== 'slash') {
+      ctx.save();
+      ctx.scale(f.facing || 1, 1);
+      ctx.translate(-bw / 2 + 9, bTop + 6);
+      ctx.rotate(-0.55);
+      ctx.fillStyle = '#cfd8ea';                       // blade stub
+      ctx.fillRect(-2, -14, 4, 16);
+      ctx.fillStyle = '#ffd23e';                       // crossguard
+      ctx.fillRect(-6.5, -16, 13, 3.5);
+      ctx.fillStyle = '#8a6a48';                       // grip
+      ctx.fillRect(-1.8, -26, 3.6, 10);
+      ctx.fillStyle = '#ffd23e';                       // pommel
+      ctx.beginPath(); ctx.arc(0, -27.5, 2.8, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+
     // body
     ctx.fillStyle = f.color;
     roundRect(ctx, -bw / 2, bTop, bw, bh, 14);
@@ -2494,6 +2512,7 @@ export class Renderer {
   // Attack hitbox: dashed outline while winding up (telegraph), then a hot
   // translucent fill during active frames. Mirrors game.js meleeHitbox.
   _hitbox(ctx, f, t) {
+    if (f.hb.blade) return this._blade(ctx, f, t);
     const { dx, dy, hw, hh, active, round } = f.hb;
     const x = f.x + dx - hw, y = f.y + dy - hh;
     // spin moves show as a circle (well, ellipse) instead of a box
@@ -2523,6 +2542,71 @@ export class Renderer {
       ctx.setLineDash([7, 6]);
       ctx.lineDashOffset = -t * 60;
       shape();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Sword slash: the hitbox IS the blade — a long tapered steel shape run
+  // out along the aim from the wrist, with a gold crossguard at its base.
+  // Ghost silhouette while winding up; flashing steel with a white-hot
+  // cutting edge during active frames. Spans exactly the box the sim tests.
+  _blade(ctx, f, t) {
+    const { dx, dy, hw, hh, active } = f.hb;
+    const n = Math.hypot(dx, dy) || 1;
+    const ux = dx / n, uy = dy / n;
+    const half = Math.abs(ux) * hw + Math.abs(uy) * hh;  // half-length along the aim
+    const len = half * 2;
+    const bt = Math.min(15, hw, hh);   // blade half-thickness (~slash.ry in game.js)
+    ctx.save();
+    ctx.translate(f.x + dx - ux * half, f.y + dy - uy * half);  // blade base
+    ctx.rotate(Math.atan2(uy, ux));
+    // blade silhouette: straight edges tapering to a point
+    const shape = () => {
+      ctx.beginPath();
+      ctx.moveTo(2, -bt);
+      ctx.lineTo(len * 0.74, -bt);
+      ctx.lineTo(len, 0);                    // the point
+      ctx.lineTo(len * 0.74, bt);
+      ctx.lineTo(2, bt);
+      ctx.closePath();
+    };
+    if (active) {
+      const g = ctx.createLinearGradient(0, -bt, 0, bt);
+      g.addColorStop(0, 'rgba(244,250,255,.95)');
+      g.addColorStop(0.5, 'rgba(158,180,214,.8)');
+      g.addColorStop(1, 'rgba(244,250,255,.95)');
+      ctx.fillStyle = g;
+      shape(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.lineWidth = 2.5;
+      shape(); ctx.stroke();
+      // fuller line down the middle
+      ctx.strokeStyle = 'rgba(90,110,150,.5)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(len * 0.8, 0); ctx.stroke();
+      // crossguard
+      ctx.fillStyle = '#ffd23e';
+      roundRect(ctx, -2, -bt - 7, 7, bt * 2 + 14, 3);
+      ctx.fill();
+    } else {
+      // charging: a ghost of the blade, pulsing brighter as the charge builds
+      const chg = f.hb.chg || 0;
+      const pulse = chg ? (0.5 + 0.5 * Math.sin(t * (2 + 9 * chg) * 2 * Math.PI)) * chg : 0;
+      if (pulse > 0.02) {
+        ctx.fillStyle = `rgba(205, 228, 255, ${(0.30 * pulse).toFixed(3)})`;
+        shape(); ctx.fill();
+      }
+      ctx.strokeStyle = `rgba(215, 236, 255, ${(0.6 + 0.4 * pulse).toFixed(3)})`;
+      ctx.lineWidth = 2 + 2 * chg;
+      ctx.setLineDash([7, 6]);
+      ctx.lineDashOffset = -t * 60;
+      shape(); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = `rgba(255, 210, 62, ${(0.5 + 0.5 * pulse).toFixed(3)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -bt - 7); ctx.lineTo(0, bt + 7);   // crossguard hint
       ctx.stroke();
     }
     ctx.restore();

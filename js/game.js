@@ -192,10 +192,12 @@ const ATTACKS = {
   // interval; the last window swaps in 'fin' for a launching finisher.
   nspin:  { dmg: 2.5, kb: 120, ks: 5, startup: .06, active: .42, rec: .16, rx: 46, ry: 42, ang: -80, both: true,
             rehit: .14, fin: { kb: 210, ks: 16, ang: -40 } },
-  // sword strong attack: one blade arc, aimed 8-way by the swipe (the aim
-  // places the box), released with a lunge along that aim. Racks damage up
-  // fast but barely launches — the sword wins by percent, not ring-outs.
-  slash:  { dmg: 18, kb: 80,  ks: 7,  startup: .09, active: .11, rec: .24, rx: 70, ry: 38, ang: -25 },
+  // sword strong attack: one blade arc, aimed 8-way by the swipe, released
+  // with a lunge along that aim. The hit is a true blade: a long, thin box
+  // run out along the aim (rx = blade length, ry = half-thickness) — reach
+  // no fist can match, but a narrow band that punishes sloppy lines. Racks
+  // damage up fast but barely launches — the sword wins by percent.
+  slash:  { dmg: 18, kb: 80,  ks: 7,  startup: .09, active: .11, rec: .24, rx: 96, ry: 14, ang: -25, blade: true },
   // magic strong attack: the cast pose. 'cast' = no melee box ever goes
   // active — the hit is the burst projectile spawned at release.
   mcast:  { dmg: 0,  kb: 0,   ks: 0,  startup: .08, active: .02, rec: .26, rx: 30, ry: 24, ang: 0, cast: true },
@@ -1590,6 +1592,23 @@ export function meleeHitbox(f, spec, aim = null) {
       dy: (F_H - DUCK_H) / 2,
       hw: spec.rx / 2 + 14,
       hh: spec.ry,
+    };
+  }
+  // blade weapons: the box is the blade itself — long and thin, run out
+  // along the aim from the body's edge (rx = blade length, ry = half-
+  // thickness). Axis-aligned like every other box, so a diagonal cut
+  // approximates as a square laid along the diagonal.
+  if (spec.blade) {
+    const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };
+    const n = Math.hypot(dir.x, dir.y);
+    const nx = dir.x / n, ny = dir.y / n;
+    const hl = spec.rx / 2;                    // half the blade's length
+    return {
+      dx: nx * (F_W / 2 + hl),
+      dy: ny * (F_H / 2 + hl),
+      hw: Math.abs(nx) * hl + spec.ry,
+      hh: Math.abs(ny) * hl + spec.ry,
+      blade: true,
     };
   }
   const a = !spec.both && aim && (aim.x || aim.y) ? aim : null;

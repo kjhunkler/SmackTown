@@ -92,6 +92,42 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('charged slash slides longer', e.dashT > t0);
 }
 
+// --- 4b. the blade IS the hitbox: long, thin, run out along the aim ---
+{
+  const box = (weapon, atk, dir) => {
+    const g = mkGame(weapon);
+    const a = g.fighters[0];
+    a.facing = 1; a.state = 'attack'; a.atk = atk; a.stateT = 0.17; a.atkDir = dir;
+    return g.hitboxFor(a);
+  };
+  const sword = box('sword', 'slash', { x: 1, y: 0 });
+  const fists = box('unarmed', 'fsmash', { x: 1, y: 0 });
+  check('slash box is flagged as a blade', sword.blade === true && !fists.blade);
+  check('blade reaches further than a fist', sword.dx + sword.hw > fists.dx + fists.hw + 20);
+  check('blade band is thinner than a fist arc', sword.hh < fists.hh / 2);
+  const up = box('sword', 'slash', { x: 0, y: -1 });
+  check('up slash turns the blade vertical', up.hh > up.hw * 2 && up.dy < 0);
+  const diag = box('sword', 'slash', { x: 1, y: 1 });
+  check('diagonal slash runs out along the diagonal', diag.dx > 30 && diag.dy > 30);
+
+  const g = mkGame('sword');
+  const c = g.fighters[0];
+  g._startCharge(c, { dx: 1, dy: 0 });
+  const hb = g.hitboxFor(c);
+  check('charging a slash telegraphs the blade', hb && hb.blade === true && hb.active === false);
+
+  // the long blade outranges a fist: connects where an fsmash whiffs
+  const reach = (weapon, atk) => {
+    const g2 = mkGame(weapon);
+    const [a, b] = g2.fighters;
+    a.x = 0; b.x = 145; a.facing = 1; a.grounded = true; b.grounded = true;
+    a.state = 'attack'; a.atk = atk; a.stateT = 0.17; a.atkDir = { x: 1, y: 0 };
+    g2._resolveAttacks();
+    return b.pct > 0;
+  };
+  check('blade tip connects at fist-whiff range', reach('sword', 'slash') && !reach('unarmed', 'fsmash'));
+}
+
 // --- 5. magic: bursts, mana, charge = range ---
 {
   const g = mkGame('magic');

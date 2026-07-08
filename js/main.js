@@ -1262,7 +1262,7 @@ class Session {
       id: r[0], x: r[1], y: r[2], vx: r[3], vy: r[4], facing: r[5],
       pct: r[6], stocks: r[7], state: r[8], dead: !!r[9],
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
-      hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', chg: r[14][5] || 0 } : null,
+      hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', blade: r[11] === 'slash', chg: r[14][5] || 0 } : null,
       guard: r[28],
       mana: r[38], weapon: this.meta.get(r[0])?.build?.weapon,
       color: this.meta.get(r[0])?.color, hat: this.meta.get(r[0])?.hat,
