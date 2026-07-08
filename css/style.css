@@ -794,18 +794,15 @@ input[type=text]:focus { border-color: var(--accent); }
   z-index: 7;
 }
 .hud-tile {
+  position: relative;
   background: rgba(10,12,25,.72);
   border-radius: 12px;
-  padding: 5px 10px;
+  padding: 5px 10px 7px;
   text-align: center;
   min-width: 74px;
   border-top: 3px solid;
 }
 .hud-tile .h-name {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font: inherit;
   font-size: 10px;
   font-weight: 700;
   color: var(--ink-dim);
@@ -813,10 +810,24 @@ input[type=text]:focus { border-color: var(--accent); }
   overflow: hidden;
   max-width: 90px;
 }
-.hud-tile .h-name-try { color: var(--accent); cursor: pointer; }
-.hud-tile .h-name-try { pointer-events: auto; }
-.hud-tile .h-name-try::after { content: ' Try'; color: var(--good); font-weight: 900; }
-.hud-tile .h-name:disabled { cursor: default; }
+.hud-tile .h-try {
+  position: absolute;
+  left: 50%;
+  bottom: -17px;
+  transform: translateX(-50%);
+  border: 0;
+  border-radius: 0 0 9px 9px;
+  padding: 3px 10px 4px;
+  background: rgba(61, 220, 132, .9);
+  color: #06210f;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 4px 10px rgba(0,0,0,.35);
+}
+.hud-tile .h-try-self { background: rgba(255, 176, 46, .95); color: #221a06; }
 .hud-tile .h-pct { font-size: 20px; font-weight: 900; font-style: italic; }
 .hud-tile .h-pct.h-pct-hit { animation: pct-hit .35s ease-out; }
 @keyframes pct-hit {

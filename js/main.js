@@ -734,6 +734,7 @@ function enterRoom(joinCode) {
   net.on('game:snap', (msg, pid) => session?.onSnapshot(msg.s, pid));
   net.on('game:park', (msg, pid) => session?.onPark(pid, msg.on));
   net.on('game:try', (msg, pid) => session?.onTry(pid, msg.target));
+  net.on('game:try-self', (msg, pid) => session?.onTrySelf(pid));
 
   if (joinCode) net.join(joinCode); else net.host();
   UI.banner(joinCode ? 'Joining room…' : 'Opening room…', 'warn', 8000);
@@ -957,7 +958,7 @@ class Session {
     renderer.setMap(this.map);
     const me = this.meta.get(this.myId);
     UI.showScreen('game');
-    UI.buildHud(this.players, { myId: this.myId, onTry: id => this.requestTry(id) });
+    this.buildHud();
     UI.setupAbilityButtons(sanitizeBuild(me.build).abilities);
     touch.setEnabled(true);
     this.running = true;
@@ -1013,7 +1014,16 @@ class Session {
     if (this.mode === 'host' && net) {
       net.broadcast({ t: 'start', players: this.players, seed: this.seed, map: this.map });
     }
-    UI.buildHud(this.players, { myId: this.myId, onTry: id => this.requestTry(id) });
+    this.buildHud();
+  }
+
+  buildHud() {
+    UI.buildHud(this.players, {
+      myId: this.myId,
+      onTry: id => this.requestTry(id),
+      onTrySelf: () => this.requestTrySelf(),
+      trying: this.trying.has(this.myId),
+    });
   }
 
   requestTry(targetId) {
@@ -1024,6 +1034,16 @@ class Session {
 
   onTry(pid, targetId) {
     if (this.mode === 'host') this.applyTry(pid, targetId);
+  }
+
+  requestTrySelf() {
+    if (!this.trying.has(this.myId)) return;
+    if (this.mode === 'host') this.endTry(this.myId);
+    else net?.sendToHost({ t: 'try-self' });
+  }
+
+  onTrySelf(pid) {
+    if (this.mode === 'host') this.endTry(pid);
   }
 
   applyTry(pid, targetId) {
@@ -1048,6 +1068,7 @@ class Session {
     });
     me.build = original.build;
     me.hat = original.hat;
+    this.buildHud();
     UI.toast(pid === this.myId ? `Trying ${target.name}!` : `${me.name} is trying ${target.name}!`);
   }
 
@@ -1068,6 +1089,7 @@ class Session {
       UI.setupAbilityButtons(sanitizeBuild(p.build).abilities);
       UI.toast('Back to your fighter!');
     }
+    this.buildHud();
     if (this.mode === 'host' && net) net.broadcast({ t: 'start', players: this.players, seed: this.seed, map: this.map });
   }
 
@@ -1271,7 +1293,7 @@ class Session {
     this.players.push(p);
     this.meta.set(p.id, p);
     this.game?.addFighter(p);
-    UI.buildHud(this.players, { myId: this.myId, onTry: id => this.requestTry(id) });
+    this.buildHud();
   }
 
   // Host: swap a leaver's seat over to their rejoined self.
@@ -1282,7 +1304,7 @@ class Session {
     this.meta.set(p.id, p);
     this.acks.delete(oldId);
     this.game?.rebindFighter(oldId, p);
-    UI.buildHud(this.players, { myId: this.myId, onTry: id => this.requestTry(id) });
+    this.buildHud();
   }
 
   // Client: the host re-broadcast the player list (someone joined mid-game).
@@ -1338,7 +1360,7 @@ class Session {
       this.meta.delete(p.id);
       changed = true;
     }
-    if (changed) UI.buildHud(this.players, { myId: this.myId, onTry: id => this.requestTry(id) });
+    if (changed) this.buildHud();
   }
 
   onRoster() {
@@ -1529,7 +1551,7 @@ $('#game-quit').addEventListener('click', () => {
 $('#lobby-rejoin').addEventListener('click', () => {
   if (!session || session.ended) return;
   session.setBackgrounded(false);
-  UI.buildHud(session.players);
+  session.buildHud();
   UI.showScreen('game');
   presence?.update();
 });

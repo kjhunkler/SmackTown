@@ -453,20 +453,24 @@ export function renderLobby(net, onVote = null, fightOn = false) {
 
 // ---------- game HUD ----------
 
-export function buildHud(players, { myId = null, onTry = null } = {}) {
+export function buildHud(players, { myId = null, onTry = null, onTrySelf = null, trying = false } = {}) {
   const hud = $('#game-hud');
   hud.innerHTML = '';
   for (const p of players) {
     const canTry = onTry && p.id !== myId;
+    const canTrySelf = onTrySelf && p.id === myId && trying;
     const tile = document.createElement('div');
     tile.className = 'hud-tile';
     tile.id = 'hud-' + cssId(p.id);
     tile.style.borderTopColor = p.color;
     tile.innerHTML = `
-      <button class="h-name${canTry ? ' h-name-try' : ''}" ${canTry ? '' : 'disabled'}>${esc(p.name)}</button>
+      <div class="h-name">${esc(p.name)}</div>
       <div class="h-pct" style="color:${p.color}">0%</div>
-      <div class="h-stocks">●●●</div>`;
-    if (canTry) tile.querySelector('.h-name').addEventListener('click', () => onTry(p.id));
+      <div class="h-stocks">●●●</div>
+      ${canTry ? '<button class="h-try">Try</button>' : ''}
+      ${canTrySelf ? '<button class="h-try h-try-self">Me</button>' : ''}`;
+    if (canTry) tile.querySelector('.h-try').addEventListener('click', () => onTry(p.id));
+    if (canTrySelf) tile.querySelector('.h-try-self').addEventListener('click', () => onTrySelf());
     hud.appendChild(tile);
   }
 }
