@@ -137,7 +137,8 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const pr = g.projectiles[0];
   check('cast spawns a burst', pr && pr.kind === 'burst');
   check('burst is high knockback, low damage', pr.kb >= 300 && pr.dmg < 5);
-  check('cast drains mana', a.mana === 65);
+  // mana tracks power output, not a flat tax: an uncharged tap costs less
+  check('cast drains mana proportional to its (low) power', a.mana > 65 && a.mana < 100);
 
   const weak = pr.vx * pr.ttl;
   const g2 = mkGame('magic');
@@ -160,6 +161,56 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   d.mana = 40;
   for (let i = 0; i < 60; i++) g4.step();                          // one second
   check('mana recharges on its own', d.mana > 60 && d.mana <= 100);
+}
+
+// --- 5b. magic overcharge: hold past a standard charge for double power ---
+{
+  // full charge (k=1) — today's baseline peak
+  const g1 = mkGame('magic');
+  const a1 = g1.fighters[0];
+  a1.mana = 100;
+  g1._startAttack(a1, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
+  const std = g1.projectiles[0];
+  const stdCost = 100 - a1.mana;
+
+  // overcharge (k=2) — double the hold time
+  const g2 = mkGame('magic');
+  const a2 = g2.fighters[0];
+  a2.mana = 100;
+  g2._startAttack(a2, { kind: 'swipe', dx: 1, dy: 0 }, false, 2);
+  const over = g2.projectiles[0];
+  const overCost = 100 - a2.mana;
+
+  check('overcharge doubles damage', Math.abs(over.dmg - std.dmg * 2) < 1e-9);
+  check('overcharge doubles knockback', Math.abs(over.kb - std.kb * 2) < 1e-9);
+  check('overcharge doubles burst size', Math.abs(over.r - std.r * 2) < 1e-9);
+  check('overcharge costs double the mana of a standard charge', Math.abs(overCost - stdCost * 2) < 1e-9);
+  check('standard charge mana cost is unchanged', Math.abs(stdCost - 35) < 1e-9);
+
+  // charging can actually be held out to 2x chargeMax before auto-release
+  const g3 = mkGame('magic');
+  const a3 = g3.fighters[0];
+  const ia3 = blankInput();
+  ia3.chg = { dx: 1, dy: 0 };
+  g3.inputs.set('A', ia3);
+  g3.inputs.set('B', blankInput());
+  g3.step();                                        // arms the charge
+  const chargeMax = g3._chargeMax(a3);
+  for (let i = 0; i < Math.round(chargeMax * 1.9 * 60); i++) g3.step();
+  check('magic keeps charging well past the old chargeMax', a3.state === 'charge');
+  for (let i = 0; i < 60; i++) g3.step();
+  check('magic auto-releases at the overcharge cap (2x)', a3.state !== 'charge');
+
+  // mana scales smoothly with power across the whole 0..2 range, not a step
+  const cost = k => {
+    const g = mkGame('magic');
+    const f = g.fighters[0];
+    f.mana = 100;
+    g._startAttack(f, { kind: 'swipe', dx: 1, dy: 0 }, false, k);
+    return 100 - f.mana;
+  };
+  const c0 = cost(0), c05 = cost(0.5), c1 = cost(1), c15 = cost(1.5), c2 = cost(2);
+  check('mana cost rises monotonically with charge', c0 < c05 && c05 < c1 && c1 < c15 && c15 < c2);
 }
 
 // --- 6. a burst actually launches someone ---

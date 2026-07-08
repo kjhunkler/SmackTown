@@ -210,16 +210,28 @@ const ATTACKS = {
 const WEAPON_DEFS = {
   unarmed: { chargeMax: 1.2 },
   sword:   { chargeMax: 0.5 },       // significantly faster wind-up
-  magic:   { chargeMax: 1.3 },
+  // magic can keep charging past chargeMax (up to overcharge x) for a
+  // stronger release — see _chargeCap / _castBurst.
+  magic:   { chargeMax: 1.3, overcharge: 2 },
 };
 const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
 const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 const MANA_MAX = 100;
 const MANA_REGEN = 26;               // per second, always trickling back
-const MANA_COST = 35;                // per burst; short on mana = a fizzle
+const MANA_COST = 35;                // mana at a standard (k=1) burst; scales with power
 const BURST_SPD0 = 520,  BURST_SPD1 = 1150;  // burst speed vs charge
 const BURST_TTL0 = 0.55, BURST_TTL1 = 1.5;   // burst lifetime vs charge
+const BURST_DMG0 = 3.5,  BURST_DMG1 = 8;     // burst damage vs charge
+const BURST_KB0  = 420,  BURST_KB1  = 660;   // burst knockback vs charge
+const BURST_R0   = 12,   BURST_R1   = 20;    // burst radius vs charge
+
+// Charge fraction k runs 0..1 for a standard release. Weapons with an
+// overcharge (magic) can keep holding past that into 1..2, where values
+// keep climbing linearly so a full overcharge (k=2) doubles the k=1 value.
+function chargeScale(base0, base1, k) {
+  return k <= 1 ? base0 + (base1 - base0) * k : base1 * k;
+}
 
 // Charged strong attacks: holding the strong-attack control (finger kept
 // down after a swipe on touch, B/Y held on a pad, K/X held on keyboard)
@@ -587,7 +599,7 @@ export class Game {
 
     // charge state machine: fires when the control is let go (the release
     // also arrives as a buffered swipe edge — consume it) or at the cap
-    if (inCharge && (!inp.chg || inp.atk || f.stateT >= this._chargeMax(f))) {
+    if (inCharge && (!inp.chg || inp.atk || f.stateT >= this._chargeCap(f))) {
       this._releaseCharge(f);
       inp.atk = null; inp.bufA = 0;
     }
@@ -879,6 +891,18 @@ export class Game {
     return (WEAPON_DEFS[f.st.weapon] || WEAPON_DEFS.unarmed).chargeMax;
   }
 
+  // How far a weapon's charge fraction (k) is allowed to run: 1 for a
+  // standard release, higher for weapons with an overcharge (magic can
+  // hold to 2x for a doubled-power burst).
+  _chargeKMax(f) {
+    return (WEAPON_DEFS[f.st.weapon] || WEAPON_DEFS.unarmed).overcharge || 1;
+  }
+
+  // Wall-clock hold time at which a charge auto-releases.
+  _chargeCap(f) {
+    return this._chargeMax(f) * this._chargeKMax(f);
+  }
+
   // Sword release: a body lunge along the 8-way aim, longer the harder it
   // was charged. Grounded down-aims can't dive through the floor, so only
   // their sideways component slides. Aerial upward lunges share the
@@ -903,14 +927,18 @@ export class Game {
   // Returns whether a burst actually came out.
   _castBurst(f, dx, dy, k) {
     if (f.grounded && dy > 0) { dy = 0; dx = dx || f.facing; } // not into the floor
-    if (f.mana < MANA_COST) {
+    // mana tracks the burst's actual power output (its damage), not a flat
+    // tax — a weak tap is cheap, a full overcharge costs twice a standard cast
+    const dmg = chargeScale(BURST_DMG0, BURST_DMG1, k);
+    const cost = MANA_COST * (dmg / BURST_DMG1);
+    if (f.mana < cost) {
       this.events.push({ e: 'fizzle', id: f.id, x: f.x, y: f.y });
       return false;
     }
-    f.mana -= MANA_COST;
+    f.mana -= cost;
     const n = Math.hypot(dx, dy) || 1;
     const nx = dx / n, ny = dy / n;
-    const spd = BURST_SPD0 + (BURST_SPD1 - BURST_SPD0) * k;
+    const spd = chargeScale(BURST_SPD0, BURST_SPD1, k);
     // launch follows the flight path (with lift when fired flat), so a
     // rising burst carries foes skyward and a dive shot slams them down
     const ang = dy ? Math.atan2(ny, Math.abs(nx)) * 180 / Math.PI : -30;
@@ -918,8 +946,8 @@ export class Game {
       eid: nextEid++, kind: 'burst', owner: f.id,
       x: f.x + nx * 40, y: f.y - 8 + ny * 34,
       vx: nx * spd, vy: ny * spd,
-      ttl: BURST_TTL0 + (BURST_TTL1 - BURST_TTL0) * k,
-      dmg: 3.5 + 4.5 * k, kb: 420 + 240 * k, ks: 9, r: 12 + 8 * k,
+      ttl: chargeScale(BURST_TTL0, BURST_TTL1, k),
+      dmg, kb: chargeScale(BURST_KB0, BURST_KB1, k), ks: 9, r: chargeScale(BURST_R0, BURST_R1, k),
       ang,
     });
     return true;
@@ -946,7 +974,7 @@ export class Game {
   }
 
   _releaseCharge(f) {
-    const k = clamp(f.stateT / this._chargeMax(f), 0, 1);
+    const k = clamp(f.stateT / this._chargeMax(f), 0, this._chargeKMax(f));
     const aim = f.chgAim || { dx: 0, dy: 0 };
     f.chgAim = null;
     // charge scales damage/knockback (and burst range) when the hit resolves
