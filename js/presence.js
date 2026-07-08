@@ -240,6 +240,8 @@ export class Presence {
       status: s.status,
       code: s.code || null,
       open: !!s.open,
+      act: s.act || null,        // what they're up to: builder|hat|hatlib|…
+      idle: !!s.idle,            // no taps/keys for a while
     };
   }
 
@@ -310,6 +312,8 @@ export class Presence {
           status: st.status === 'lobby' || st.status === 'fighting' ? st.status : 'menu',
           code: typeof st.code === 'string' ? st.code.slice(0, 4).toUpperCase() : null,
           open: !!st.open,
+          act: typeof st.act === 'string' ? st.act.slice(0, 12) : null,
+          idle: !!st.idle,
         };
         const had = this.guests.get(conn.peer);
         this.guests.set(conn.peer, { conn, rec, lastSeen: Date.now(), hats: had?.hats || [] });

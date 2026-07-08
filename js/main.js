@@ -163,12 +163,41 @@ if (profile) {
   UI.showScreen('login');
 }
 
+// ---------------- idle & activity tracking ----------------
+// No taps or keys for a while -> flagged idle on the town and room rosters.
+const IDLE_MS = 90000;
+let lastInputT = Date.now();
+const isIdle = () => Date.now() - lastInputT > IDLE_MS;
+function noteActivity() {
+  const wasIdle = isIdle();
+  lastInputT = Date.now();
+  if (wasIdle) { presence?.update(); net?.pushPresence(); }   // wake up promptly
+}
+addEventListener('pointerdown', noteActivity, true);
+addEventListener('keydown', noteActivity, true);
+
+// Which screen the player is parked on, for presence/roster flavor.
+// Heartbeats (~2.5s) pick this up, so no push is needed on screen changes.
+function currentAct() {
+  if (!$('#hat-library').classList.contains('hidden')) return 'hatlib';
+  const vis = id => !$('#screen-' + id).classList.contains('hidden');
+  if (vis('hat')) return 'hat';
+  if (vis('builder')) return 'builder';
+  if (vis('results')) return 'results';
+  if (vis('game')) return 'fighting';
+  if (vis('lobby')) return 'lobby';
+  return 'menu';
+}
+
 // ---------------- town-square presence ----------------
 function presenceState() {
   // The room stays open even mid-fight — late joiners drop straight in.
-  if (session) return { status: 'fighting', code: net?.roomCode || null, open: !!net?.roomCode };
-  if (net?.roomCode) return { status: 'lobby', code: net.roomCode, open: true };
-  return { status: 'menu', code: null, open: false };
+  const base = session && !session.backgrounded
+    ? { status: 'fighting', code: net?.roomCode || null, open: !!net?.roomCode }
+    : net?.roomCode ? { status: 'lobby', code: net.roomCode, open: true }
+    : session ? { status: 'fighting', code: null, open: false }
+    : { status: 'menu', code: null, open: false };
+  return { ...base, act: currentAct(), idle: isIdle() };
 }
 
 function startPresence() {
@@ -605,6 +634,7 @@ function enterRoom(joinCode) {
   if (net) { net.leave(); net = null; }
   voice?.destroy(); voice = null;
   net = new Net(profile);
+  net.getMood = () => ({ idle: isIdle(), act: currentAct() });
   voice = new VoiceChat(net);
   voice.onChange = () => { renderVoiceButtons(); renderLobby(); };
   net.on('voice', (pid, on) => {
@@ -725,7 +755,9 @@ function renderLobby() {
       build: sanitizeBuild(me.build),
       hat: sanitizeHat(me.hat),
     } : profile);
-    UI.renderLobby(net, voteMap);
+    const fightOn = !!session && !session.ended && session.mode !== 'solo';
+    $('#lobby-rejoin').classList.toggle('hidden', !fightOn);
+    UI.renderLobby(net, voteMap, fightOn);
     renderLobbyInvites();
   }
   renderVoiceButtons();
@@ -821,6 +853,7 @@ $('#lobby-edit').addEventListener('click', () => {
 
 $('#lobby-leave').addEventListener('click', () => {
   cancelAutoStart();
+  session?.stop(); session = null;    // abandon any backgrounded fight
   voice?.destroy(); voice = null;
   net?.leave(); net = null;
   pendingInvite = null;
@@ -860,6 +893,7 @@ const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge'
 class Session {
   constructor({ mode, myId, players, seed = 1, map = DEFAULT_MAP }) {
     this.mode = mode;               // 'solo' | 'host' | 'client'
+    this.backgrounded = false;      // player stepped out to the lobby; sim carries on
     this.myId = myId;
     this.players = players;
     this.meta = new Map(players.map(p => [p.id, p]));
@@ -911,6 +945,13 @@ class Session {
     touch.setEnabled(false);
   }
 
+  // Step out to the lobby (or back in) while the fight keeps running.
+  // Backgrounded: inputs off, rendering/FX skipped — sim and net carry on.
+  setBackgrounded(on) {
+    this.backgrounded = on;
+    touch.setEnabled(!on && this.running);
+  }
+
   frame(t) {
     if (!this.running) return;
     const dt = Math.min(0.1, (t - this.lastT) / 1000);
@@ -930,8 +971,10 @@ class Session {
       this.acc -= TICK;
       this.game.step();
       if (this.game.events.length) {
-        renderer.onEvents(this.game.events);
-        this.gameEvents(this.game.events);
+        if (!this.backgrounded) {
+          renderer.onEvents(this.game.events);
+          this.gameEvents(this.game.events);
+        }
         this.pendingEv.push(...this.game.events);
       }
       if (this.mode === 'host' && net &&
@@ -986,7 +1029,7 @@ class Session {
       this.tickLog.push({ seq: this.inputSeq, inp: tin });
       if (this.tickLog.length > 180) this.tickLog.shift();
       const ev = this.pred.predictStep(this.myId);
-      if (ev.length) renderer.onEvents(ev.filter(e => e.id === this.myId));
+      if (ev.length && !this.backgrounded) renderer.onEvents(ev.filter(e => e.id === this.myId));
     }
 
     // ship inputs to the host (fresh actions immediately, stick at ~30 Hz)
@@ -1012,6 +1055,7 @@ class Session {
   }
 
   renderView(view, dt) {
+    if (this.backgrounded) return;
     renderer.draw(view, dt, this.myId);
     UI.updateHud(view.fighters);
     const mine = view.fighters.find(f => f.id === this.myId);
@@ -1309,6 +1353,17 @@ function copyCharacter(p) {
 $('#help-close').addEventListener('click', () => $('#game-help').classList.add('hidden'));
 
 $('#game-quit').addEventListener('click', () => {
+  // Stepping out of a networked fight doesn't end it: the session keeps
+  // running in the background (host keeps simulating, client keeps
+  // buffering snapshots) so the lobby can offer a Rejoin button.
+  if (session && !session.ended && net && session.mode !== 'solo') {
+    session.setBackgrounded(true);
+    net.setReady(false);
+    renderLobby();
+    UI.showScreen('lobby');
+    presence?.update();
+    return;
+  }
   session?.stop();
   session = null;
   if (net) {
@@ -1318,6 +1373,14 @@ $('#game-quit').addEventListener('click', () => {
   } else {
     UI.showScreen('menu');
   }
+  presence?.update();
+});
+
+$('#lobby-rejoin').addEventListener('click', () => {
+  if (!session || session.ended) return;
+  session.setBackgrounded(false);
+  UI.buildHud(session.players);
+  UI.showScreen('game');
   presence?.update();
 });
 

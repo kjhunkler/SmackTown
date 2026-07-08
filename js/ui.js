@@ -301,6 +301,14 @@ function renderCharacterCard(prefix, profile) {
 
 // ---------- main-menu presence ----------
 
+// Flavor line for what someone is up to, shown in presence/roster lists.
+const ACT_DETAIL = {
+  builder: '🔧 tuning a fighter',
+  hat: '🎨 drawing a hat',
+  hatlib: '🎩 browsing hats',
+  results: '🏆 at the podium',
+};
+
 export function renderOnline(entries, ready, { onJoin, onInvite, root = 'menu', inviteOnly = false } = {}) {
   const list = $('#' + root + '-online-list');
   const empty = $('#' + root + '-online-empty');
@@ -312,11 +320,14 @@ export function renderOnline(entries, ready, { onJoin, onInvite, root = 'menu', 
   list.innerHTML = '';
   for (const e of entries) {
     const li = document.createElement('li');
-    const where = e.status === 'fighting' ? 'in a fight'
+    let where = e.status === 'fighting' ? 'in a fight'
       : e.status === 'lobby' ? 'in room ' + esc(e.code || '????')
       : 'in the menu';
+    const detail = ACT_DETAIL[e.act];
+    if (detail) where += ' · ' + detail;
+    if (e.idle) where += ' · 💤 idle';
     li.innerHTML = `
-      <span class="presence-dot online"></span>
+      <span class="presence-dot ${e.idle ? 'away' : 'online'}"></span>
       <span class="r-fig"></span>
       <span class="r-name">${esc(e.name)}<span class="r-where">${where}</span></span>`;
     li.querySelector('.r-fig').appendChild(fighterThumb(e.color, e.hat));
@@ -345,20 +356,24 @@ export function renderOnline(entries, ready, { onJoin, onInvite, root = 'menu', 
 
 // ---------- lobby ----------
 
-export function renderLobby(net, onVote = null) {
+export function renderLobby(net, onVote = null, fightOn = false) {
   $('#lobby-code').textContent = net.roomCode || '····';
   const list = $('#lobby-roster');
   list.innerHTML = '';
   const roster = net.rosterList();
+  const ROOM_ACT = { ...ACT_DETAIL, fighting: '⚔️ in the fight' };
   for (const m of roster) {
     const li = document.createElement('li');
     const isHost = m.peerId === net.hostId;
     const isMe = m.peerId === net.myId;
+    const dot = m.status === 'gone' ? 'gone' : m.status === 'away' || m.idle ? 'away' : 'online';
+    const doing = m.status === 'gone' ? '' : ROOM_ACT[m.act] || '';
+    const idleTag = m.idle && m.status !== 'gone' ? '💤 idle' : '';
     li.innerHTML = `
-      <span class="presence-dot ${m.status === 'gone' ? 'gone' : m.status === 'away' ? 'away' : 'online'}"></span>
+      <span class="presence-dot ${dot}"></span>
       <span class="r-fig"></span>
       <span class="r-name">${esc(m.name)}${isMe ? ' (you)' : ''}${isHost ? '<span class="r-host">HOST</span>' : ''}${m.voice ? '<span class="r-voice" title="In voice chat">🎙</span>' : ''}</span>
-      <span class="r-meta">${m.ready ? '<div class="r-ready">READY</div>' : ''}${!isMe && m.ping ? m.ping + 'ms' : ''}</span>`;
+      <span class="r-meta">${m.ready ? '<div class="r-ready">READY</div>' : ''}${doing ? `<div class="r-act">${doing}</div>` : ''}${idleTag ? `<div class="r-act">${idleTag}</div>` : ''}${!isMe && m.ping ? m.ping + 'ms' : ''}</span>`;
     li.querySelector('.r-fig').appendChild(fighterThumb(m.color, m.hat));
     list.appendChild(li);
   }
@@ -385,6 +400,14 @@ export function renderLobby(net, onVote = null) {
   const readyBtn = $('#lobby-ready');
   readyBtn.textContent = me?.ready ? 'Ready ✓' : "I'm Ready";
   readyBtn.classList.toggle('ready-on', !!me?.ready);
+  readyBtn.classList.toggle('hidden', fightOn);
+
+  if (fightOn) {
+    // a fight is running in this room — the only way forward is back in
+    $('#lobby-start').classList.add('hidden');
+    $('#lobby-status').textContent = 'The fight is still going — jump back in!';
+    return;
+  }
 
   const everyoneReady = active.length >= 1 && active.every(m => m.ready);
   const allReady = active.length >= 2 && everyoneReady;

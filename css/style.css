@@ -570,6 +570,7 @@ input[type=text]:focus { border-color: var(--accent); }
 .roster .r-name .r-host { font-size: 10px; color: var(--accent); margin-left: 6px; }
 .roster .r-meta { font-size: 11px; color: var(--ink-dim); text-align: right; }
 .roster .r-ready { color: var(--good); font-weight: 800; font-size: 12px; }
+.roster .r-act { font-size: 10px; color: var(--ink-dim); white-space: nowrap; }
 .roster .r-score { font-weight: 900; font-size: 18px; color: var(--accent); }
 
 /* results leaderboard */

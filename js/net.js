@@ -40,6 +40,7 @@ export class Net {
     this.joinOrder = -1;
     this.nextJoinOrder = 1;         // host-only counter
     this.status = 'online';
+    this.getMood = null;            // optional () => {idle, act} for heartbeats
     this.handlers = {};
     this.hbTimer = null;
     this.closed = false;
@@ -71,6 +72,8 @@ export class Net {
       vote: null,
       voice: false,
       status: 'online',
+      idle: false,
+      act: null,                       // what they're up to: builder|hat|…
       ping: 0,
       lastSeen: Date.now(),
     };
@@ -299,7 +302,11 @@ export class Net {
       }
 
       case 'hb': {
-        if (m) { m.status = msg.status || 'online'; }
+        if (m) {
+          m.status = msg.status || 'online';
+          m.idle = !!msg.idle;
+          m.act = typeof msg.act === 'string' ? msg.act.slice(0, 12) : null;
+        }
         this.send(pid, { t: 'hb-ack', ts: msg.ts });
         this.emit('roster');
         break;
@@ -464,7 +471,17 @@ export class Net {
   }
 
   _broadcastHeartbeat() {
-    this.broadcast({ t: 'hb', ts: Date.now(), status: this.status });
+    const mood = this.getMood?.() || {};
+    const me = this.members.get(this.myId);
+    if (me) { me.idle = !!mood.idle; me.act = mood.act || null; }
+    this.broadcast({ t: 'hb', ts: Date.now(), status: this.status, idle: !!mood.idle, act: mood.act || null });
+  }
+
+  // Push my idle/activity out right now (heartbeats also carry it on a timer).
+  pushPresence() {
+    if (this.closed) return;
+    this._broadcastHeartbeat();
+    this.emit('roster');
   }
 
   _tickPresence() {
