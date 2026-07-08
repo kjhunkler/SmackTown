@@ -314,6 +314,7 @@ export class Game {
     const st = derivedStats(p.build);
     return {
       id: p.id, name: p.name, color: p.color, isBot: !!p.isBot, sandbag: !!p.sandbag, st,
+      baseBuild: p.build, tryBuild: null,
       x: this.stage.spawns[i % this.stage.spawns.length], y: -F_H / 2,
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
@@ -406,8 +407,31 @@ export class Game {
   updateBuild(id, build) {
     const f = this.fighters.find(x => x.id === id);
     if (!f) return null;
+    f.baseBuild = build;
+    f.tryBuild = null;
     f.st = derivedStats(build);
     f.jumps = Math.min(f.jumps, f.st.maxJumps);
+    return f;
+  }
+
+  tryBuild(id, build) {
+    const f = this.fighters.find(x => x.id === id);
+    if (!f || f.dead) return null;
+    if (!f.baseBuild) f.baseBuild = build;
+    f.tryBuild = build;
+    f.st = derivedStats(build);
+    f.jumps = Math.min(f.jumps, f.st.maxJumps);
+    return f;
+  }
+
+  clearTryBuild(id) {
+    const f = this.fighters.find(x => x.id === id);
+    if (!f || !f.tryBuild) return null;
+    f.tryBuild = null;
+    if (f.baseBuild) {
+      f.st = derivedStats(f.baseBuild);
+      f.jumps = Math.min(f.jumps, f.st.maxJumps);
+    }
     return f;
   }
 
@@ -1489,10 +1513,13 @@ export class Game {
           this.events.push({ e: 'augment', aug: 'reaper', id: credit.id, x: credit.x, y: credit.y });
         }
         f.lastHitBy = null;
+        const hadTryBuild = !!f.tryBuild;
         if (!freeplay && f.stocks <= 0) {
           f.dead = true;
           f.state = 'dead';
+          if (hadTryBuild) this.clearTryBuild(f.id);
         } else {
+          if (hadTryBuild) this.clearTryBuild(f.id);
           f.x = this.stage.spawns[this.fighters.indexOf(f) % this.stage.spawns.length];
           f.y = this.stage.respawnY;
           f.vx = 0; f.vy = 0;

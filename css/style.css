@@ -566,8 +566,10 @@ input[type=text]:focus { border-color: var(--accent); }
   image-rendering: pixelated;
   pointer-events: none;
 }
+.roster .r-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .roster .r-name { font-weight: 800; flex: 1; }
 .roster .r-name .r-host { font-size: 10px; color: var(--accent); margin-left: 6px; }
+.roster .r-build { font-size: 10px; color: var(--ink-dim); line-height: 1.25; }
 .roster .r-meta { font-size: 11px; color: var(--ink-dim); text-align: right; }
 .roster .r-ready { color: var(--good); font-weight: 800; font-size: 12px; }
 .roster .r-act { font-size: 10px; color: var(--ink-dim); white-space: nowrap; }
@@ -798,7 +800,21 @@ input[type=text]:focus { border-color: var(--accent); }
   min-width: 74px;
   border-top: 3px solid;
 }
-.hud-tile .h-name { font-size: 10px; font-weight: 700; color: var(--ink-dim); white-space: nowrap; overflow: hidden; max-width: 90px; }
+.hud-tile .h-name {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 90px;
+}
+.hud-tile .h-name-try { color: var(--accent); cursor: pointer; }
+.hud-tile .h-name-try::after { content: ' Try'; color: var(--good); font-weight: 900; }
+.hud-tile .h-name:disabled { cursor: default; }
 .hud-tile .h-pct { font-size: 20px; font-weight: 900; font-style: italic; }
 .hud-tile .h-pct.h-pct-hit { animation: pct-hit .35s ease-out; }
 @keyframes pct-hit {

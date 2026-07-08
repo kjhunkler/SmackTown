@@ -394,10 +394,14 @@ export function renderLobby(net, onVote = null, fightOn = false) {
     const dot = m.status === 'gone' ? 'gone' : m.status === 'away' || m.idle ? 'away' : 'online';
     const doing = m.status === 'gone' ? '' : ROOM_ACT[m.act] || '';
     const idleTag = m.idle && m.status !== 'gone' ? '💤 idle' : '';
+    const build = buildSummary(m.build).replace(/\n/g, ' · ');
     li.innerHTML = `
       <span class="presence-dot ${dot}"></span>
       <span class="r-fig"></span>
-      <span class="r-name">${esc(m.name)}${isMe ? ' (you)' : ''}${isHost ? '<span class="r-host">HOST</span>' : ''}${m.voice ? '<span class="r-voice" title="In voice chat">🎙</span>' : ''}</span>
+      <span class="r-col">
+        <span class="r-name">${esc(m.name)}${isMe ? ' (you)' : ''}${isHost ? '<span class="r-host">HOST</span>' : ''}${m.voice ? '<span class="r-voice" title="In voice chat">🎙</span>' : ''}</span>
+        <span class="r-build">${esc(build)}</span>
+      </span>
       <span class="r-meta">${m.ready ? '<div class="r-ready">READY</div>' : ''}${doing ? `<div class="r-act">${doing}</div>` : ''}${idleTag ? `<div class="r-act">${idleTag}</div>` : ''}${!isMe && m.ping ? m.ping + 'ms' : ''}</span>`;
     li.querySelector('.r-fig').appendChild(fighterThumb(m.color, m.hat));
     list.appendChild(li);
@@ -449,18 +453,20 @@ export function renderLobby(net, onVote = null, fightOn = false) {
 
 // ---------- game HUD ----------
 
-export function buildHud(players) {
+export function buildHud(players, { myId = null, onTry = null } = {}) {
   const hud = $('#game-hud');
   hud.innerHTML = '';
   for (const p of players) {
+    const canTry = onTry && p.id !== myId;
     const tile = document.createElement('div');
     tile.className = 'hud-tile';
     tile.id = 'hud-' + cssId(p.id);
     tile.style.borderTopColor = p.color;
     tile.innerHTML = `
-      <div class="h-name">${esc(p.name)}</div>
+      <button class="h-name${canTry ? ' h-name-try' : ''}" ${canTry ? '' : 'disabled'}>${esc(p.name)}</button>
       <div class="h-pct" style="color:${p.color}">0%</div>
       <div class="h-stocks">●●●</div>`;
+    if (canTry) tile.querySelector('.h-name').addEventListener('click', () => onTry(p.id));
     hud.appendChild(tile);
   }
 }
