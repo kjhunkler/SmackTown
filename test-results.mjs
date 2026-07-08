@@ -89,6 +89,21 @@ const players = [
   check('rebind of unknown id falls back to addFighter', g.rebindFighter('ZZZ', { id: 'D', name: 'Dee', color: '#fff', build: build() }) !== null && g.fighters.length === 4);
 }
 
+// --- 5b. character switch: rebind adopts the new build, updateBuild swaps live ---
+{
+  const g = new Game(players, 7, 'arena');
+  const speedy = { stats: { power: 0, speed: 5, defense: 0, agility: 0 }, abilities: ['fireball'], augments: [] };
+  const f = g.rebindFighter('B', { id: 'B2', name: 'Bob', color: '#0f0', build: speedy });
+  check('rebind adopts the new character build', Math.abs(f.st.speedMult - 1.3) < 0.01);
+  const feather = { stats: { power: 0, speed: 0, defense: 0, agility: 0 }, abilities: [], augments: ['feather'] };
+  g.updateBuild('B2', feather);
+  check('updateBuild swaps a live kit', f.st.maxJumps === 3 && Math.abs(f.st.speedMult - 1) < 0.01);
+  f.jumps = 3;
+  g.updateBuild('B2', build());
+  check('shrinking kits clamp air jumps', f.jumps <= f.st.maxJumps);
+  check('updateBuild of unknown id is a no-op', g.updateBuild('nobody', build()) === null);
+}
+
 // --- 6. dash attack: momentum-gated tap conversion ---
 {
   const g = new Game(players, 7, 'arena');

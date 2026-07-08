@@ -318,6 +318,8 @@ export class Game {
     f.id = p.id;
     f.name = p.name;
     f.color = p.color;
+    f.st = derivedStats(p.build);        // rejoiners may bring a new character
+    f.jumps = Math.min(f.jumps, f.st.maxJumps);
     this.inputs.delete(oldId);
     this.inputs.set(p.id, blankInput());
     this.lagComp.delete(oldId);
@@ -338,6 +340,17 @@ export class Game {
       f.jumps = f.st.maxJumps;
       f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0; f.chgAim = null;
     }
+    return f;
+  }
+
+  // Swap a live fighter's kit (lobby workshop edit applied on rejoin):
+  // derived stats refresh in place and anything the new kit shrinks
+  // (air jumps) clamps to fit. Percent, stocks and cooldowns ride along.
+  updateBuild(id, build) {
+    const f = this.fighters.find(x => x.id === id);
+    if (!f) return null;
+    f.st = derivedStats(build);
+    f.jumps = Math.min(f.jumps, f.st.maxJumps);
     return f;
   }
 

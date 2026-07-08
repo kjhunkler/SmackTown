@@ -344,6 +344,7 @@ export class Net {
           m.color = msg.profile?.color || m.color;
           m.build = msg.profile?.build || m.build;
           m.hat = msg.profile?.hat ?? m.hat ?? null;
+          this.emit('profile-changed', pid, m);
           this.emit('roster');
           if (this.isHost) this._broadcastRoster();
         }
@@ -400,6 +401,7 @@ export class Net {
     }
     this.broadcast({ t: 'profile', profile: { name: profile.name, color: profile.color, build: profile.build, hat: profile.hat || null } });
     if (this.isHost) this._broadcastRoster();
+    if (me) this.emit('profile-changed', this.myId, me);
     this.emit('roster');
   }
 

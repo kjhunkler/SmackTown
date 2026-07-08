@@ -668,6 +668,7 @@ function enterRoom(joinCode) {
     session?.onRoster();
     maybeAutoStart();
   });
+  net.on('profile-changed', (pid, m) => session?.onProfileChanged(pid, m));
   net.on('error', text => {
     if (session) return;
     UI.showScreen('menu');
@@ -962,6 +963,26 @@ class Session {
     if (this.game && this.meta.has(pid)) this.game.setParked(pid, !!on);
   }
 
+  // A player re-tuned their character in the lobby workshop mid-fight:
+  // their fighter adopts the new kit on the spot, so stepping out to the
+  // lobby and rejoining doubles as a character switch.
+  onProfileChanged(pid, m) {
+    if (this.ended || !this.meta.has(pid)) return;
+    const p = this.meta.get(pid);
+    p.name = m.name;
+    p.color = m.color;
+    p.build = sanitizeBuild(m.build);
+    p.hat = sanitizeHat(m.hat);
+    this.game?.updateBuild(pid, p.build);
+    this.pred?.updateBuild(pid, p.build);
+    if (pid === this.myId) UI.setupAbilityButtons(p.build.abilities);
+    // host: re-broadcast the roster so clients repaint colors/hats/builds
+    if (this.mode === 'host' && net) {
+      net.broadcast({ t: 'start', players: this.players, seed: this.seed, map: this.map });
+    }
+    UI.buildHud(this.players);
+  }
+
   frame(t) {
     if (!this.running) return;
     const dt = Math.min(0.1, (t - this.lastT) / 1000);
@@ -1185,7 +1206,19 @@ class Session {
     }
     let changed = false;
     for (const p of players) {
-      if (this.meta.has(p.id)) continue;
+      const cur = this.meta.get(p.id);
+      if (cur) {
+        // an existing player may have re-tuned their character in the lobby
+        if (cur.name !== p.name || cur.color !== p.color || cur.hat !== p.hat
+            || JSON.stringify(cur.build) !== JSON.stringify(p.build)) {
+          Object.assign(cur, { name: p.name, color: p.color, build: p.build, hat: p.hat });
+          this.pred?.updateBuild(p.id, p.build);
+          this.game?.updateBuild(p.id, p.build);
+          if (p.id === this.myId) UI.setupAbilityButtons(p.build.abilities);
+          changed = true;
+        }
+        continue;
+      }
       this.players.push(p);
       this.meta.set(p.id, p);
       this.pred?.addFighter(p);
