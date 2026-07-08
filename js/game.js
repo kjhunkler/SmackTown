@@ -195,7 +195,7 @@ const ATTACKS = {
   // sword strong attack: one blade arc, aimed 8-way by the swipe (the aim
   // places the box), released with a lunge along that aim. Racks damage up
   // fast but barely launches — the sword wins by percent, not ring-outs.
-  slash:  { dmg: 18, kb: 110, ks: 10, startup: .09, active: .11, rec: .24, rx: 70, ry: 38, ang: -25 },
+  slash:  { dmg: 18, kb: 80,  ks: 7,  startup: .09, active: .11, rec: .24, rx: 70, ry: 38, ang: -25 },
   // magic strong attack: the cast pose. 'cast' = no melee box ever goes
   // active — the hit is the burst projectile spawned at release.
   mcast:  { dmg: 0,  kb: 0,   ks: 0,  startup: .08, active: .02, rec: .26, rx: 30, ry: 24, ang: 0, cast: true },
@@ -211,6 +211,8 @@ const WEAPON_DEFS = {
   magic:   { chargeMax: 1.3 },
 };
 const SWORD_LUNGE = 640;             // release lunge speed along the aim
+const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
+const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 const MANA_MAX = 100;
 const MANA_REGEN = 26;               // per second, always trickling back
 const MANA_COST = 35;                // per burst; short on mana = a fizzle
@@ -836,7 +838,7 @@ export class Game {
       }
       f.fastfall = false;
     }
-    if (name === 'slash') this._lunge(f, dx, dy);
+    if (name === 'slash') this._lunge(f, dx, dy, chg);
     if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy });
   }
@@ -856,20 +858,21 @@ export class Game {
     return (WEAPON_DEFS[f.st.weapon] || WEAPON_DEFS.unarmed).chargeMax;
   }
 
-  // Sword release: a body lunge along the 8-way aim. Grounded down-aims
-  // can't dive through the floor, so only their sideways component slides.
-  // Aerial upward lunges share the up-smash rise cooldown so chained
-  // slashes can't climb forever.
-  _lunge(f, dx, dy) {
+  // Sword release: a body lunge along the 8-way aim, longer the harder it
+  // was charged. Grounded down-aims can't dive through the floor, so only
+  // their sideways component slides. Aerial upward lunges share the
+  // up-smash rise cooldown so chained slashes can't climb forever.
+  _lunge(f, dx, dy, k = 0) {
+    const spd = SWORD_LUNGE * (1 + SWORD_LUNGE_CHG * k);
     const n = Math.hypot(dx, dy) || 1;
-    const lx = (dx / n) * SWORD_LUNGE;
-    let ly = (dy / n) * SWORD_LUNGE;
+    const lx = (dx / n) * spd;
+    let ly = (dy / n) * spd;
     if (f.grounded && ly > 0) ly = 0;
     if (ly < 0) {
       if (!f.grounded && f.riseT > 0) ly = 0;
       else { f.riseT = AIR_RISE_CD; f.grounded = false; f.fastfall = false; }
     }
-    if (lx) { f.vx = lx; f.dashT = 0.16; }
+    if (lx) { f.vx = lx; f.dashT = SWORD_DASH_T0 + (SWORD_DASH_T1 - SWORD_DASH_T0) * k; }
     if (ly) f.vy = ly;
   }
 
@@ -895,7 +898,7 @@ export class Game {
       x: f.x + nx * 40, y: f.y - 8 + ny * 34,
       vx: nx * spd, vy: ny * spd,
       ttl: BURST_TTL0 + (BURST_TTL1 - BURST_TTL0) * k,
-      dmg: 3.5 + 4.5 * k, kb: 340 + 180 * k, ks: 8, r: 12 + 8 * k,
+      dmg: 3.5 + 4.5 * k, kb: 420 + 240 * k, ks: 9, r: 12 + 8 * k,
       ang,
     });
     return true;

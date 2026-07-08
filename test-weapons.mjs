@@ -79,6 +79,17 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const c = g3.fighters[0];
   g3._startAttack(c, { kind: 'swipe', dx: 0, dy: 1 });
   check('grounded down slash stays out of the floor', c.vy === 0 && c.grounded);
+
+  // charge = dash length: a full-charge release lunges harder and slides longer
+  const g4 = mkGame('sword');
+  const d = g4.fighters[0];
+  g4._startAttack(d, { kind: 'swipe', dx: 1, dy: 0 });
+  const v0 = d.vx, t0 = d.dashT;
+  const g5 = mkGame('sword');
+  const e = g5.fighters[0];
+  g5._startAttack(e, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);   // full charge
+  check('charged slash lunges faster', e.vx > v0 * 1.5);
+  check('charged slash slides longer', e.dashT > t0);
 }
 
 // --- 5. magic: bursts, mana, charge = range ---
@@ -125,6 +136,30 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   for (let i = 0; i < 30 && b.state !== 'hitstun'; i++) g.step();
   check('burst connects and launches', b.state === 'hitstun' && b.pct > 0);
   check('spent burst is dead', g.projectiles.every(p => p.ttl <= 0));
+}
+
+// --- 6b. weapon knockback identity: sword launches least, magic most ---
+{
+  const launch = (weapon, atk) => {
+    const g = mkGame(weapon);
+    const [a, b] = g.fighters;
+    b.pct = 60;
+    if (weapon === 'magic') {
+      b.x = a.x + 120; a.facing = 1;
+      g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
+      for (let i = 0; i < 30 && b.state !== 'hitstun'; i++) g.step();
+    } else {
+      a.x = 0; b.x = 60; a.facing = 1; a.grounded = true; b.grounded = true;
+      a.state = 'attack'; a.atk = atk; a.stateT = 0.17; a.atkDir = { x: 1, y: 0 };
+      g._resolveAttacks();
+    }
+    return Math.hypot(b.vx, b.vy);
+  };
+  const sword = launch('sword', 'slash');
+  const fists = launch('unarmed', 'fsmash');
+  const magic = launch('magic', 'mcast');
+  check('sword launches weaker than fists', sword < fists);
+  check('magic launches harder than sword', magic > sword * 1.3);
 }
 
 // --- 7. casts never grow a melee hitbox ---
