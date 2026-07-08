@@ -165,6 +165,9 @@ export class Renderer {
         case 'jump':
           this.burst(ev.x, ev.y, 5, '#aabbee', 120);
           break;
+        case 'spikebounce':
+          this.burst(ev.x, ev.y, 10, '#ffdd55', 260);
+          break;
         case 'ledge':
           this.burst(ev.x, ev.y, 6, '#8fd3ff', 150);
           break;

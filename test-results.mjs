@@ -122,6 +122,30 @@ const players = [
   check('backward tap opts out of the dash', c.atk === 'jab');
 }
 
+// --- 6b. spike bounce: a landed spike springs the attacker back up ---
+{
+  const g = new Game(players, 7, 'arena');
+  const [a, b] = g.fighters;
+  a.grounded = false; a.vy = 500; a.jumps = 0;      // falling, jumps spent
+  g._applyHit(a, b, { dmg: 11, kb: 220, ks: 20 }, Math.PI / 2, 1, true);
+  check('spike sends the victim down', b.vy > 0);
+  check('spike bounces the attacker up', a.vy < 0 && !a.grounded);
+  check('spike refreshes the attacker\'s jumps', a.jumps === a.st.maxJumps);
+  check('spike bounce fires its event', g.events.some(e => e.e === 'spikebounce' && e.id === 'A'));
+  // a plain (non-spike) hit leaves the attacker alone
+  const g2 = new Game(players, 7, 'arena');
+  const [a2, b2] = g2.fighters;
+  a2.grounded = false; a2.vy = 500; a2.jumps = 0;
+  g2._applyHit(a2, b2, { dmg: 10, kb: 100, ks: 5 }, 0, 1);
+  check('normal hits do not bounce the attacker', a2.vy === 500 && a2.jumps === 0);
+  // an already-rising attacker keeps their stronger lift
+  const g3 = new Game(players, 7, 'arena');
+  const [a3, b3] = g3.fighters;
+  a3.grounded = false; a3.vy = -900; a3.jumps = 1;
+  g3._applyHit(a3, b3, { dmg: 11, kb: 220, ks: 20 }, Math.PI / 2, 1, true);
+  check('spike bounce never slows a rising attacker', a3.vy === -900);
+}
+
 // --- 7. unknown attack names (newer peer) fizzle instead of crashing ---
 {
   const g = new Game(players, 7, 'arena');

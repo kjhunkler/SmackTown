@@ -142,6 +142,7 @@ export function hazardsAt(mapId, tickF) {
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
 const JUMP_V = 860, JUMP2_V = 780;
+const SPIKE_BOUNCE = 640;            // attacker's upward spring off a landed spike
 const AIR_RISE_CD = 1.1;             // min seconds between aerial up-smash lifts
 const LEDGE_JUMP_V = 1120;           // ledge super jump — spends no air jump
 const LEDGE_INVULN = 0.6, LEDGE_MAX_HANG = 4.0, REGRAB_CD = 0.45;
@@ -1190,6 +1191,16 @@ export class Game {
     vic.atkSpd = 0;
     vic.chg = 0;
     vic.chgAim = null;
+
+    // a landed spike springs the attacker back up with their jumps refreshed,
+    // turning a deep off-stage dunk into a recoverable play
+    if (spike) {
+      att.vy = Math.min(att.vy, -SPIKE_BOUNCE);
+      att.grounded = false;
+      att.fastfall = false;
+      att.jumps = att.st.maxJumps;
+      this.events.push({ e: 'spikebounce', id: att.id, x: att.x, y: att.y + F_H / 2 });
+    }
 
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({

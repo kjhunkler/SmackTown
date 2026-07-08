@@ -327,6 +327,7 @@ class Sfx {
       case 'burn':    this.stopCharge(ev.vic); this.play('burn'); break;
       case 'ledge':   this.stopCharge(ev.id); this.play('ledge'); break;
       case 'jump':    this.play('jump'); break;
+      case 'spikebounce': this.play('jump'); break;
       case 'land':    this.play('land'); break;
       case 'roll':    this.play('roll'); break;
       case 'duck':    this.play('duck'); break;
