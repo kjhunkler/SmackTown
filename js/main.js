@@ -3,6 +3,7 @@
 import {
   loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout, sanitizeHat,
   loadHats, hatArt, saveHat, deleteHat, loadLoadouts, selectedLoadout, selectLoadout,
+  HAT_CHARS, HAT_PALETTE,
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
@@ -15,6 +16,35 @@ import * as UI from './ui.js';
 import { SFX } from './sfx.js';
 
 const $ = s => document.querySelector(s);
+
+function smartColorConvertHat(hat, fromColor, toColor) {
+  const art = sanitizeHat(hat);
+  if (!art || !fromColor || !toColor) return art;
+  const from = nearestHatColor(fromColor);
+  const to = nearestHatColor(toColor);
+  if (from < 0 || to < 0 || from === to) return art;
+  return art.replaceAll(HAT_CHARS[from], HAT_CHARS[to]);
+}
+
+function nearestHatColor(color) {
+  const rgb = hexRgb(color);
+  if (!rgb) return -1;
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < HAT_PALETTE.length; i++) {
+    const p = hexRgb(HAT_PALETTE[i]);
+    if (!p) continue;
+    const d = (rgb.r - p.r) ** 2 + (rgb.g - p.g) ** 2 + (rgb.b - p.b) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+function hexRgb(color) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(color || '').trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return { r: n >> 16 & 255, g: n >> 8 & 255, b: n & 255 };
+}
 
 // ---------------- audio ----------------
 // Audio can only start after a user gesture: the first press anywhere
@@ -915,7 +945,7 @@ class Session {
     this.corr = { x: 0, y: 0 };     // client: reconciliation smoothing offset
     this.pendActs = {};             // client: actions waiting for a sim tick
     this.acks = new Map();          // host: last input seq processed per client
-    this.trying = new Map();        // player id -> tried player's id until next life
+    this.trying = new Map();        // player id -> {targetId, build, hat} until next life
     this.running = false;
     this.ended = false;
     this.raf = 0;
@@ -1001,20 +1031,30 @@ class Session {
     const me = this.meta.get(pid);
     const target = this.meta.get(targetId);
     if (!me || !target || pid === targetId) return;
-    const build = sanitizeBuild(target.build);
-    this.trying.set(pid, targetId);
+    const targetTry = this.trying.get(targetId);
+    const build = sanitizeBuild(targetTry?.build || target.build);
+    const hat = smartColorConvertHat(targetTry?.hat || target.hat, target.color, me.color);
+    this.trying.set(pid, { targetId, build, hat });
     this.game.tryBuild(pid, build);
-    const original = me.build;
+    const original = { build: me.build, hat: me.hat };
     me.build = build;
+    me.hat = hat;
     if (pid === this.myId) UI.setupAbilityButtons(build.abilities);
     net?.broadcast({
       t: 'start',
-      players: this.players.map(p => p.id === pid ? { ...p, build } : p),
+      players: this.players.map(p => p.id === pid ? { ...p, build, hat } : p),
       seed: this.seed,
       map: this.map,
     });
-    me.build = original;
+    me.build = original.build;
+    me.hat = original.hat;
     UI.toast(pid === this.myId ? `Trying ${target.name}!` : `${me.name} is trying ${target.name}!`);
+  }
+
+  activeMeta(id) {
+    const p = this.meta.get(id);
+    const tr = this.trying.get(id);
+    return tr && p ? { ...p, build: tr.build, hat: tr.hat } : p;
   }
 
   endTry(pid) {
@@ -1080,7 +1120,7 @@ class Session {
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
         mana: f.mana, weapon: f.st.weapon,
-        color: this.meta.get(f.id)?.color, hat: this.meta.get(f.id)?.hat, cds: f.cds,
+        color: this.meta.get(f.id)?.color, hat: this.activeMeta(f.id)?.hat, cds: f.cds,
         score: f.score, parked: f.parked,
       })),
       projectiles: this.game.projectiles,
@@ -1259,18 +1299,25 @@ class Session {
       const cur = this.meta.get(p.id);
       if (cur) {
         // an existing player may have re-tuned their character in the lobby
-        if (cur.name !== p.name || cur.color !== p.color || cur.hat !== p.hat
+        if (this.trying.has(p.id) || cur.name !== p.name || cur.color !== p.color || cur.hat !== p.hat
             || JSON.stringify(cur.build) !== JSON.stringify(p.build)) {
-          Object.assign(cur, { name: p.name, color: p.color, build: p.build, hat: p.hat });
-          const tryTarget = this.trying.get(p.id);
-          const activeBuild = tryTarget ? this.meta.get(tryTarget)?.build : p.build;
-          this.pred?.updateBuild(p.id, p.build);
-          this.game?.updateBuild(p.id, p.build);
-          if (tryTarget && activeBuild) {
-            this.pred?.tryBuild(p.id, sanitizeBuild(activeBuild));
-            this.game?.tryBuild(p.id, sanitizeBuild(activeBuild));
+          const activeTry = this.trying.get(p.id);
+          const realBuildChanged = !activeTry && JSON.stringify(cur.build) !== JSON.stringify(p.build);
+          const realHatChanged = !activeTry && cur.hat !== p.hat;
+          cur.name = p.name;
+          cur.color = p.color;
+          if (realBuildChanged) cur.build = p.build;
+          if (realHatChanged) cur.hat = p.hat;
+          const activeChanged = JSON.stringify(cur.build) !== JSON.stringify(p.build) || cur.hat !== p.hat;
+          if (activeChanged) this.trying.set(p.id, { targetId: null, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) });
+          else this.trying.delete(p.id);
+          this.pred?.updateBuild(p.id, cur.build);
+          this.game?.updateBuild(p.id, cur.build);
+          if (activeChanged) {
+            this.pred?.tryBuild(p.id, sanitizeBuild(p.build));
+            this.game?.tryBuild(p.id, sanitizeBuild(p.build));
           }
-          if (p.id === this.myId) UI.setupAbilityButtons(sanitizeBuild(activeBuild || p.build).abilities);
+          if (p.id === this.myId) UI.setupAbilityButtons(sanitizeBuild(activeChanged ? p.build : cur.build).abilities);
           changed = true;
         }
         continue;
@@ -1319,8 +1366,8 @@ class Session {
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
       hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', blade: r[11] === 'slash', chg: r[14][5] || 0 } : null,
       guard: r[28],
-      mana: r[38], weapon: this.meta.get(r[0])?.build?.weapon,
-      color: this.meta.get(r[0])?.color, hat: this.meta.get(r[0])?.hat,
+      mana: r[38], weapon: this.activeMeta(r[0])?.build?.weapon,
+      color: this.meta.get(r[0])?.color, hat: this.activeMeta(r[0])?.hat,
       score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5] } : null,
       parked: !!r[37],
     }));
@@ -1353,7 +1400,7 @@ class Session {
         pct: mine.pct, stocks: mine.stocks, state: mine.state, dead: mine.dead,
         invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
         guard: mine.guard, mana: mine.mana, weapon: mine.st.weapon,
-        cds: mine.cds, color: this.meta.get(mine.id)?.color, hat: this.meta.get(mine.id)?.hat,
+        cds: mine.cds, color: this.meta.get(mine.id)?.color, hat: this.activeMeta(mine.id)?.hat,
       };
       const i = fighters.findIndex(f => f.id === this.myId);
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
