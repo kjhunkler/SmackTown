@@ -9,8 +9,13 @@
 // Keyboard fallback (desktop testing): arrows/WASD move, space jump,
 // J = tap attack, K = smash (hold to charge, release to fire; aimed by held
 // direction at press, 8-way), L and ; = abilities. Z/X/C/V mirror J/K/L/;.
-// Hold down + press a direction = dodge roll. Right mouse button = smash
-// (heavy) attack, aimed by the held movement keys — same charge as K.
+// Hold down + press a direction = dodge roll.
+// Mouse (keyboard players move on the keys, so the mouse is a pure attack
+// stick): left click anywhere = quick attack · left click-drag = smash in
+// the drag direction (hold to charge, release to fire) · right click =
+// smash aimed by the held movement keys (hold to charge). Both screen
+// halves attack under the mouse — only touch keeps the left half as the
+// movement stick.
 // Gamepad (standard layout, polled each frame alongside touch/keys):
 // left stick / dpad move — hold down to duck, tilt sideways while
 // ducked = dodge roll, flick
@@ -90,9 +95,13 @@ export class TouchInput {
   _bindZone(zone, which) {
     zone.addEventListener('pointerdown', e => {
       if (!this.enabled || e.button > 0) return;   // right/middle mouse = heavy attack, not a gesture
+      // Touch keeps the split — left half is the movement stick, right half
+      // attacks. A mouse has no thumb to park on a stick (PC players move on
+      // the keys), so mouse clicks are ALWAYS attacks, on either half.
+      const role = e.pointerType === 'mouse' ? 'swipe' : which;
       zone.setPointerCapture(e.pointerId);
-      const rec = { id: e.pointerId, ox: e.clientX, oy: e.clientY, lastX: e.clientX, lastY: e.clientY, lastT: e.timeStamp, t0: e.timeStamp, flicked: false, moved: 0 };
-      if (which === 'stick') {
+      const rec = { id: e.pointerId, role, ox: e.clientX, oy: e.clientY, lastX: e.clientX, lastY: e.clientY, lastT: e.timeStamp, t0: e.timeStamp, flicked: false, moved: 0 };
+      if (role === 'stick') {
         this.stick = rec;
         this.stickBase.classList.remove('hidden');
         this.stickBase.style.left = e.clientX + 'px';
@@ -102,8 +111,11 @@ export class TouchInput {
       }
     });
     zone.addEventListener('pointermove', e => {
-      const rec = which === 'stick' ? this.stick : this.swipe;
-      if (!rec || rec.id !== e.pointerId) return;
+      // locate the gesture this pointer belongs to (its role may differ from
+      // the zone it started in — a mouse on the left half is a swipe)
+      const rec = this.stick?.id === e.pointerId ? this.stick
+        : this.swipe?.id === e.pointerId ? this.swipe : null;
+      if (!rec) return;
       const dt = Math.max(1, e.timeStamp - rec.lastT);
       const vx = (e.clientX - rec.lastX) / dt;
       const vy = (e.clientY - rec.lastY) / dt;
@@ -112,12 +124,12 @@ export class TouchInput {
 
       // smash detected mid-gesture: lock the aim and charge until the
       // finger lifts — no need to wait for pointerup to start the attack
-      if (which === 'swipe' && !rec.chgAim && rec.moved >= SWIPE_MIN) {
+      if (rec.role === 'swipe' && !rec.chgAim && rec.moved >= SWIPE_MIN) {
         rec.chgAim = octant(e.clientX - rec.ox, e.clientY - rec.oy);
         this.state.chg = rec.chgAim;
       }
 
-      if (which === 'stick') {
+      if (rec.role === 'stick') {
         let dx = e.clientX - rec.ox, dy = e.clientY - rec.oy;
         const len = Math.hypot(dx, dy);
         if (len > STICK_RADIUS) {
@@ -144,9 +156,10 @@ export class TouchInput {
       }
     });
     const end = e => {
-      const rec = which === 'stick' ? this.stick : this.swipe;
-      if (!rec || rec.id !== e.pointerId) return;
-      if (which === 'stick') {
+      const rec = this.stick?.id === e.pointerId ? this.stick
+        : this.swipe?.id === e.pointerId ? this.swipe : null;
+      if (!rec) return;
+      if (rec.role === 'stick') {
         this.stick = null;
         this.state.mx = 0; this.state.my = 0;
         this.stickBase.classList.add('hidden');
