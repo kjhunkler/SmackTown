@@ -192,13 +192,35 @@ const ATTACKS = {
   // interval; the last window swaps in 'fin' for a launching finisher.
   nspin:  { dmg: 2.5, kb: 120, ks: 5, startup: .06, active: .42, rec: .16, rx: 46, ry: 42, ang: -80, both: true,
             rehit: .14, fin: { kb: 210, ks: 16, ang: -40 } },
+  // sword strong attack: one blade arc, aimed 8-way by the swipe (the aim
+  // places the box), released with a lunge along that aim. Racks damage up
+  // fast but barely launches — the sword wins by percent, not ring-outs.
+  slash:  { dmg: 18, kb: 110, ks: 10, startup: .09, active: .11, rec: .24, rx: 70, ry: 38, ang: -25 },
+  // magic strong attack: the cast pose. 'cast' = no melee box ever goes
+  // active — the hit is the burst projectile spawned at release.
+  mcast:  { dmg: 0,  kb: 0,   ks: 0,  startup: .08, active: .02, rec: .26, rx: 30, ry: 24, ang: 0, cast: true },
 };
 
-// Charged smashes: holding the strong-attack control (finger kept down after
-// a swipe on touch, B/Y held on a pad, K/X held on keyboard) winds the smash
-// up in place, telegraph showing. Damage and knockback grow with hold time;
-// at CHARGE_MAX the attack releases on its own.
-const CHARGE_MAX = 1.2;              // seconds to full charge (auto-fire cap)
+// Weapons: what the strong-attack control does. Bare fists keep the classic
+// smash kit; the sword slashes with a lunge and winds up in a blink; magic
+// casts a knockback burst that flies further (and hits harder) the longer
+// it was charged, paid for from a mana pool that refills on its own.
+const WEAPON_DEFS = {
+  unarmed: { chargeMax: 1.2 },
+  sword:   { chargeMax: 0.5 },       // significantly faster wind-up
+  magic:   { chargeMax: 1.3 },
+};
+const SWORD_LUNGE = 640;             // release lunge speed along the aim
+const MANA_MAX = 100;
+const MANA_REGEN = 26;               // per second, always trickling back
+const MANA_COST = 35;                // per burst; short on mana = a fizzle
+const BURST_SPD0 = 520,  BURST_SPD1 = 1150;  // burst speed vs charge
+const BURST_TTL0 = 0.55, BURST_TTL1 = 1.5;   // burst lifetime vs charge
+
+// Charged strong attacks: holding the strong-attack control (finger kept
+// down after a swipe on touch, B/Y held on a pad, K/X held on keyboard)
+// winds the strike up in place, telegraph showing. Damage and knockback grow
+// with hold time; at the weapon's chargeMax the attack releases on its own.
 const CHARGE_DMG = 0.5;              // +50% damage at full charge
 const CHARGE_KB = 0.35;              // +35% knockback at full charge
 
@@ -276,6 +298,7 @@ export class Game {
       chgAim: null,                 // 8-way aim captured when the charge began
       invuln: 0, counterT: 0, dashT: 0, slideT: 0,
       guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
+      mana: MANA_MAX,               // magic weapon fuel, always recharging
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
       usedSecondWind: false,
       lastHitBy: null,              // KO attribution (reaper heal)
@@ -444,6 +467,7 @@ export class Game {
     f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
     f.regrabT = Math.max(0, f.regrabT - TICK);
     f.standT = Math.max(0, f.standT - TICK);
+    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
 
@@ -556,7 +580,7 @@ export class Game {
 
     // charge state machine: fires when the control is let go (the release
     // also arrives as a buffered swipe edge — consume it) or at the cap
-    if (inCharge && (!inp.chg || inp.atk || f.stateT >= CHARGE_MAX)) {
+    if (inCharge && (!inp.chg || inp.atk || f.stateT >= this._chargeMax(f))) {
       this._releaseCharge(f);
       inp.atk = null; inp.bufA = 0;
     }
@@ -759,11 +783,11 @@ export class Game {
     this.events.push({ e: 'crush', id: f.id, x: f.x, y: f.y });
   }
 
-  _startAttack(f, atk, fromDuck = false) {
+  _startAttack(f, atk, fromDuck = false, chg = 0) {
     // Aimed commands: {kind:'tap'|'swipe', dx, dy} with dx/dy in {-1,0,1}
     // (8-way). Legacy shapes {kind:'up'|'down'|'side'} from older peers
     // still convert. Taps are quick jabs aimed by movement; swipes are
-    // smashes aimed by the swipe itself.
+    // weapon strikes aimed by the swipe itself.
     let dx = atk.dx | 0, dy = atk.dy | 0;
     if (atk.kind === 'up') { dx = 0; dy = -1; }
     else if (atk.kind === 'down') { dx = 0; dy = 1; }
@@ -784,47 +808,113 @@ export class Game {
         name = 'dash';
         dx = Math.sign(f.vx);
       }
-    } else if (dy < 0 && !dx) name = 'usmash';
-    else if (dy > 0 && !dx) name = f.grounded ? 'dsmash' : 'dair';
-    else name = 'fsmash';
+    } else {
+      // no neutral strong attack: a neutral swipe is the side strike the
+      // way you're facing, whatever the weapon
+      if (!dx && !dy) dx = f.facing;
+      name = this._weaponAttack(f, dx, dy);
+    }
 
     if (dx) f.facing = dx;
     f.state = 'attack';
     f.stateT = 0;
     f.atk = name;
     f.atkDir = (dx || dy) ? { x: dx, y: dy } : null;
+    f.chg = chg;                         // charge baked in by _releaseCharge
     f.lowJab = fromDuck && name === 'jab';
     f.atkHit.clear();
     f.atkSpd = Math.hypot(f.vx, f.vy);   // momentum: judge the run-up, not the plant
     // dash attacks keep their slide; so do attacks thrown mid-waveland
     if (f.grounded && name !== 'dash' && f.slideT <= 0) f.vx *= 0.35;
-    // upward swipe in the air boosts you like an air jump — and costs none.
+    // upward smash in the air boosts you like an air jump — and costs none.
     // The lift itself is on a short cooldown so chained up-smashes can't be
     // spammed to fly forever; the swing still comes out either way.
-    if (swipe && dy < 0 && !f.grounded) {
+    if (dy < 0 && (name === 'usmash' || name === 'fsmash') && !f.grounded) {
       if (f.riseT <= 0) {
         f.vy = Math.min(f.vy, -JUMP2_V * f.st.jumpMult * (dx ? 0.75 : 1));
         f.riseT = AIR_RISE_CD;
       }
       f.fastfall = false;
     }
+    if (name === 'slash') this._lunge(f, dx, dy);
+    if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy });
   }
 
-  // Wind up a smash: the fighter plants (or drifts, midair) with the
-  // telegraph showing while the strong-attack control stays held. The aim —
-  // and therefore which smash comes out — locks when the charge begins.
+  // Which strong attack a swipe/charge becomes: the equipped weapon's
+  // strike, or the classic smash kit for bare fists.
+  _weaponAttack(f, dx, dy) {
+    const w = f.st.weapon;
+    if (w === 'sword') return 'slash';
+    if (w === 'magic') return 'mcast';
+    if (dy < 0 && !dx) return 'usmash';
+    if (dy > 0 && !dx) return f.grounded ? 'dsmash' : 'dair';
+    return 'fsmash';
+  }
+
+  _chargeMax(f) {
+    return (WEAPON_DEFS[f.st.weapon] || WEAPON_DEFS.unarmed).chargeMax;
+  }
+
+  // Sword release: a body lunge along the 8-way aim. Grounded down-aims
+  // can't dive through the floor, so only their sideways component slides.
+  // Aerial upward lunges share the up-smash rise cooldown so chained
+  // slashes can't climb forever.
+  _lunge(f, dx, dy) {
+    const n = Math.hypot(dx, dy) || 1;
+    const lx = (dx / n) * SWORD_LUNGE;
+    let ly = (dy / n) * SWORD_LUNGE;
+    if (f.grounded && ly > 0) ly = 0;
+    if (ly < 0) {
+      if (!f.grounded && f.riseT > 0) ly = 0;
+      else { f.riseT = AIR_RISE_CD; f.grounded = false; f.fastfall = false; }
+    }
+    if (lx) { f.vx = lx; f.dashT = 0.16; }
+    if (ly) f.vy = ly;
+  }
+
+  // Magic release: a burst that flies along the aim. Charge is range and
+  // muscle — speed, lifetime, damage and knockback all grow with it. Costs
+  // mana; too dry to pay and the cast fizzles into nothing but recovery.
+  // Returns whether a burst actually came out.
+  _castBurst(f, dx, dy, k) {
+    if (f.grounded && dy > 0) { dy = 0; dx = dx || f.facing; } // not into the floor
+    if (f.mana < MANA_COST) {
+      this.events.push({ e: 'fizzle', id: f.id, x: f.x, y: f.y });
+      return false;
+    }
+    f.mana -= MANA_COST;
+    const n = Math.hypot(dx, dy) || 1;
+    const nx = dx / n, ny = dy / n;
+    const spd = BURST_SPD0 + (BURST_SPD1 - BURST_SPD0) * k;
+    // launch follows the flight path (with lift when fired flat), so a
+    // rising burst carries foes skyward and a dive shot slams them down
+    const ang = dy ? Math.atan2(ny, Math.abs(nx)) * 180 / Math.PI : -30;
+    this.projectiles.push({
+      eid: nextEid++, kind: 'burst', owner: f.id,
+      x: f.x + nx * 40, y: f.y - 8 + ny * 34,
+      vx: nx * spd, vy: ny * spd,
+      ttl: BURST_TTL0 + (BURST_TTL1 - BURST_TTL0) * k,
+      dmg: 3.5 + 4.5 * k, kb: 340 + 180 * k, ks: 8, r: 12 + 8 * k,
+      ang,
+    });
+    return true;
+  }
+
+  // Wind up a strong attack: the fighter plants (or drifts, midair) with
+  // the telegraph showing while the strong-attack control stays held. The
+  // aim — and therefore which strike comes out — locks when the charge
+  // begins. Each weapon winds up at its own rate.
   _startCharge(f, aim) {
-    const dx = aim.dx | 0, dy = aim.dy | 0;
-    let name;
-    if (dy < 0 && !dx) name = 'usmash';
-    else if (dy > 0 && !dx) name = f.grounded ? 'dsmash' : 'dair';
-    else name = 'fsmash';
+    let dx = aim.dx | 0, dy = aim.dy | 0;
+    // no neutral strong attack: neutral charges the side strike, as faced
+    if (!dx && !dy) dx = f.facing;
+    const name = this._weaponAttack(f, dx, dy);
     if (dx) f.facing = dx;
     f.state = 'charge';
     f.stateT = 0;
     f.atk = name;
-    f.atkDir = (dx || dy) ? { x: dx, y: dy } : null;
+    f.atkDir = { x: dx, y: dy };
     f.chgAim = { dx, dy };
     f.atkHit.clear();
     if (f.grounded && f.slideT <= 0) f.vx *= 0.35;   // charging mid-waveland glides
@@ -832,11 +922,11 @@ export class Game {
   }
 
   _releaseCharge(f) {
-    const k = clamp(f.stateT / CHARGE_MAX, 0, 1);
+    const k = clamp(f.stateT / this._chargeMax(f), 0, 1);
     const aim = f.chgAim || { dx: 0, dy: 0 };
     f.chgAim = null;
-    this._startAttack(f, { kind: 'swipe', dx: aim.dx, dy: aim.dy });
-    f.chg = k;    // scales damage/knockback when the hit resolves
+    // charge scales damage/knockback (and burst range) when the hit resolves
+    this._startAttack(f, { kind: 'swipe', dx: aim.dx, dy: aim.dy }, false, k);
   }
 
   _useAbility(f, slot) {
@@ -993,11 +1083,11 @@ export class Game {
     if (f.state === 'charge' && f.atk) {
       const a = ATTACKS[f.atk];
       if (!a) return null;              // move from a newer version — no box
-      return { ...meleeHitbox(f, a, f.atkDir), active: false, chg: clamp(f.stateT / CHARGE_MAX, 0, 1) };
+      return { ...meleeHitbox(f, a, f.atkDir), active: false, chg: clamp(f.stateT / this._chargeMax(f), 0, 1) };
     }
     if (f.state === 'attack' && f.atk) {
       const a = ATTACKS[f.atk];
-      if (a && f.stateT <= a.startup + a.active) {
+      if (a && !a.cast && f.stateT <= a.startup + a.active) {
         return { ...meleeHitbox(f, a, f.atkDir), active: f.stateT >= a.startup, round: !!a.rehit };
       }
     }
@@ -1014,10 +1104,10 @@ export class Game {
       // landed shockwave slam
       if (f.pendingShock && f.grounded) this._shockwave(f);
 
-      // normal attacks during active window
+      // normal attacks during active window (casts hit via their projectile)
       if (f.state === 'attack' && f.atk) {
         const a = ATTACKS[f.atk];
-        if (a && f.stateT >= a.startup && f.stateT <= a.startup + a.active) {
+        if (a && !a.cast && f.stateT >= a.startup && f.stateT <= a.startup + a.active) {
           let spec = a;
           if (a.rehit) {
             // multi-hit: split the active window into rehit-sized slices and
@@ -1409,9 +1499,10 @@ export class Game {
           r2(f.burnT),
           r2(f.slideT),
           f.parked ? 1 : 0,
+          r1(f.mana),
         ];
       }),
-      p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
+      p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
       ev: this.events.slice(),
     };
   }
@@ -1458,6 +1549,7 @@ export function restoreFighter(f, row) {
     f.burnT = +row[35] || 0;
     f.slideT = +row[36] || 0;
     f.parked = !!row[37];
+    if (row.length > 38) f.mana = +row[38] || 0;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.

@@ -186,6 +186,14 @@ export class Renderer {
           this.burst(ev.x, ev.y, 12, '#ffffff', 320);
           this.shake = Math.max(this.shake, 12);
           break;
+        case 'fizzle':
+          // magic cast with an empty tank: a sad little puff
+          this.burst(ev.x, ev.y, 6, '#8b7bb0', 120);
+          this.dmgPops.push({
+            x: ev.x, y: ev.y - F_H / 2 - 16,
+            txt: 'NO MANA', t: 0, life: 0.6, heavy: false, color: '#b388ff',
+          });
+          break;
         case 'burn':
           this.burst(ev.x, ev.y, 20, '#ff8a2e', 520);
           this.burst(ev.x, ev.y, 10, '#ffd23e', 340);
@@ -395,6 +403,19 @@ export class Renderer {
         }
         ctx.fillStyle = '#eaf7ff';
         ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, 7); ctx.fill();
+      } else if (p.kind === 'burst') {
+        // arcane orb: white-hot core in a violet halo, throbbing as it
+        // flies — its size is the actual hit radius from the sim
+        const r = p.r || 14;
+        const throb = 1 + Math.sin(t * 22 + p.eid) * 0.15;
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.9 * throb);
+        g.addColorStop(0, 'rgba(255,255,255,.95)');
+        g.addColorStop(0.35, 'rgba(179,136,255,.85)');
+        g.addColorStop(1, 'rgba(56,182,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(0, 0, r * 1.9 * throb, 0, 7); ctx.fill();
+        ctx.fillStyle = '#f0e8ff';
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.55 * throb, 0, 7); ctx.fill();
       } else if (p.kind === 'trap') {
         // armed jaws, teeth glinting while it waits
         const glint = 0.6 + Math.abs(Math.sin(t * 6 + p.eid)) * 0.4;
@@ -2452,6 +2473,20 @@ export class Renderer {
       if (k > 0) {
         ctx.fillStyle = k > 0.5 ? '#3ddc84' : k > 0.25 ? '#ffb02e' : '#ff5470';
         roundRect(ctx, x, y, Math.max(4, w * k), h, 3); ctx.fill();
+      }
+    }
+
+    // mana meter: magic users wear their fuel gauge under their feet.
+    // Violet while there's a cast in the tank, dimming when too dry to fire.
+    if (f.weapon === 'magic' && f.mana != null) {
+      const w = 44, h = 4;
+      const k = clamp(f.mana / 100, 0, 1);
+      const x = f.x - w / 2, y = f.y + F_H / 2 + 8;
+      ctx.fillStyle = 'rgba(10,12,30,.6)';
+      roundRect(ctx, x, y, w, h, 2); ctx.fill();
+      if (k > 0) {
+        ctx.fillStyle = k >= 0.35 ? '#b388ff' : '#6b5a96';  // 35 = one cast
+        roundRect(ctx, x, y, Math.max(3, w * k), h, 2); ctx.fill();
       }
     }
   }
