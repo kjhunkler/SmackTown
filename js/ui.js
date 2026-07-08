@@ -1,7 +1,7 @@
 // Screen management + all menu/builder/lobby DOM. Game HUD lives here too.
 
 import {
-  COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS,
+  COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS, WEAPONS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
   loadLoadouts, deleteLoadout, hatArt, loadHats, selectedLoadout, selectLoadout,
   HAT_W, HAT_H, HAT_PX, HAT_FACE_ROWS, HAT_CHARS, HAT_PALETTE, sanitizeHat,
@@ -161,8 +161,33 @@ export function renderBuilder(work) {
     statsBox.appendChild(row);
   }
 
+  renderWeaponShop($('#builder-weapons'), work, left);
   renderShop($('#builder-abilities'), ABILITIES, work.build.abilities, MAX_ABILITIES, left, work);
   renderShop($('#builder-augments'), AUGMENTS, work.build.augments, MAX_AUGMENTS, left, work);
+}
+
+// Weapon rack: exactly one is equipped, so tapping a weapon swaps to it.
+// Affordability is judged against the credits the swap itself frees up.
+function renderWeaponShop(box, work, left) {
+  box.innerHTML = '';
+  const curCost = WEAPONS.find(w => w.id === work.build.weapon)?.cost || 0;
+  for (const w of WEAPONS) {
+    const has = work.build.weapon === w.id;
+    const affordable = has || left + curCost >= w.cost;
+    const el = document.createElement('div');
+    el.className = 'shop-item' + (has ? ' owned' : affordable ? '' : ' locked');
+    el.innerHTML = `
+      <div class="si-icon">${w.icon}</div>
+      <div class="si-cost">${has ? '✓ equipped' : w.cost ? w.cost + ' cr' : 'free'}</div>
+      <div class="si-name">${w.name}</div>
+      <div class="si-desc">${w.desc}</div>`;
+    el.addEventListener('click', () => {
+      if (has || !affordable) return;
+      work.build.weapon = w.id;
+      renderBuilder(work);
+    });
+    box.appendChild(el);
+  }
 }
 
 // Live fighter preview in the workshop: the fighter wearing work.hatId,

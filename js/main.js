@@ -890,7 +890,7 @@ function startSession(cfg) {
 
 // Cosmetic events the client already plays locally via prediction; the
 // host's copies are dropped for our own fighter to avoid double effects.
-const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'ability', 'shockwave', 'gale', 'mend', 'duck']);
+const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'shockwave', 'gale', 'mend', 'duck']);
 
 class Session {
   constructor({ mode, myId, players, seed = 1, map = DEFAULT_MAP }) {
@@ -1031,6 +1031,7 @@ class Session {
         id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, facing: f.facing,
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
+        mana: f.mana, weapon: f.st.weapon,
         color: this.meta.get(f.id)?.color, hat: this.meta.get(f.id)?.hat, cds: f.cds,
         score: f.score, parked: f.parked,
       })),
@@ -1263,6 +1264,7 @@ class Session {
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
       hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', chg: r[14][5] || 0 } : null,
       guard: r[28],
+      mana: r[38], weapon: this.meta.get(r[0])?.build?.weapon,
       color: this.meta.get(r[0])?.color, hat: this.meta.get(r[0])?.hat,
       score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5] } : null,
       parked: !!r[37],
@@ -1295,13 +1297,13 @@ class Session {
         vx: mine.vx, vy: mine.vy, facing: mine.facing,
         pct: mine.pct, stocks: mine.stocks, state: mine.state, dead: mine.dead,
         invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
-        guard: mine.guard,
+        guard: mine.guard, mana: mine.mana, weapon: mine.st.weapon,
         cds: mine.cds, color: this.meta.get(mine.id)?.color, hat: this.meta.get(mine.id)?.hat,
       };
       const i = fighters.findIndex(f => f.id === this.myId);
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
     }
-    const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3] }));
+    const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0 }));
     const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;
     // riding a moving platform: platforms draw on the interpolated (delayed)
     // timeline while our fighter is predicted ahead — shift us by the

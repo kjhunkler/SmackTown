@@ -43,6 +43,19 @@ export const ABILITIES = [
     desc: 'Plant spikes that launch whoever steps in' },
 ];
 
+// Weapons: what the strong-attack control swings. Every fighter carries
+// exactly one; bare fists are the free default and a real choice, not a
+// downgrade — the paid weapons trade the classic smash kit for a gimmick.
+export const WEAPONS = [
+  { id: 'unarmed', icon: '👊', name: 'Bare Fists', cost: 0,
+    desc: 'The classic smash kit — big damage AND big launches, no strings' },
+  { id: 'sword',   icon: '🗡️', name: 'Sword', cost: 250,
+    desc: 'Lunging slashes in any direction — huge damage, light launch, charges in a blink' },
+  { id: 'magic',   icon: '🔮', name: 'Magic', cost: 250,
+    desc: 'Fire bursts that fling foes far — low damage, drains mana, and charge = range' },
+];
+export const DEFAULT_WEAPON = 'unarmed';
+
 export const AUGMENTS = [
   { id: 'vampiric',    icon: '🩸', name: 'Vampiric',     cost: 170,
     desc: 'Heal 12% of the damage you deal' },
@@ -160,6 +173,7 @@ export function deleteHat(id) {
 export function emptyBuild() {
   return {
     stats: { power: 0, speed: 0, defense: 0, agility: 0 },
+    weapon: DEFAULT_WEAPON,
     abilities: [],
     augments: [],
   };
@@ -168,6 +182,7 @@ export function emptyBuild() {
 export function buildCost(build) {
   let total = 0;
   for (const s of STATS) total += (build.stats[s.id] || 0) * s.cost;
+  total += WEAPONS.find(w => w.id === build.weapon)?.cost || 0;
   for (const id of build.abilities) {
     const a = ABILITIES.find(x => x.id === id);
     if (a) total += a.cost;
@@ -188,6 +203,7 @@ export function sanitizeBuild(raw) {
       const v = raw.stats && raw.stats[s.id];
       b.stats[s.id] = Math.min(s.max, Math.max(0, Math.floor(Number(v) || 0)));
     }
+    if (WEAPONS.some(w => w.id === raw.weapon)) b.weapon = raw.weapon;
     if (Array.isArray(raw.abilities)) {
       b.abilities = raw.abilities
         .filter(id => ABILITIES.some(a => a.id === id))
@@ -273,6 +289,7 @@ export function derivedStats(build) {
     airMult:   1 + 0.08 * b.stats.agility,
     maxJumps:  2 + (has('feather') ? 1 : 0),
     cdMult:    has('quickhands') ? 0.8 : 1,
+    weapon:    b.weapon,
     abilities: b.abilities,
     augments:  b.augments,
   };
@@ -371,6 +388,8 @@ export function buildSummary(build) {
   const statBits = STATS.filter(s => b.stats[s.id] > 0)
     .map(s => `${s.name} ${b.stats[s.id]}`);
   if (statBits.length) parts.push(statBits.join(' · '));
+  const wpn = WEAPONS.find(w => w.id === b.weapon);
+  if (wpn && wpn.id !== DEFAULT_WEAPON) parts.push(`${wpn.icon} ${wpn.name}`);
   const abil = b.abilities.map(id => ABILITIES.find(a => a.id === id)?.name).filter(Boolean);
   if (abil.length) parts.push(abil.join(' + '));
   const augs = b.augments.map(id => AUGMENTS.find(a => a.id === id)?.name).filter(Boolean);

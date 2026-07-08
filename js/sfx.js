@@ -235,6 +235,20 @@ class Sfx {
         this._tone({ type: 'sine', f0: 660, f1: 1320, dur: 0.25, vol: 0.15 });
         break;
 
+      // --- weapons ---
+      case 'slash':   // metallic shing over the swing whoosh
+        this._noise({ type: 'bandpass', f0: 1600, f1: 3400, q: 2.4, dur: 0.11, vol: 0.16 });
+        this._tone({ type: 'triangle', f0: 2600, f1: 1900, dur: 0.06, vol: 0.07 });
+        break;
+      case 'cast':    // arcane release: a bright rising zap
+        this._tone({ type: 'sine', f0: 620, f1: 1560, dur: 0.16, vol: 0.16 });
+        this._noise({ type: 'highpass', f0: 2800, dur: 0.10, vol: 0.08 });
+        break;
+      case 'fizzle':  // dry cast: a dull sputter
+        this._tone({ type: 'square', f0: 240, f1: 130, dur: 0.13, vol: 0.10 });
+        this._noise({ f0: 600, f1: 200, dur: 0.10, vol: 0.07 });
+        break;
+
       // --- abilities ---
       case 'ab:fireball': this._noise({ type: 'bandpass', f0: 400, f1: 1600, q: 1.2, dur: 0.22, vol: 0.2 }); break;
       case 'burn':
@@ -321,8 +335,13 @@ class Sfx {
         break;
       case 'block':   this.stopCharge(ev.vic); this.play('block'); break;
       case 'ko':      this.stopCharge(ev.id); this.play('ko'); break;
-      case 'swing':   this.stopCharge(ev.id); this.play(ev.atk === 'nspin' ? 'spin' : 'swing'); break;
+      case 'swing':   this.stopCharge(ev.id); this.play(
+        ev.atk === 'nspin' ? 'spin'
+        : ev.atk === 'slash' ? 'slash'
+        : ev.atk === 'mcast' ? 'cast'
+        : 'swing'); break;
       case 'charge':  this.startCharge(ev.id); break;
+      case 'fizzle':  this.stopCharge(ev.id); this.play('fizzle'); break;
       case 'crush':   this.stopCharge(ev.id); this.play('crush'); break;
       case 'burn':    this.stopCharge(ev.vic); this.play('burn'); break;
       case 'ledge':   this.stopCharge(ev.id); this.play('ledge'); break;
