@@ -202,18 +202,28 @@ const ATTACKS = {
   // magic strong attack: the cast pose. 'cast' = no melee box ever goes
   // active — the hit is the burst projectile spawned at release.
   mcast:  { dmg: 0,  kb: 0,   ks: 0,  startup: .08, active: .02, rec: .26, rx: 30, ry: 24, ang: 0, cast: true },
+  // spear strong attack: a stationary thrust, aimed 8-way. The hit is a
+  // narrow spearhead run out along the aim, same as a blade — but 'gap'
+  // carves a dead zone out of the near end, so the point only connects at
+  // real distance (rx = tip reach, gap = blind spot, both from the body's
+  // edge; ry = half-thickness of the head). Whiffs up close, rewards
+  // spacing with the biggest hit in the game.
+  thrust: { dmg: 17, kb: 170, ks: 16, startup: .11, active: .08, rec: .22, rx: 150, gap: 50, ry: 8, ang: -20, spear: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
 // smash kit; the sword slashes with a lunge and winds up in a blink; magic
 // casts a knockback burst that flies further (and hits harder) the longer
-// it was charged, paid for from a mana pool that refills on its own.
+// it was charged, paid for from a mana pool that refills on its own; the
+// spear thrusts in place at a regular wind-up, trading close-range safety
+// for the longest reach and hardest hit of any weapon.
 const WEAPON_DEFS = {
   unarmed: { chargeMax: 1.2 },
   sword:   { chargeMax: 0.5 },       // significantly faster wind-up
   // magic can keep charging past chargeMax (up to overcharge x) for a
   // stronger release — see _chargeCap / _castBurst.
   magic:   { chargeMax: 1.3, overcharge: 2 },
+  spear:   { chargeMax: 1.2 },       // regular wind-up, same as bare fists
 };
 const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
@@ -895,6 +905,7 @@ export class Game {
     const w = f.st.weapon;
     if (w === 'sword') return 'slash';
     if (w === 'magic') return 'mcast';
+    if (w === 'spear') return 'thrust';
     if (dy < 0 && !dx) return 'usmash';
     if (dy > 0 && !dx) return f.grounded ? 'dsmash' : 'dair';
     return 'fsmash';
@@ -1701,6 +1712,24 @@ export function meleeHitbox(f, spec, aim = null) {
       hw: Math.abs(nx) * hl + spec.ry,
       hh: Math.abs(ny) * hl + spec.ry,
       blade: true,
+    };
+  }
+  // spear: the same long-thin-box-along-the-aim as a blade, but with a
+  // dead zone carved out of the near end (gap) — the box runs from
+  // gap..rx out from the body's edge instead of 0..rx, so a target
+  // standing inside the gap simply isn't there yet.
+  if (spec.spear) {
+    const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };
+    const n = Math.hypot(dir.x, dir.y);
+    const nx = dir.x / n, ny = dir.y / n;
+    const mid = (spec.gap + spec.rx) / 2;      // center of the live segment
+    const hl = (spec.rx - spec.gap) / 2;       // half-length of the live segment
+    return {
+      dx: nx * (F_W / 2 + mid),
+      dy: ny * (F_H / 2 + mid),
+      hw: Math.abs(nx) * hl + spec.ry,
+      hh: Math.abs(ny) * hl + spec.ry,
+      spear: true,
     };
   }
   const a = !spec.both && aim && (aim.x || aim.y) ? aim : null;

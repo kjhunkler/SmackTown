@@ -2412,6 +2412,23 @@ export class Renderer {
       ctx.restore();
     }
 
+    // worn spear: a shaft angled across the back shoulder at rest; it
+    // disappears while the thrust itself is out
+    if (f.weapon === 'spear' && f.atk !== 'thrust') {
+      ctx.save();
+      ctx.scale(f.facing || 1, 1);
+      ctx.translate(-bw / 2 + 8, bTop + 4);
+      ctx.rotate(-0.62);
+      ctx.strokeStyle = '#8a6a48';                     // wood shaft
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 30); ctx.stroke();
+      ctx.fillStyle = '#cfd8ea';                       // leaf-shaped head
+      ctx.beginPath();
+      ctx.moveTo(0, -18); ctx.lineTo(-3.4, -9); ctx.lineTo(3.4, -9);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
     // body
     ctx.fillStyle = f.color;
     roundRect(ctx, -bw / 2, bTop, bw, bh, 14);
@@ -2516,6 +2533,7 @@ export class Renderer {
   // translucent fill during active frames. Mirrors game.js meleeHitbox.
   _hitbox(ctx, f, t) {
     if (f.hb.blade) return this._blade(ctx, f, t);
+    if (f.hb.spear) return this._spear(ctx, f, t);
     const { dx, dy, hw, hh, active, round } = f.hb;
     const x = f.x + dx - hw, y = f.y + dy - hh;
     // spin moves show as a circle (well, ellipse) instead of a box
@@ -2611,6 +2629,60 @@ export class Renderer {
       ctx.beginPath();
       ctx.moveTo(0, -bt - 7); ctx.lineTo(0, bt + 7);   // crossguard hint
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Spear thrust: the live head runs out from where the dead zone ends —
+  // exactly the box the sim tests — but a dulled wood shaft is drawn
+  // bridging body to head so the whole weapon (and the gap up close) reads
+  // at a glance. Only the leaf-shaped head lights up as live steel.
+  _spear(ctx, f, t) {
+    const { dx, dy, hw, hh, active } = f.hb;
+    const n = Math.hypot(dx, dy) || 1;
+    const ux = dx / n, uy = dy / n;
+    const half = Math.abs(ux) * hw + Math.abs(uy) * hh;  // half-length of the live head
+    const headLen = half * 2;
+    const bt = Math.min(6, hw, hh);                       // thin shaft/head
+    const rear = Math.max(0, n - half);                   // body edge through the dead zone
+    ctx.save();
+    ctx.translate(f.x + dx - ux * half, f.y + dy - uy * half);  // head base (dead-zone end)
+    ctx.rotate(Math.atan2(uy, ux));
+    ctx.strokeStyle = active ? 'rgba(150,110,70,.9)' : 'rgba(150,110,70,.5)';
+    ctx.lineWidth = bt * 0.7;
+    ctx.beginPath(); ctx.moveTo(-rear, 0); ctx.lineTo(2, 0); ctx.stroke();
+    // leaf-shaped head: a narrow diamond point
+    const shape = () => {
+      ctx.beginPath();
+      ctx.moveTo(2, 0);
+      ctx.lineTo(headLen * 0.6, -bt);
+      ctx.lineTo(headLen, 0);
+      ctx.lineTo(headLen * 0.6, bt);
+      ctx.closePath();
+    };
+    if (active) {
+      const g = ctx.createLinearGradient(0, -bt, 0, bt);
+      g.addColorStop(0, 'rgba(244,250,255,.95)');
+      g.addColorStop(0.5, 'rgba(158,180,214,.8)');
+      g.addColorStop(1, 'rgba(244,250,255,.95)');
+      ctx.fillStyle = g;
+      shape(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.lineWidth = 2;
+      shape(); ctx.stroke();
+    } else {
+      const chg = f.hb.chg || 0;
+      const pulse = chg ? (0.5 + 0.5 * Math.sin(t * (2 + 9 * chg) * 2 * Math.PI)) * chg : 0;
+      if (pulse > 0.02) {
+        ctx.fillStyle = `rgba(205, 228, 255, ${(0.30 * pulse).toFixed(3)})`;
+        shape(); ctx.fill();
+      }
+      ctx.strokeStyle = `rgba(215, 236, 255, ${(0.6 + 0.4 * pulse).toFixed(3)})`;
+      ctx.lineWidth = 1.5 + 2 * chg;
+      ctx.setLineDash([6, 5]);
+      ctx.lineDashOffset = -t * 60;
+      shape(); ctx.stroke();
+      ctx.setLineDash([]);
     }
     ctx.restore();
   }

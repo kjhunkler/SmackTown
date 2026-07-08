@@ -53,6 +53,8 @@ export const WEAPONS = [
     desc: 'Lunging slashes in any direction — huge damage, light launch, charges in a blink' },
   { id: 'magic',   icon: '🔮', name: 'Magic', cost: 250,
     desc: 'Fire bursts that fling foes far — low damage, drains mana, and charge = range' },
+  { id: 'spear',   icon: '🔱', name: 'Spear', cost: 250,
+    desc: 'Long stationary thrust with a dead zone up close — huge damage at real range' },
 ];
 export const DEFAULT_WEAPON = 'unarmed';
 

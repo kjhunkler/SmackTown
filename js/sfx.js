@@ -241,6 +241,10 @@ class Sfx {
         this._tone({ type: 'triangle', f0: 2600, f1: 1900, dur: 0.06, vol: 0.07 });
         break;
       case 'cast': this._cast(chg); break;
+      case 'thrust':  // spear poke: a sharp whoosh with a stabbing point
+        this._noise({ type: 'bandpass', f0: 1000, f1: 2600, q: 2.0, dur: 0.09, vol: 0.15 });
+        this._tone({ type: 'triangle', f0: 900, f1: 280, dur: 0.07, vol: 0.11 });
+        break;
       case 'fizzle':  // dry cast: a dull sputter
         this._tone({ type: 'square', f0: 240, f1: 130, dur: 0.13, vol: 0.10 });
         this._noise({ f0: 600, f1: 200, dur: 0.10, vol: 0.07 });
@@ -350,6 +354,7 @@ class Sfx {
         ev.atk === 'nspin' ? 'spin'
         : ev.atk === 'slash' ? 'slash'
         : ev.atk === 'mcast' ? 'cast'
+        : ev.atk === 'thrust' ? 'thrust'
         : 'swing', ev.chg || 0); break;
       case 'charge':  this.startCharge(ev.id); break;
       case 'fizzle':  this.stopCharge(ev.id); this.play('fizzle'); break;

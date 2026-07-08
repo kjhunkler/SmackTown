@@ -28,6 +28,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('sanitize defaults junk weapons to unarmed', sanitizeBuild({ ...build(), weapon: 'bazooka' }).weapon === 'unarmed');
   check('old builds without a weapon are unarmed', sanitizeBuild({ stats: {}, abilities: [], augments: [] }).weapon === 'unarmed');
   check('weapons cost credits', buildCost(build('magic')) === 250 && buildCost(build()) === 0);
+  check('spear costs credits too', buildCost(build('spear')) === 250);
   check('derived stats carry the weapon', derivedStats(build('magic')).weapon === 'magic');
 }
 
@@ -126,6 +127,65 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
     return b.pct > 0;
   };
   check('blade tip connects at fist-whiff range', reach('sword', 'slash') && !reach('unarmed', 'fsmash'));
+}
+
+// --- 4c. spear: a dead zone up close, the longest reach, the biggest hit ---
+{
+  const g = mkGame('spear');
+  const a = g.fighters[0];
+  check('spear charges at the regular (bare-fist) speed', g._chargeMax(a) === mkGame()._chargeMax(mkGame().fighters[0]));
+  g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
+  check('spear swipe is a thrust', a.atk === 'thrust');
+  check('thrust does not lunge — it holds ground', a.vx === 0);
+
+  const box = (weapon, atk, dir) => {
+    const g2 = mkGame(weapon);
+    const f = g2.fighters[0];
+    f.facing = 1; f.state = 'attack'; f.atk = atk; f.stateT = 0.19; f.atkDir = dir;
+    return g2.hitboxFor(f);
+  };
+  const spear = box('spear', 'thrust', { x: 1, y: 0 });
+  const sword = box('sword', 'slash', { x: 1, y: 0 });
+  check('thrust box is flagged spear, not blade', spear.spear === true && !spear.blade);
+  check('spear head is thinner than a sword blade', spear.hh < sword.hh);
+  check('spear reaches further than a sword', spear.dx + spear.hw > sword.dx + sword.hw);
+  check('spear box leaves a dead zone short of the body', spear.dx - spear.hw > 20);
+
+  const g2 = mkGame('spear');
+  const c = g2.fighters[0];
+  g2._startCharge(c, { dx: 1, dy: 0 });
+  const hb = g2.hitboxFor(c);
+  check('charging a thrust telegraphs the head', hb && hb.spear === true && hb.active === false);
+
+  // whiffs up close (inside the dead zone), connects at real distance —
+  // and reaches past where a sword's blade would already be whiffing
+  const reach = (weapon, atk, victimX) => {
+    const g3 = mkGame(weapon);
+    const [f, o] = g3.fighters;
+    f.x = 0; o.x = victimX; f.facing = 1; f.grounded = true; o.grounded = true;
+    f.state = 'attack'; f.atk = atk; f.stateT = 0.19; f.atkDir = { x: 1, y: 0 };
+    g3._resolveAttacks();
+    return o.pct > 0;
+  };
+  check('spear whiffs a target standing too close', !reach('spear', 'thrust', 30));
+  check('spear connects at proper spacing', reach('spear', 'thrust', 100));
+  check('spear outreaches a sword at long range', reach('spear', 'thrust', 170) && !reach('sword', 'slash', 170));
+
+  // high damage, medium knockback: more damage than any other weapon's
+  // strong attack, but a launch between the sword's (weak) and fist's (huge)
+  const dealt = (weapon, atk, victimX) => {
+    const g4 = mkGame(weapon);
+    const [f, o] = g4.fighters;
+    f.x = 0; o.x = victimX; f.facing = 1; f.grounded = true; o.grounded = true;
+    f.state = 'attack'; f.atk = atk; f.stateT = 0.19; f.atkDir = { x: 1, y: 0 };
+    g4._resolveAttacks();
+    return { dmg: o.pct, kb: Math.hypot(o.vx, o.vy) };
+  };
+  const spearHit = dealt('spear', 'thrust', 100);
+  const swordHit = dealt('sword', 'slash', 65);
+  const fistHit = dealt('unarmed', 'fsmash', 55);
+  check('spear hits harder than sword or fists', spearHit.dmg > swordHit.dmg && spearHit.dmg > fistHit.dmg);
+  check('spear knockback sits between sword and fists', spearHit.kb > swordHit.kb && spearHit.kb < fistHit.kb);
 }
 
 // --- 5. magic: bursts, mana, charge = range ---
