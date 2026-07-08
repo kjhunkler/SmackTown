@@ -715,7 +715,7 @@ function enterRoom(joinCode) {
     // the live game and re-broadcast the player list so everyone syncs up.
     if (!session || session.ended || !net.isHost || session.mode === 'solo') return;
     session.addPlayer({ id: rec.peerId, pid: rec.pid || null, name: rec.name, color: rec.color, build: sanitizeBuild(rec.build), hat: sanitizeHat(rec.hat) });
-    net.broadcast({ t: 'start', players: session.players, seed: session.seed, map: session.map });
+    session.broadcastPlayers();
     UI.banner(`${rec.name} joined the fight!`, 'good');
   });
   net.on('host-changed', () => {
@@ -727,7 +727,7 @@ function enterRoom(joinCode) {
     if (pid !== net.hostId) return;
     const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) }));
     const map = MAPS[msg.map] ? msg.map : DEFAULT_MAP;
-    if (session) { session.syncPlayers(players, map); return; }  // mid-game roster update
+    if (session) { session.syncPlayers(players, map, msg.trying || null); return; }  // mid-game roster update
     startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed, map });
   });
   net.on('game:input', (msg, pid) => session?.onRemoteInput(pid, msg.inp, msg.seq));
@@ -1011,10 +1011,25 @@ class Session {
     this.pred?.updateBuild(pid, p.build);
     if (pid === this.myId) UI.setupAbilityButtons(p.build.abilities);
     // host: re-broadcast the roster so clients repaint colors/hats/builds
-    if (this.mode === 'host' && net) {
-      net.broadcast({ t: 'start', players: this.players, seed: this.seed, map: this.map });
-    }
+    if (this.mode === 'host' && net) this.broadcastPlayers();
     this.buildHud();
+  }
+
+  wirePlayers() {
+    return this.players.map(p => {
+      const tr = this.trying.get(p.id);
+      return tr ? { ...p, build: tr.build, hat: tr.hat } : p;
+    });
+  }
+
+  wireTrying() {
+    return Object.fromEntries([...this.trying].map(([id, tr]) => [id, tr.targetId || null]));
+  }
+
+  broadcastPlayers() {
+    if (this.mode === 'host' && net) {
+      net.broadcast({ t: 'start', players: this.wirePlayers(), seed: this.seed, map: this.map, trying: this.wireTrying() });
+    }
   }
 
   buildHud() {
@@ -1022,12 +1037,12 @@ class Session {
       myId: this.myId,
       onTry: id => this.requestTry(id),
       onTrySelf: () => this.requestTrySelf(),
-      trying: this.trying.has(this.myId),
+      tryingId: this.trying.get(this.myId)?.targetId || null,
     });
   }
 
   requestTry(targetId) {
-    if (!targetId || targetId === this.myId || !this.meta.has(targetId) || this.trying.has(this.myId)) return;
+    if (!targetId || targetId === this.myId || !this.meta.has(targetId)) return;
     if (this.mode === 'host') this.applyTry(this.myId, targetId);
     else net?.sendToHost({ t: 'try', target: targetId });
   }
@@ -1047,25 +1062,19 @@ class Session {
   }
 
   applyTry(pid, targetId) {
-    if (!this.game || this.ended || this.trying.has(pid)) return;
+    if (!this.game || this.ended) return;
     const me = this.meta.get(pid);
     const target = this.meta.get(targetId);
     if (!me || !target || pid === targetId) return;
-    const targetTry = this.trying.get(targetId);
-    const build = sanitizeBuild(targetTry?.build || target.build);
-    const hat = smartColorConvertHat(targetTry?.hat || target.hat, target.color, me.color);
+    const build = sanitizeBuild(target.build);
+    const hat = smartColorConvertHat(target.hat, target.color, me.color);
     this.trying.set(pid, { targetId, build, hat });
     this.game.tryBuild(pid, build);
     const original = { build: me.build, hat: me.hat };
     me.build = build;
     me.hat = hat;
     if (pid === this.myId) UI.setupAbilityButtons(build.abilities);
-    net?.broadcast({
-      t: 'start',
-      players: this.players.map(p => p.id === pid ? { ...p, build, hat } : p),
-      seed: this.seed,
-      map: this.map,
-    });
+    this.broadcastPlayers();
     me.build = original.build;
     me.hat = original.hat;
     this.buildHud();
@@ -1090,7 +1099,7 @@ class Session {
       UI.toast('Back to your fighter!');
     }
     this.buildHud();
-    if (this.mode === 'host' && net) net.broadcast({ t: 'start', players: this.players, seed: this.seed, map: this.map });
+    this.broadcastPlayers();
   }
 
   frame(t) {
@@ -1309,7 +1318,7 @@ class Session {
 
   // Client: the host re-broadcast the player list (someone joined mid-game).
   // Fold in anyone new; authoritative state arrives via snapshots.
-  syncPlayers(players, map = this.map) {
+  syncPlayers(players, map = this.map, trying = null) {
     const hostMap = MAPS[map] ? map : DEFAULT_MAP;
     if (hostMap !== this.map) {
       this.map = hostMap;
@@ -1321,17 +1330,18 @@ class Session {
       const cur = this.meta.get(p.id);
       if (cur) {
         // an existing player may have re-tuned their character in the lobby
-        if (this.trying.has(p.id) || cur.name !== p.name || cur.color !== p.color || cur.hat !== p.hat
+        const wasTrying = this.trying.has(p.id);
+        const targetId = trying && typeof trying[p.id] === 'string' ? trying[p.id] : null;
+        const activeChanged = !!targetId;
+        if (wasTrying || cur.name !== p.name || cur.color !== p.color || (!activeChanged && cur.hat !== p.hat)
             || JSON.stringify(cur.build) !== JSON.stringify(p.build)) {
-          const activeTry = this.trying.get(p.id);
-          const realBuildChanged = !activeTry && JSON.stringify(cur.build) !== JSON.stringify(p.build);
-          const realHatChanged = !activeTry && cur.hat !== p.hat;
           cur.name = p.name;
           cur.color = p.color;
-          if (realBuildChanged) cur.build = p.build;
-          if (realHatChanged) cur.hat = p.hat;
-          const activeChanged = JSON.stringify(cur.build) !== JSON.stringify(p.build) || cur.hat !== p.hat;
-          if (activeChanged) this.trying.set(p.id, { targetId: null, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) });
+          if (!activeChanged) {
+            cur.build = p.build;
+            cur.hat = p.hat;
+          }
+          if (activeChanged) this.trying.set(p.id, { targetId, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) });
           else this.trying.delete(p.id);
           this.pred?.updateBuild(p.id, cur.build);
           this.game?.updateBuild(p.id, cur.build);
