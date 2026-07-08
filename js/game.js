@@ -523,9 +523,10 @@ export class Game {
       this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
     }
     // quick fall: down mid-jump cancels the rest of the ascent on the spot.
+    // Holding down before jumping also cancels on the first airborne tick.
     // Only when actionable — a launch's lift can't be ditched mid-hitstun,
     // which would neuter every vertical KO.
-    if (inp.ff && !f.grounded) {
+    if ((inp.ff || inp.my > 0.6) && !f.grounded) {
       if (canAct && f.vy < 0) { f.vy = 0; f.fastfall = true; }
       else if (f.vy > -200) f.fastfall = true;
     }
