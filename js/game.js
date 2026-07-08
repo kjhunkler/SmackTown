@@ -195,9 +195,9 @@ const ATTACKS = {
   // sword strong attack: one blade arc, aimed 8-way by the swipe, released
   // with a lunge along that aim. The hit is a true blade: a long, thin box
   // run out along the aim (rx = blade length, ry = half-thickness) — reach
-  // no fist can match, but a narrow band that punishes sloppy lines. Racks
-  // damage up fast but barely launches — the sword wins by percent.
-  slash:  { dmg: 18, kb: 80,  ks: 7,  startup: .09, active: .11, rec: .24, rx: 96, ry: 14, ang: -25, blade: true },
+  // no fist can match, but a narrow band that punishes sloppy lines. Trades
+  // raw damage for real launch power; the wind-up hangs in the air.
+  slash:  { dmg: 12.6, kb: 120, ks: 10.5, startup: .09, active: .11, rec: .24, rx: 96, ry: 14, ang: -25, blade: true },
   // magic strong attack: the cast pose. 'cast' = no melee box ever goes
   // active — the hit is the burst projectile spawned at release.
   mcast:  { dmg: 0,  kb: 0,   ks: 0,  startup: .08, active: .02, rec: .26, rx: 30, ry: 24, ang: 0, cast: true },
@@ -216,6 +216,9 @@ const WEAPON_DEFS = {
 };
 const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
+const SWORD_LUNGE_H = 0.7;           // horizontal lunge component trimmed 30%
+const SWORD_LUNGE_V = 1.3;           // upward lunge boosted 30% (up & diagonals)
+const SWORD_CHG_FALL = 0.3;          // charging midair: fall at 30% speed (70% slow fall)
 const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 const MANA_MAX = 100;
 const MANA_REGEN = 26;               // per second, always trickling back
@@ -615,8 +618,11 @@ export class Game {
 
     // --- gravity & integration ---
     if (!f.grounded) {
-      const cap = f.fastfall ? FASTFALL : MAX_FALL;
-      f.vy = Math.min(cap, f.vy + GRAV * TICK);
+      // sword charge floats: the windup falls 70% slower, hanging the
+      // swordsman in the air while the aim is held
+      const slow = inCharge && f.st.weapon === 'sword' ? SWORD_CHG_FALL : 1;
+      const cap = (f.fastfall ? FASTFALL : MAX_FALL) * slow;
+      f.vy = Math.min(cap, f.vy + GRAV * slow * TICK);
     }
     f.x += f.vx * TICK;
     f.y += f.vy * TICK;
@@ -904,14 +910,16 @@ export class Game {
   }
 
   // Sword release: a body lunge along the 8-way aim, longer the harder it
-  // was charged. Grounded down-aims can't dive through the floor, so only
-  // their sideways component slides. Aerial upward lunges share the
+  // was charged. The sideways component is trimmed while upward vectors
+  // (straight up and the diagonals) get a boost — the blade climbs better
+  // than it skates. Grounded down-aims can't dive through the floor, so
+  // only their sideways component slides. Aerial upward lunges share the
   // up-smash rise cooldown so chained slashes can't climb forever.
   _lunge(f, dx, dy, k = 0) {
     const spd = SWORD_LUNGE * (1 + SWORD_LUNGE_CHG * k);
     const n = Math.hypot(dx, dy) || 1;
-    const lx = (dx / n) * spd;
-    let ly = (dy / n) * spd;
+    const lx = (dx / n) * spd * SWORD_LUNGE_H;
+    let ly = (dy / n) * spd * (dy < 0 ? SWORD_LUNGE_V : 1);
     if (f.grounded && ly > 0) ly = 0;
     if (ly < 0) {
       if (!f.grounded && f.riseT > 0) ly = 0;
