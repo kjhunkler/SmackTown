@@ -21,7 +21,7 @@ export const ABILITIES = [
     desc: 'Lunge forward with a rushing blow' },
   { id: 'shockwave', icon: '💥', name: 'Shockwave',   cost: 250, cd: 6.0,
     desc: 'Slam the ground, blasting everyone nearby' },
-  { id: 'uppercut',  icon: '🥊', name: 'Uppercut',    cost: 200, cd: 4.5,
+  { id: 'uppercut',  icon: '🥊', name: 'Uppercut',    cost: 200, cd: 4.0,
     desc: 'Rising punch that launches enemies skyward' },
   { id: 'counter',   icon: '🛡️', name: 'Counter',     cost: 240, cd: 5.0,
     desc: 'Brief parry — negate a hit and strike back' },
@@ -37,7 +37,7 @@ export const ABILITIES = [
     desc: 'Pop a shield — 1.5s of invulnerability' },
   { id: 'mend',      icon: '💚', name: 'Mend',        cost: 260, cd: 7.0,
     desc: 'Patch yourself up — instantly heal 15%' },
-  { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 240, cd: 5.0,
+  { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 240, cd: 4.5,
     desc: 'Hurl a hook that reels a foe in to you' },
   { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 6.0,
     desc: 'Plant spikes that launch whoever steps in' },
@@ -51,7 +51,7 @@ export const AUGMENTS = [
   { id: 'feather',     icon: '🪶', name: 'Featherweight',cost: 140,
     desc: '+1 midair jump, but you fly 8% further when hit' },
   { id: 'heavy',       icon: '🗿', name: 'Heavyweight',  cost: 160,
-    desc: '-10% knockback taken, but -8% run speed' },
+    desc: '-15% knockback taken, but -5% run speed' },
   { id: 'berserker',   icon: '😤', name: 'Berserker',    cost: 170,
     desc: '+20% damage while your own percent is 80+' },
   { id: 'secondwind',  icon: '💫', name: 'Second Wind',  cost: 200,
@@ -265,8 +265,8 @@ export function derivedStats(build) {
   return {
     dmgMult:   (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
     kbMult:    (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
-    speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.92 : 1),
-    kbTaken:   (1 - 0.06 * b.stats.defense) * (has('heavy') ? 0.90 : 1)
+    speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.95 : 1),
+    kbTaken:   (1 - 0.06 * b.stats.defense) * (has('heavy') ? 0.85 : 1)
       * (has('feather') ? 1.08 : 1) * (glass ? 1.18 : 1),
     dmgTaken:  1 - 0.04 * b.stats.defense,
     jumpMult:  1 + 0.05 * b.stats.agility,

@@ -222,7 +222,7 @@ const ABILITY_DEFS = {
   fireball:  { cd: 3.0 },
   dashstrike:{ cd: 4.0 },
   shockwave: { cd: 6.0 },
-  uppercut:  { cd: 4.5 },
+  uppercut:  { cd: 4.0 },
   counter:   { cd: 5.0 },
   blink:     { cd: 4.0 },
   boomerang: { cd: 4.0 },
@@ -230,7 +230,7 @@ const ABILITY_DEFS = {
   gale:      { cd: 5.0 },
   bubble:    { cd: 6.0 },
   mend:      { cd: 7.0 },
-  hook:      { cd: 5.0 },
+  hook:      { cd: 4.5 },
   trap:      { cd: 6.0 },
 };
 const COUNTER_WINDOW = 0.6;          // parry stance duration (s)
@@ -851,9 +851,9 @@ export class Game {
         else this._shockwave(f);
         break;
       case 'uppercut':
-        f.vy = -900;
+        f.vy = -980;
         f.grounded = false;
-        f.melee = { name: 'upper', dmg: 9, kb: 260, ks: 20, rx: 44, ry: 60, ang: -88, until: this.tick + 16, hit: new Set() };
+        f.melee = { name: 'upper', dmg: 11, kb: 310, ks: 22, rx: 48, ry: 68, ang: -88, until: this.tick + 18, hit: new Set() };
         break;
       case 'counter':
         f.counterT = COUNTER_WINDOW;
@@ -913,8 +913,8 @@ export class Game {
         this.projectiles.push({
           eid: nextEid++, kind: 'hook', owner: f.id,
           x: f.x + f.facing * 40, y: f.y - 8,
-          vx: f.facing * 700, vy: 0, ttl: 0.9,
-          dmg: 5, kb: 520, ks: 2, r: 13, pull: true, ang: -20,
+          vx: f.facing * 820, vy: 0, ttl: 1.05,
+          dmg: 6, kb: 600, ks: 3, r: 15, pull: true, ang: -20,
         });
         break;
       case 'trap':
