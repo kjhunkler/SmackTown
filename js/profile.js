@@ -16,19 +16,19 @@ export const STATS = [
 
 export const ABILITIES = [
   { id: 'fireball',  icon: '🔥', name: 'Fireball',    cost: 220, cd: 3.0,
-    desc: 'Hurl a projectile that burns for 6%' },
+    desc: 'Hurl a projectile that sets foes ablaze — burns over time' },
   { id: 'dashstrike',icon: '⚡', name: 'Dash Strike', cost: 200, cd: 4.0,
-    desc: 'Lunge forward with a rushing blow' },
+    desc: 'Lunge with a rushing blow — hold up to launch skyward' },
   { id: 'shockwave', icon: '💥', name: 'Shockwave',   cost: 250, cd: 6.0,
     desc: 'Slam the ground, blasting everyone nearby' },
   { id: 'uppercut',  icon: '🥊', name: 'Uppercut',    cost: 200, cd: 4.0,
-    desc: 'Rising punch that launches enemies skyward' },
+    desc: 'Rising punch that rockets enemies into the sky' },
   { id: 'counter',   icon: '🛡️', name: 'Counter',     cost: 240, cd: 5.0,
     desc: 'Brief parry — negate a hit and strike back' },
   { id: 'blink',     icon: '✨', name: 'Blink',       cost: 260, cd: 4.0,
     desc: 'Teleport a short distance in any direction' },
   { id: 'boomerang', icon: '🪃', name: 'Boomerang',   cost: 230, cd: 4.0,
-    desc: 'Bladed rang that flies out, then whips back' },
+    desc: 'Bladed rang that cuts through foes — out and back' },
   { id: 'volley',    icon: '🎇', name: 'Fire Volley', cost: 250, cd: 5.0,
     desc: 'Loose a fan of three fire bolts' },
   { id: 'gale',      icon: '💨', name: 'Gale Burst',  cost: 220, cd: 5.0,
@@ -40,7 +40,7 @@ export const ABILITIES = [
   { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 240, cd: 4.5,
     desc: 'Hurl a hook that reels a foe in to you' },
   { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 6.0,
-    desc: 'Plant spikes that launch whoever steps in' },
+    desc: 'Plant spikes that launch and stun whoever steps in' },
 ];
 
 // Weapons: what the strong-attack control swings. Every fighter carries

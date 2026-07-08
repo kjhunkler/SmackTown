@@ -308,6 +308,8 @@ export class Game {
       lastHitBy: null,              // KO attribution (reaper heal)
       dropT: 0,                     // drop-through timer
       burnT: 0,                     // molten-hazard burn cooldown
+      burn: null,                   // fireball afterburn DoT {n, every, dmg, tk, by}
+      stunned: false,               // trap stun: hitstun pinned through landings
       riseT: 0,                     // cooldown on the aerial up-smash lift
       ridePlat: null,               // index of the platform we're standing on
       ledge: 0,                     // hanging: -1 left lip, 1 right lip, 0 none
@@ -468,6 +470,7 @@ export class Game {
     f.slideT = f.grounded ? Math.max(0, f.slideT - TICK) : 0;
     f.dropT = Math.max(0, f.dropT - TICK);
     f.burnT = Math.max(0, f.burnT - TICK);
+    if (f.burn) this._stepBurn(f);
     f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
     f.regrabT = Math.max(0, f.regrabT - TICK);
     f.standT = Math.max(0, f.standT - TICK);
@@ -595,7 +598,7 @@ export class Game {
       const total = a ? a.startup + a.active + a.rec : 0;
       if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.lowJab = false; f.atkHit.clear(); f.chg = 0; f.atkSpd = 0; }
     }
-    if (inHitstun && f.stateT >= f.hitstunFor) { f.state = 'air'; }
+    if (inHitstun && f.stateT >= f.hitstunFor) { f.state = f.grounded ? 'idle' : 'air'; f.stunned = false; }
     if (inCrush && f.stateT >= CRUSH_STUN) { f.state = f.grounded ? 'idle' : 'air'; }
 
     // --- gravity & integration ---
@@ -609,6 +612,22 @@ export class Game {
     this._collide(f);
     this._tryLedgeGrab(f);
     this._decayInput(inp);
+  }
+
+  // Fireball afterburn: the victim smolders, taking small percent ticks on
+  // a fixed cadence. Pure percent — no flinch, no knockback — so it stings
+  // without combo-locking. Damage credit flows to whoever lit the fire.
+  _stepBurn(f) {
+    f.burn.tk -= TICK;
+    if (f.burn.tk > 0) return;
+    f.burn.tk += f.burn.every;
+    const att = this.fighters.find(x => x.id === f.burn.by);
+    const dmg = f.burn.dmg * f.st.dmgTaken;
+    f.pct = Math.min(999, f.pct + dmg);
+    f.score.taken += dmg;
+    if (att) { att.score.dmg += dmg; f.lastHitBy = att.id; }
+    this.events.push({ e: 'burn', x: f.x, y: f.y - F_H / 2, vic: f.id, dmg: Math.round(dmg) });
+    if (--f.burn.n <= 0) f.burn = null;
   }
 
   _decayInput(inp) {
@@ -666,7 +685,7 @@ export class Game {
       // waveland: a fast-fallen touchdown with drift keeps sliding
       if (f.fastfall && Math.abs(f.vx) > WAVELAND_MIN_VX) f.slideT = WAVELAND_TIME;
       f.fastfall = false;
-      if (f.state === 'air' || f.state === 'hitstun') f.state = 'idle';
+      if (f.state === 'air' || (f.state === 'hitstun' && !f.stunned)) f.state = 'idle';
       this.events.push({ e: 'land', id: f.id, x: f.x, y: f.y + F_H / 2 });
     }
   }
@@ -940,6 +959,7 @@ export class Game {
     const def = ABILITY_DEFS[id];
     f.cds[slot] = def.cd * (f.st.cdMult || 1);
     const dir = f.lastDir;
+    let evUp = false;
     switch (id) {
       case 'fireball':
         this.projectiles.push({
@@ -947,14 +967,20 @@ export class Game {
           x: f.x + f.facing * 40, y: f.y - 8,
           vx: f.facing * 620, vy: 0, ttl: 1.4,
           dmg: 6, kb: 170, ks: 13, r: 14,
+          dot: { n: 3, every: 0.5, dmg: 2 },   // afterburn: +6% over 1.5s
         });
         break;
-      case 'dashstrike':
+      case 'dashstrike': {
+        // hold up while casting to angle the lunge diagonally skyward
+        const up = (this.inputs.get(f.id)?.my ?? 0) < -0.4;
+        evUp = up;
         f.dashT = 0.22;
-        f.vx = f.facing * 950;
-        f.vy = 0;
-        f.melee = { name: 'dash', dmg: 8, kb: 200, ks: 16, rx: 50, ry: 30, ang: -20, until: this.tick + 14, hit: new Set() };
+        f.vx = f.facing * (up ? 720 : 950);
+        f.vy = up ? -640 : 0;
+        if (up) { f.grounded = false; f.fastfall = false; }
+        f.melee = { name: 'dash', dmg: 8, kb: 200, ks: 16, rx: 50, ry: 30, ang: up ? -55 : -20, until: this.tick + 14, hit: new Set() };
         break;
+      }
       case 'shockwave':
         if (!f.grounded) { f.vy = FASTFALL; f.fastfall = true; f.pendingShock = true; }
         else this._shockwave(f);
@@ -962,7 +988,7 @@ export class Game {
       case 'uppercut':
         f.vy = -980;
         f.grounded = false;
-        f.melee = { name: 'upper', dmg: 11, kb: 310, ks: 22, rx: 48, ry: 68, ang: -88, until: this.tick + 18, hit: new Set() };
+        f.melee = { name: 'upper', dmg: 11, kb: 540, ks: 30, rx: 48, ry: 68, ang: -88, until: this.tick + 18, hit: new Set() };
         break;
       case 'counter':
         f.counterT = COUNTER_WINDOW;
@@ -984,7 +1010,8 @@ export class Game {
           x: f.x + f.facing * 40, y: f.y - 8,
           vx: f.facing * 560, vy: 0, ttl: 1.5,
           ret: -f.facing * 1400,   // constant pull back toward the throw point
-          dmg: 5, kb: 150, ks: 11, r: 15,
+          dmg: 5, kb: 280, ks: 16, r: 15,
+          thru: true, hit: new Set(),   // cuts through targets, out and back
         });
         break;
       case 'volley':
@@ -1027,16 +1054,17 @@ export class Game {
         });
         break;
       case 'trap':
-        // planted jaws: drop at your feet and sit armed until someone steps in
+        // planted jaws: drop at your feet and sit armed until someone steps
+        // in — the snap locks the victim in a long stun
         this.projectiles.push({
           eid: nextEid++, kind: 'trap', owner: f.id,
           x: f.x + f.facing * 30, y: f.y + F_H / 2 - 12,
           vx: 0, vy: 0, grav: 1400, ttl: 6,
-          dmg: 8, kb: 330, ks: 16, r: 16, ang: -80, pierce: true,
+          dmg: 8, kb: 330, ks: 16, r: 16, ang: -80, pierce: true, stun: 1.5,
         });
         break;
     }
-    this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y, dir: f.facing });
+    this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y, dir: f.facing, up: evUp });
   }
 
   _shockwave(f) {
@@ -1143,6 +1171,7 @@ export class Game {
     for (const pr of this.projectiles) {
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
+        if (pr.hit?.has(o.id)) continue;   // piercing shot already cut through them
         const pos = this._rewound(o, pr.owner);
         const ob = hurtBox(o);
         if (Math.abs(pos.x - pr.x) < F_W / 2 + pr.r && Math.abs(pos.y + ob.dy - pr.y) < ob.hh + pr.r) {
@@ -1153,7 +1182,8 @@ export class Game {
             const dirX = pr.pull ? (Math.sign(att.x - pos.x) || 1) : (Math.sign(pr.vx) || 1);
             this._applyHit(att, o, pr, deg(pr.ang ?? -40), dirX, false, !!pr.pierce);
           }
-          pr.ttl = 0;
+          if (pr.thru) pr.hit.add(o.id);   // sail on through
+          else pr.ttl = 0;
         }
       }
     }
@@ -1280,6 +1310,12 @@ export class Game {
     vic.state = 'hitstun';
     vic.stateT = 0;
     vic.hitstunFor = Math.min(1.1, 0.08 + kb / 2600);
+    // stunning hits (spike trap) pin the victim in hitstun for a fixed spell
+    // — landing doesn't shake it off, the timer has to run out
+    vic.stunned = !!spec.stun;
+    if (spec.stun) vic.hitstunFor = Math.max(vic.hitstunFor, spec.stun);
+    // burning hits (fireball) set the victim ablaze: a short damage-over-time
+    if (spec.dot) vic.burn = { ...spec.dot, tk: spec.dot.every, by: att.id };
     vic.atk = null;
     vic.atkDir = null;
     vic.melee = null;
@@ -1306,7 +1342,12 @@ export class Game {
 
   _stepProjectiles() {
     for (const pr of this.projectiles) {
-      if (pr.ret) pr.vx += pr.ret * TICK;    // boomerang: decelerate, then return
+      if (pr.ret) {
+        const was = Math.sign(pr.vx);
+        pr.vx += pr.ret * TICK;    // boomerang: decelerate, then return
+        // piercing rangs re-arm at the turnaround: out and back both connect
+        if (pr.thru && was && Math.sign(pr.vx) !== was) pr.hit.clear();
+      }
       if (pr.grav) pr.vy = Math.min(pr.vy + pr.grav * TICK, 1150);  // traps drop until they settle
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
@@ -1409,6 +1450,8 @@ export class Game {
           f.invuln = RESPAWN_INVULN;
           f.jumps = f.st.maxJumps;
           f.melee = null;
+          f.burn = null;
+          f.stunned = false;
         }
       }
     }
@@ -1505,6 +1548,8 @@ export class Game {
           r2(f.slideT),
           f.parked ? 1 : 0,
           r1(f.mana),
+          r2(f.hitstunFor || 0),
+          f.stunned ? 1 : 0,
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
@@ -1555,6 +1600,8 @@ export function restoreFighter(f, row) {
     f.slideT = +row[36] || 0;
     f.parked = !!row[37];
     if (row.length > 38) f.mana = +row[38] || 0;
+    if (row.length > 39) f.hitstunFor = +row[39] || 0;
+    if (row.length > 40) f.stunned = !!row[40];
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.

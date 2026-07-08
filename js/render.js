@@ -233,17 +233,20 @@ export class Renderer {
         }
         this.shake = Math.max(this.shake, 6);
         break;
-      case 'dashstrike':
-        // horizontal speed streaks trailing the lunge
+      case 'dashstrike': {
+        // speed streaks trailing the lunge — angled when it rides skyward
+        const dx = Math.sign(ev.dir || 1), dy = ev.up ? 0.67 : 0;
         for (let i = 0; i < 12; i++) {
+          const v = 200 + Math.random() * 300;
           this.particles.push({
-            x: ev.x - (Math.random() - 0.2) * 40, y: ev.y + (Math.random() - 0.5) * 40,
-            vx: -(200 + Math.random() * 300) * Math.sign(ev.dir || 1), vy: (Math.random() - 0.5) * 60,
+            x: ev.x - (Math.random() - 0.2) * 40 * dx, y: ev.y + (Math.random() - 0.5) * 40,
+            vx: -v * dx, vy: v * dy + (Math.random() - 0.5) * 60,
             life: 0.3 + Math.random() * 0.2, t: 0, color: '#ffb02e',
             r: 2 + Math.random() * 3,
           });
         }
         break;
+      }
       case 'blink':
         this.burst(ev.x, ev.y, 16, '#c59cff', 320);
         this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 70, t: 0, life: 0.3, color: '#c59cff', w: 5 });
