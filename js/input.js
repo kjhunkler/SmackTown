@@ -9,7 +9,8 @@
 // Keyboard fallback (desktop testing): arrows/WASD move, space jump,
 // J = tap attack, K = smash (hold to charge, release to fire; aimed by held
 // direction at press, 8-way), L and ; = abilities. Z/X/C/V mirror J/K/L/;.
-// Hold down + press a direction = dodge roll.
+// Hold down + press a direction = dodge roll. Right mouse button = smash
+// (heavy) attack, aimed by the held movement keys — same charge as K.
 // Gamepad (standard layout, polled each frame alongside touch/keys):
 // left stick / dpad move — hold down to duck, tilt sideways while
 // ducked = dodge roll, flick
@@ -46,6 +47,7 @@ export class TouchInput {
     this.queue = [];                 // edge-triggered actions
     this.enabled = false;
     this.keyChg = null;              // charge aim held via keyboard (K/X)
+    this.mouseChg = null;            // charge aim held via right mouse button
     this.padChg = null;              // charge aim held via gamepad (B)
     this.padRHeld = false;           // right stick currently tilted (re-arm)
     this.padRolled = false;          // ducked sideways tilt fired (re-arm)
@@ -72,6 +74,11 @@ export class TouchInput {
     addEventListener('keydown', e => this._key(e, true));
     addEventListener('keyup', e => this._key(e, false));
 
+    // right mouse button (desktop) = heavy/smash attack, aimed by the held
+    // movement keys — hold to charge, release to fire, mirroring the K key
+    addEventListener('mousedown', e => this._mouse(e, true));
+    addEventListener('mouseup', e => this._mouse(e, false));
+
     // gamepads are polled (in poll()), only connection changes are events
     this.onPad = null;               // optional (connected, id) callback
     this.padPrev = [];               // last-frame button states (edge detect)
@@ -82,7 +89,7 @@ export class TouchInput {
 
   _bindZone(zone, which) {
     zone.addEventListener('pointerdown', e => {
-      if (!this.enabled) return;
+      if (!this.enabled || e.button > 0) return;   // right/middle mouse = heavy attack, not a gesture
       zone.setPointerCapture(e.pointerId);
       const rec = { id: e.pointerId, ox: e.clientX, oy: e.clientY, lastX: e.clientX, lastY: e.clientY, lastT: e.timeStamp, t0: e.timeStamp, flicked: false, moved: 0 };
       if (which === 'stick') {
@@ -199,6 +206,21 @@ export class TouchInput {
     if (k === ';' || k === 'v') this.queue.push({ ab1: true });
   }
 
+  // Right mouse button = heavy (smash) attack, aimed by the held movement
+  // keys. Press locks the aim and starts charging; release fires the smash
+  // in that aim — a quick click is an uncharged heavy, a hold charges it,
+  // exactly like the K key.
+  _mouse(e, down) {
+    if (!this.enabled || e.button !== 2) return;
+    e.preventDefault();
+    if (down) {
+      this.mouseChg = { dx: Math.sign(this.state.mx), dy: Math.round(this.state.my) };
+    } else if (this.mouseChg) {
+      this.queue.push({ atk: { kind: 'swipe', dx: this.mouseChg.dx, dy: this.mouseChg.dy } });
+      this.mouseChg = null;
+    }
+  }
+
   // Read the first connected gamepad: level movement merges with the touch/
   // keyboard stick (dominant axis wins), buttons and stick flicks queue the
   // same edge actions the other sources produce.
@@ -265,7 +287,7 @@ export class TouchInput {
     const g = this._pollGamepad();
     const out = {
       mx: this.state.mx, my: this.state.my,
-      chg: this.state.chg || this.keyChg || this.padChg || null,
+      chg: this.state.chg || this.keyChg || this.mouseChg || this.padChg || null,
     };
     if (g) {
       if (Math.abs(g.mx) > Math.abs(out.mx)) out.mx = g.mx;
@@ -281,7 +303,7 @@ export class TouchInput {
     if (!on) {
       this.queue.length = 0;
       this.state.mx = 0; this.state.my = 0;
-      this.state.chg = this.keyChg = this.padChg = null;
+      this.state.chg = this.keyChg = this.mouseChg = this.padChg = null;
       this.padRHeld = false;
       this.stick = this.swipe = null;
       this.stickBase.classList.add('hidden');
