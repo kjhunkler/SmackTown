@@ -791,6 +791,7 @@ input[type=text]:focus { border-color: var(--accent); }
   justify-content: center;
   gap: 8px;
   pointer-events: none;
+  z-index: 7;
 }
 .hud-tile {
   background: rgba(10,12,25,.72);
@@ -813,6 +814,7 @@ input[type=text]:focus { border-color: var(--accent); }
   max-width: 90px;
 }
 .hud-tile .h-name-try { color: var(--accent); cursor: pointer; }
+.hud-tile .h-name-try { pointer-events: auto; }
 .hud-tile .h-name-try::after { content: ' Try'; color: var(--good); font-weight: 900; }
 .hud-tile .h-name:disabled { cursor: default; }
 .hud-tile .h-pct { font-size: 20px; font-weight: 900; font-style: italic; }
