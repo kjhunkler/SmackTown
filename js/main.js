@@ -701,6 +701,7 @@ function enterRoom(joinCode) {
   });
   net.on('game:input', (msg, pid) => session?.onRemoteInput(pid, msg.inp, msg.seq));
   net.on('game:snap', (msg, pid) => session?.onSnapshot(msg.s, pid));
+  net.on('game:park', (msg, pid) => session?.onPark(pid, msg.on));
 
   if (joinCode) net.join(joinCode); else net.host();
   UI.banner(joinCode ? 'Joining room…' : 'Opening room…', 'warn', 8000);
@@ -947,9 +948,18 @@ class Session {
 
   // Step out to the lobby (or back in) while the fight keeps running.
   // Backgrounded: inputs off, rendering/FX skipped — sim and net carry on.
+  // The fighter is parked meanwhile: asleep and untouchable, and waking up
+  // drops their stocks to match the lowest fighter still brawling.
   setBackgrounded(on) {
     this.backgrounded = on;
     touch.setEnabled(!on && this.running);
+    if (this.game) this.game.setParked(this.myId, on);       // solo/host: authoritative
+    else net?.sendToHost({ t: 'park', on: !!on });           // client: ask the host
+  }
+
+  // Host: a client stepped out to (or back from) the lobby.
+  onPark(pid, on) {
+    if (this.game && this.meta.has(pid)) this.game.setParked(pid, !!on);
   }
 
   frame(t) {
@@ -1001,7 +1011,7 @@ class Session {
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
         color: this.meta.get(f.id)?.color, hat: this.meta.get(f.id)?.hat, cds: f.cds,
-        score: f.score,
+        score: f.score, parked: f.parked,
       })),
       projectiles: this.game.projectiles,
     };
@@ -1222,6 +1232,7 @@ class Session {
       guard: r[28],
       color: this.meta.get(r[0])?.color, hat: this.meta.get(r[0])?.hat,
       score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5] } : null,
+      parked: !!r[37],
     }));
   }
 

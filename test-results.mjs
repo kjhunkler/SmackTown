@@ -226,7 +226,34 @@ const players = [
   check('normal grounded attack still plants', Math.abs(c.vx - 250 * 0.35) < 0.01);
 }
 
-// --- 12. sim still runs & finishes with scores ---
+// --- 12. parked fighters: asleep, untouchable, wake to the lowest stocks ---
+{
+  const g = new Game(players, 7, 'battlefield');
+  const [a, b, c] = g.fighters;
+  g.setParked('B', true);
+  g.step();
+  check('parked fighter is invulnerable', b.parked && b.invuln > 0);
+  g._applyHit(a, b, { dmg: 10, kb: 100, ks: 5 }, 0, 1);
+  check('parked fighter shrugs off direct hits', b.pct === 0 || b.invuln > 0);
+  // melee resolution skips invulnerable victims entirely
+  a.x = b.x - 30; a.state = 'attack'; a.atk = 'jab'; a.stateT = 0.06; a.facing = 1;
+  g._resolveAttacks();
+  check('melee never lands on a sleeper', !a.atkHit.has('B'));
+  // wake-up price: match the lowest fighter still brawling
+  a.stocks = 1; c.stocks = 2;
+  g.setParked('B', false);
+  check('waking matches the lowest stocks', !b.parked && b.stocks === 1);
+  // never a refund: rejoining with fewer stocks keeps them
+  g.setParked('A', true);
+  g.setParked('A', false);
+  check('waking never grants stocks back', a.stocks === 1);
+  // parked flag survives the snapshot round-trip (host handoff)
+  g.setParked('C', true);
+  const g2 = gameFromSnapshot(players, g.snapshot(), 8);
+  check('parked rides the snapshot', g2.fighters.find(f => f.id === 'C').parked === true);
+}
+
+// --- 13. sim still runs & finishes with scores ---
 {
   const g = new Game(players.slice(0, 2), 7, 'arena');
   const [a, b] = g.fighters;

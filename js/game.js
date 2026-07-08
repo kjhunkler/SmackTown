@@ -285,6 +285,7 @@ export class Game {
       ledge: 0,                     // hanging: -1 left lip, 1 right lip, 0 none
       regrabT: 0,                   // cooldown before the ledge can be regrabbed
       rollDir: 0,
+      parked: false,                // owner stepped out to the lobby: asleep, untouchable
       dead: false,
       lastDir: { x: 1, y: 0 },
       score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0 }, // podium stats
@@ -338,6 +339,20 @@ export class Game {
       f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0; f.chgAim = null;
     }
     return f;
+  }
+
+  // Park a fighter (their player stepped out to the lobby): they sleep in
+  // place, untouchable, until unparked. Waking up has a price — stocks drop
+  // to match the lowest fighter still brawling, so lobby-camping can't
+  // preserve a lead.
+  setParked(id, on) {
+    const f = this.fighters.find(x => x.id === id);
+    if (!f || f.dead) return;
+    if (f.parked && !on) {
+      const others = this.fighters.filter(o => o.id !== id && !o.dead && !o.sandbag && !o.parked);
+      if (others.length) f.stocks = Math.min(f.stocks, Math.min(...others.map(o => o.stocks)));
+    }
+    f.parked = !!on;
   }
 
   setInput(id, inp) {
@@ -404,6 +419,8 @@ export class Game {
 
   _stepFighter(f, inp) {
     f.stateT += TICK;
+    // a parked fighter sleeps untouchable until their player comes back
+    if (f.parked) f.invuln = Math.max(f.invuln, 0.1);
     f.invuln = Math.max(0, f.invuln - TICK);
     f.counterT = Math.max(0, f.counterT - TICK);
     f.dashT = Math.max(0, f.dashT - TICK);
@@ -1366,6 +1383,7 @@ export class Game {
           [f.score.ko, f.score.fall, f.score.sd, r1(f.score.dmg), r1(f.score.taken), r1(f.score.maxHit)],
           r2(f.burnT),
           r2(f.slideT),
+          f.parked ? 1 : 0,
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx)]),
@@ -1414,6 +1432,7 @@ export function restoreFighter(f, row) {
     if (sc) f.score = { ko: sc[0] | 0, fall: sc[1] | 0, sd: sc[2] | 0, dmg: +sc[3] || 0, taken: +sc[4] || 0, maxHit: +sc[5] || 0 };
     f.burnT = +row[35] || 0;
     f.slideT = +row[36] || 0;
+    f.parked = !!row[37];
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.

@@ -2324,7 +2324,19 @@ export class Renderer {
     ctx.save();
     ctx.translate(f.x, f.y);
 
-    if (f.invuln && Math.sin(t * 30) > 0) ctx.globalAlpha = 0.45;
+    // parked (player stepped out): steady ghosting + drifting z's instead
+    // of the invuln flicker — reads as "asleep, untouchable"
+    if (f.parked) {
+      ctx.fillStyle = '#eaf0ff';
+      ctx.textAlign = 'center';
+      for (let i = 0; i < 3; i++) {
+        const ph = (t * 0.5 + i / 3) % 1;
+        ctx.globalAlpha = 0.8 * (1 - ph);
+        ctx.font = `bold ${11 + i * 3 + ph * 8}px system-ui, sans-serif`;
+        ctx.fillText('z', 20 + i * 10 + ph * 10, -F_H / 2 - 10 - i * 10 - ph * 16);
+      }
+      ctx.globalAlpha = 0.7;
+    } else if (f.invuln && Math.sin(t * 30) > 0) ctx.globalAlpha = 0.45;
 
     // "you" marker
     if (isMe) {

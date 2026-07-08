@@ -381,7 +381,7 @@ export class Net {
       }
 
       // Game traffic is passed straight through to the game layer.
-      case 'start': case 'input': case 'snap': case 'end': case 'rematch':
+      case 'start': case 'input': case 'snap': case 'end': case 'rematch': case 'park':
         this.emit('game:' + msg.t, msg, pid);
         break;
     }
