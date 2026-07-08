@@ -154,7 +154,7 @@ class Sfx {
 
   // ---------- one-shot sound bank ----------
 
-  play(name) {
+  play(name, chg = 0) {
     if (!this.ac) return;
     const now = performance.now();
     if (now - (this.lastPlay.get(name) || 0) < 35) return;   // anti-machinegun
@@ -240,10 +240,7 @@ class Sfx {
         this._noise({ type: 'bandpass', f0: 1600, f1: 3400, q: 2.4, dur: 0.11, vol: 0.16 });
         this._tone({ type: 'triangle', f0: 2600, f1: 1900, dur: 0.06, vol: 0.07 });
         break;
-      case 'cast':    // arcane release: a bright rising zap
-        this._tone({ type: 'sine', f0: 620, f1: 1560, dur: 0.16, vol: 0.16 });
-        this._noise({ type: 'highpass', f0: 2800, dur: 0.10, vol: 0.08 });
-        break;
+      case 'cast': this._cast(chg); break;
       case 'fizzle':  // dry cast: a dull sputter
         this._tone({ type: 'square', f0: 240, f1: 130, dur: 0.13, vol: 0.10 });
         this._noise({ f0: 600, f1: 200, dur: 0.10, vol: 0.07 });
@@ -296,6 +293,20 @@ class Sfx {
     }
   }
 
+  // Arcane release: a bright rising zap alone for a light tap. Heavier
+  // charge buries that zap under a deep sub-bass boom that grows louder,
+  // lower and longer the more mana was poured in — a full overcharge (k=2)
+  // roars where a tap just zips, not merely a louder copy of it.
+  _cast(k = 0) {
+    const p = Math.max(0, Math.min(2, k)) / 2;   // 0 (tap) .. 1 (full overcharge)
+    this._tone({ type: 'sine', f0: 620, f1: 1560, dur: 0.16, vol: 0.16 * (1 - 0.4 * p) });
+    this._noise({ type: 'highpass', f0: 2800, dur: 0.10, vol: 0.08 * (1 - 0.3 * p) });
+    if (p > 0) {
+      this._tone({ type: 'sawtooth', f0: 220 - 140 * p, f1: 45, dur: 0.16 + 0.34 * p, vol: 0.10 + 0.24 * p });
+      this._noise({ type: 'bandpass', f0: 1200 - 700 * p, f1: 250, q: 1.4, dur: 0.14 + 0.26 * p, vol: 0.08 + 0.18 * p });
+    }
+  }
+
   // Charging smash: a rising whine that tracks the ~1.2s wind-up. It stops
   // early if the charge releases (swing) or gets interrupted (hit/crush/...).
   startCharge(id) {
@@ -339,7 +350,7 @@ class Sfx {
         ev.atk === 'nspin' ? 'spin'
         : ev.atk === 'slash' ? 'slash'
         : ev.atk === 'mcast' ? 'cast'
-        : 'swing'); break;
+        : 'swing', ev.chg || 0); break;
       case 'charge':  this.startCharge(ev.id); break;
       case 'fizzle':  this.stopCharge(ev.id); this.play('fizzle'); break;
       case 'crush':   this.stopCharge(ev.id); this.play('crush'); break;

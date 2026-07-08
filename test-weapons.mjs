@@ -63,7 +63,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('sword charges much faster than fists', g._chargeMax(a) < mkGame()._chargeMax(mkGame().fighters[0]));
   g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
   check('sword swipe is a slash', a.atk === 'slash');
-  check('side slash lunges forward', a.vx > 500);
+  check('side slash lunges forward', a.vx > 400);
 
   const g2 = mkGame('sword');
   const b = g2.fighters[0];

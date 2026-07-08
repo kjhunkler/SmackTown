@@ -142,6 +142,7 @@ export function hazardsAt(mapId, tickF) {
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
 const JUMP_V = 860, JUMP2_V = 780;
+const JUMP_FF_LOCK = 0.1;            // brief window after a jump before fast fall can trigger
 const SPIKE_BOUNCE = 640;            // attacker's upward spring off a landed spike
 const AIR_RISE_CD = 1.1;             // min seconds between aerial up-smash lifts
 const LEDGE_JUMP_V = 1120;           // ledge super jump — spends no air jump
@@ -322,6 +323,7 @@ export class Game {
       usedSecondWind: false,
       lastHitBy: null,              // KO attribution (reaper heal)
       dropT: 0,                     // drop-through timer
+      ffLockT: 0,                   // brief post-jump window before fast fall can trigger
       burnT: 0,                     // molten-hazard burn cooldown
       burn: null,                   // fireball afterburn DoT {n, every, dmg, tk, by}
       stunned: false,               // trap stun: hitstun pinned through landings
@@ -484,6 +486,7 @@ export class Game {
     f.dashT = Math.max(0, f.dashT - TICK);
     f.slideT = f.grounded ? Math.max(0, f.slideT - TICK) : 0;
     f.dropT = Math.max(0, f.dropT - TICK);
+    f.ffLockT = Math.max(0, f.ffLockT - TICK);
     f.burnT = Math.max(0, f.burnT - TICK);
     if (f.burn) this._stepBurn(f);
     f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
@@ -577,6 +580,7 @@ export class Game {
       f.jumps--;
       f.grounded = false;
       f.fastfall = false;
+      f.ffLockT = JUMP_FF_LOCK;
       f.state = 'air';
       f.standT = 0;
       inp.jump = false;
@@ -584,9 +588,11 @@ export class Game {
     }
     // quick fall: down mid-jump cancels the rest of the ascent on the spot.
     // Holding down before jumping also cancels on the first airborne tick.
-    // Only when actionable — a launch's lift can't be ditched mid-hitstun,
-    // which would neuter every vertical KO.
-    if ((inp.ff || inp.my > 0.6) && !f.grounded) {
+    // Locked out for a brief window right after a jump so the leap is
+    // visible even if down was already held — only when actionable, since
+    // a launch's lift can't be ditched mid-hitstun (would neuter every
+    // vertical KO).
+    if ((inp.ff || inp.my > 0.6) && !f.grounded && f.ffLockT <= 0) {
       if (canAct && f.vy < 0) { f.vy = 0; f.fastfall = true; }
       else if (f.vy > -200) f.fastfall = true;
     }
@@ -754,6 +760,7 @@ export class Game {
       f.vy = -LEDGE_JUMP_V * f.st.jumpMult;
       f.vx = -f.ledge * 60;
       f.regrabT = REGRAB_CD;
+      f.ffLockT = JUMP_FF_LOCK;
       inp.jump = false; inp.bufJ = 0;
       this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
     } else if (inp.atk) {
@@ -879,7 +886,7 @@ export class Game {
     }
     if (name === 'slash') this._lunge(f, dx, dy, chg);
     if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
-    this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy });
+    this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
   }
 
   // Which strong attack a swipe/charge becomes: the equipped weapon's
@@ -1586,6 +1593,7 @@ export class Game {
           r1(f.mana),
           r2(f.hitstunFor || 0),
           f.stunned ? 1 : 0,
+          r2(f.ffLockT),
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
@@ -1638,6 +1646,7 @@ export function restoreFighter(f, row) {
     if (row.length > 38) f.mana = +row[38] || 0;
     if (row.length > 39) f.hitstunFor = +row[39] || 0;
     if (row.length > 40) f.stunned = !!row[40];
+    if (row.length > 41) f.ffLockT = +row[41] || 0;
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.
