@@ -453,9 +453,10 @@ export function renderLobby(net, onVote = null, fightOn = false) {
 
 // ---------- game HUD ----------
 
-export function buildHud(players, { myId = null, onTry = null, onTrySelf = null, tryingId = null } = {}) {
+export function buildHud(players, { myId = null, onTry = null, onTrySelf = null, tryingId = null, infiniteStocks = false } = {}) {
   const hud = $('#game-hud');
   hud.innerHTML = '';
+  hud.dataset.infiniteStocks = infiniteStocks ? '1' : '';
   for (const p of players) {
     const canTry = onTry && p.id !== myId;
     const isTrying = canTry && p.id === tryingId;
@@ -466,7 +467,7 @@ export function buildHud(players, { myId = null, onTry = null, onTrySelf = null,
     tile.innerHTML = `
       <div class="h-name">${esc(p.name)}</div>
       <div class="h-pct" style="color:${p.color}">0%</div>
-      <div class="h-stocks">●●●</div>
+      <div class="h-stocks">${infiniteStocks ? '∞' : '●●●●'}</div>
       ${canTry ? `<button class="h-try${isTrying ? ' h-trying' : ''}">${isTrying ? 'Trying' : 'Try'}</button>` : ''}`;
     if (canTry) tile.querySelector('.h-try').addEventListener('click', () => isTrying ? onTrySelf?.() : onTry(p.id));
     hud.appendChild(tile);
@@ -474,6 +475,7 @@ export function buildHud(players, { myId = null, onTry = null, onTrySelf = null,
 }
 
 export function updateHud(fighters) {
+  const infiniteStocks = $('#game-hud').dataset.infiniteStocks === '1';
   for (const f of fighters) {
     const tile = document.getElementById('hud-' + cssId(f.id));
     if (!tile) continue;
@@ -486,7 +488,7 @@ export function updateHud(fighters) {
     }
     tile.dataset.pct = cur;
     pctEl.textContent = cur + '%';
-    tile.querySelector('.h-stocks').textContent = '●'.repeat(Math.max(0, f.stocks)) || '—';
+    tile.querySelector('.h-stocks').textContent = infiniteStocks ? '∞' : ('●'.repeat(Math.max(0, f.stocks)) || '—');
     tile.classList.toggle('dead', !!f.dead);
     const heat = Math.min(1, f.pct / 150);
     pctEl.style.color =

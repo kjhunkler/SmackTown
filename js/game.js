@@ -155,7 +155,7 @@ const LEDGE_GRACE_IN = 14, LEDGE_GRACE_OUT = 60;
 const LEDGE_GRACE_UP = 40, LEDGE_GRACE_DOWN = 92;
 const ROLL_TIME = 0.38, ROLL_DIST = 150; // ledge getup roll onto the stage
 const F_W = 46, F_H = 64;            // fighter hurtbox
-const STOCKS = 3;
+const STOCKS = 4;
 const RESPAWN_INVULN = 2.0;
 const HIT_PAUSE = 0.045;
 const BUFFER = 0.15;                 // edge-input buffer window (s)

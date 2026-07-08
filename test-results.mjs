@@ -83,7 +83,7 @@ const players = [
   b.dead = true; b.stocks = 0; b.state = 'dead';      // onRoster forfeit
   g.fighters[0].lastHitBy = 'B';
   const f = g.rebindFighter('B', { id: 'B2', name: 'Bob', color: '#0f0', build: build() });
-  check('forfeited rejoiner comes back alive', !f.dead && f.stocks === 3 && f.state === 'respawn');
+  check('forfeited rejoiner comes back alive', !f.dead && f.stocks === 4 && f.state === 'respawn');
   check('forfeited rejoiner keeps score', f.score.ko === 1);
   check('lastHitBy attribution follows the rebind', g.fighters[0].lastHitBy === 'B2');
   check('rebind of unknown id falls back to addFighter', g.rebindFighter('ZZZ', { id: 'D', name: 'Dee', color: '#fff', build: build() }) !== null && g.fighters.length === 4);
@@ -218,12 +218,12 @@ const players = [
     s.x = g.stage.blast.l - 60;
     g._checkBlast();
   }
-  check('sandbag respawns forever, no stock loss', s.stocks === 3 && !s.dead && s.state === 'respawn');
+  check('sandbag respawns forever, no stock loss', s.stocks === 4 && !s.dead && s.state === 'respawn');
   check('KOs still tallied for practice feedback', a.score.ko === 5);
   a.state = 'air'; a.invuln = 0; a.grounded = false;
   a.y = g.stage.blast.b + 60;
   g._checkBlast();
-  check('players fall free in training too', a.stocks === 3 && !a.dead);
+  check('players fall free in training too', a.stocks === 4 && !a.dead);
   g.step();
   check('training never ends', !g.over && g.winner === null);
 }
@@ -296,7 +296,7 @@ const players = [
 {
   const g = new Game(players.slice(0, 2), 7, 'arena');
   const [a, b] = g.fighters;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     b.lastHitBy = 'A';
     b.x = g.stage.blast.l - 50;
     b.state = 'air'; b.invuln = 0;
@@ -304,7 +304,7 @@ const players = [
   }
   g.step();
   check('game ends when stocks run out', g.over && g.winner?.id === 'A');
-  check('winner holds 3 KOs', a.score.ko === 3 && b.score.fall === 3);
+  check('winner holds 4 KOs', a.score.ko === 4 && b.score.fall === 4);
 }
 
 console.log(fails ? `\n${fails}/${n} FAILED` : `\nAll ${n} checks passed.`);
