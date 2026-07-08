@@ -15,7 +15,9 @@
 // the drag direction (hold to charge, release to fire) · right click =
 // smash aimed by the held movement keys (hold to charge). Both screen
 // halves attack under the mouse — only touch keeps the left half as the
-// movement stick.
+// movement stick. Side button (browser 'back', button 3) = ability 1 ·
+// middle click (wheel button) = ability 2 · scroll wheel down = ability 1,
+// scroll wheel up = ability 2.
 // Gamepad (standard layout, polled each frame alongside touch/keys):
 // left stick / dpad move — hold down to duck, tilt sideways while
 // ducked = dodge roll, flick
@@ -53,6 +55,7 @@ export class TouchInput {
     this.enabled = false;
     this.keyChg = null;              // charge aim held via keyboard (K/X)
     this.mouseChg = null;            // charge aim held via right mouse button
+    this.wheelT = 0;                 // last scroll-wheel ability trigger (debounce)
     this.padChg = null;              // charge aim held via gamepad (B)
     this.padRHeld = false;           // right stick currently tilted (re-arm)
     this.padRolled = false;          // ducked sideways tilt fired (re-arm)
@@ -80,9 +83,13 @@ export class TouchInput {
     addEventListener('keyup', e => this._key(e, false));
 
     // right mouse button (desktop) = heavy/smash attack, aimed by the held
-    // movement keys — hold to charge, release to fire, mirroring the K key
+    // movement keys — hold to charge, release to fire, mirroring the K key.
+    // Side button (back) = ability 1; middle click (wheel button) = ability 2.
     addEventListener('mousedown', e => this._mouse(e, true));
     addEventListener('mouseup', e => this._mouse(e, false));
+    // scroll wheel: down = ability 1, up = ability 2 — a quick alternative
+    // to the side/middle buttons for mice without them
+    addEventListener('wheel', e => this._wheel(e), { passive: false });
 
     // gamepads are polled (in poll()), only connection changes are events
     this.onPad = null;               // optional (connected, id) callback
@@ -222,16 +229,35 @@ export class TouchInput {
   // Right mouse button = heavy (smash) attack, aimed by the held movement
   // keys. Press locks the aim and starts charging; release fires the smash
   // in that aim — a quick click is an uncharged heavy, a hold charges it,
-  // exactly like the K key.
+  // exactly like the K key. The side (back) button fires ability 1; middle
+  // click (the wheel button) fires ability 2 — simple presses, no charging.
   _mouse(e, down) {
-    if (!this.enabled || e.button !== 2) return;
-    e.preventDefault();
-    if (down) {
-      this.mouseChg = { dx: Math.sign(this.state.mx), dy: Math.round(this.state.my) };
-    } else if (this.mouseChg) {
-      this.queue.push({ atk: { kind: 'swipe', dx: this.mouseChg.dx, dy: this.mouseChg.dy } });
-      this.mouseChg = null;
+    if (!this.enabled) return;
+    if (e.button === 2) {
+      e.preventDefault();
+      if (down) {
+        this.mouseChg = { dx: Math.sign(this.state.mx), dy: Math.round(this.state.my) };
+      } else if (this.mouseChg) {
+        this.queue.push({ atk: { kind: 'swipe', dx: this.mouseChg.dx, dy: this.mouseChg.dy } });
+        this.mouseChg = null;
+      }
+      return;
     }
+    if (!down) return;   // remaining buttons are simple presses
+    if (e.button === 3) { e.preventDefault(); this.queue.push({ ab0: true }); }        // side/back button
+    else if (e.button === 1) { e.preventDefault(); this.queue.push({ ab1: true }); }   // middle click
+  }
+
+  // Scroll wheel as an alternative to the side/middle buttons: down for
+  // ability 1, up for ability 2. Debounced so one physical notch (which can
+  // dispatch several wheel events, especially on trackpads) fires once.
+  _wheel(e) {
+    if (!this.enabled || !e.deltaY) return;
+    const now = performance.now();
+    if (now - this.wheelT < 120) return;
+    this.wheelT = now;
+    e.preventDefault();
+    this.queue.push(e.deltaY > 0 ? { ab0: true } : { ab1: true });
   }
 
   // Read the first connected gamepad: level movement merges with the touch/
