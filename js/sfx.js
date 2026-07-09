@@ -9,7 +9,8 @@
 // players can see also makes noise, exactly once per client.
 
 const MUTE_KEY = 'smacktown.muted';  // mutes the MUSIC only; SFX always play
-const MUSIC_VOL = 0.30;
+const MUSIC_VOL = 0.30;               // music bus scale at full music level
+const SFX_VOL = 0.90;                 // sfx bus scale at full sfx level
 
 // ---------- theme song: 'Focus' ----------
 // An adventure-overworld groove in E minor at 96 BPM: a jazzy synth-sax
@@ -72,6 +73,9 @@ class Sfx {
   constructor() {
     this.ac = null;
     this.muted = localStorage.getItem(MUTE_KEY) === '1';
+    // 0..1 user levels (from settings). Master scales the whole mix; music
+    // and sfx scale their own bus on top of the fixed base scales above.
+    this.vol = { master: 1, music: 1, sfx: 1 };
     this.mode = 'menu';           // 'menu' | 'fight' — picks the drum layer
     this.lastPlay = new Map();    // throttle: sound name -> last play (ms)
     this.charges = new Map();     // fighter id -> live charge-whine nodes
@@ -88,13 +92,13 @@ class Sfx {
       if (!AC) return;
       this.ac = new AC();
       this.master = this.ac.createGain();
-      this.master.gain.value = 1;
+      this.master.gain.value = this.vol.master;
       this.master.connect(this.ac.destination);
       this.sfxBus = this.ac.createGain();
-      this.sfxBus.gain.value = 0.9;
+      this.sfxBus.gain.value = this.vol.sfx * SFX_VOL;
       this.sfxBus.connect(this.master);
       this.musicBus = this.ac.createGain();
-      this.musicBus.gain.value = this.muted ? 0 : MUSIC_VOL;
+      this.musicBus.gain.value = this.muted ? 0 : this.vol.music * MUSIC_VOL;
       this.musicBus.connect(this.master);
       // shared 1s white-noise buffer for every percussive/whoosh sound
       const len = this.ac.sampleRate;
@@ -111,8 +115,24 @@ class Sfx {
     this.muted = m;
     localStorage.setItem(MUTE_KEY, m ? '1' : '0');
     if (this.musicBus) {
-      this.musicBus.gain.setTargetAtTime(m ? 0 : MUSIC_VOL, this.ac.currentTime, 0.02);
+      this.musicBus.gain.setTargetAtTime(
+        m ? 0 : this.vol.music * MUSIC_VOL, this.ac.currentTime, 0.02);
     }
+  }
+
+  // Apply the 0..1 mixer levels from settings ({master, music, sfx}). Safe to
+  // call before unlock() — the values are stored and take effect once the
+  // buses exist.
+  setLevels({ master, music, sfx } = {}) {
+    if (typeof master === 'number') this.vol.master = master;
+    if (typeof music === 'number') this.vol.music = music;
+    if (typeof sfx === 'number') this.vol.sfx = sfx;
+    if (!this.ac) return;
+    const t = this.ac.currentTime;
+    this.master.gain.setTargetAtTime(this.vol.master, t, 0.02);
+    this.sfxBus.gain.setTargetAtTime(this.vol.sfx * SFX_VOL, t, 0.02);
+    this.musicBus.gain.setTargetAtTime(
+      this.muted ? 0 : this.vol.music * MUSIC_VOL, t, 0.02);
   }
 
   setMode(mode) { this.mode = mode; }

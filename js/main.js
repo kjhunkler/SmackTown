@@ -14,6 +14,7 @@ import { Renderer } from './render.js';
 import { VoiceChat } from './voice.js';
 import * as UI from './ui.js';
 import { SFX } from './sfx.js';
+import { settings } from './settings.js';
 
 const $ = s => document.querySelector(s);
 
@@ -71,6 +72,11 @@ const muteBtn = $('#sfx-mute');
 function renderMute() { muteBtn.textContent = SFX.muted ? '🔇' : '🎵'; }
 muteBtn.addEventListener('click', () => { SFX.setMuted(!SFX.muted); renderMute(); });
 renderMute();
+
+// Push the saved mixer levels into the audio engine at boot (and whenever
+// the settings store changes), so a fresh unlock() already honors them.
+SFX.setLevels(settings.getAudio());
+settings.onChange(s => SFX.setLevels(s.getAudio()));
 
 // ---------------- global state ----------------
 let profile = null;
@@ -209,6 +215,7 @@ addEventListener('keydown', noteActivity, true);
 // Which screen the player is parked on, for presence/roster flavor.
 // Heartbeats (~2.5s) pick this up, so no push is needed on screen changes.
 function currentAct() {
+  if (!$('#settings-modal').classList.contains('hidden')) return 'settings';
   if (!$('#hat-library').classList.contains('hidden')) return 'hatlib';
   const vis = id => !$('#screen-' + id).classList.contains('hidden');
   if (vis('hat')) return 'hat';
@@ -466,6 +473,104 @@ $('#hat-library').addEventListener('click', e => {
 $('#hatlib-tab-mine').addEventListener('click', () => showHatLibTab('mine'));
 $('#hatlib-tab-town').addEventListener('click', () => showHatLibTab('town'));
 $('#hatlib-new').addEventListener('click', () => openHatStudio(null));
+
+// ---------------- settings modal ----------------
+// Sound sliders write straight through to the audio engine; the keyboard and
+// controller tabs rebind inputs by capturing the next press. Touch controls
+// are gesture-based and shown read-only. `settingsCap` is the row currently
+// listening for input, or null.
+let settingsTab = 'sound';
+let settingsCap = null;         // { kind:'key'|'pad', id }
+let padCapRAF = 0;              // rAF handle while scanning for a pad button
+
+function paintSettings() {
+  UI.renderSettings({
+    active: settingsTab,
+    capture: settingsCap,
+    onAudio: (which, v) => {
+      settings.setAudio(which, v);
+      // dragging music above zero clears the corner mute so it's actually heard
+      if (which === 'music' && v > 0 && SFX.muted) { SFX.setMuted(false); renderMute(); }
+    },
+    onRebindKey: (id, capturing) => startCapture(capturing ? null : { kind: 'key', id }),
+    onRebindPad: (id, capturing) => startCapture(capturing ? null : { kind: 'pad', id }),
+    onResetKey: () => { settings.resetKeys(); stopCapture(); paintSettings(); },
+    onResetPad: () => { settings.resetPad(); stopCapture(); paintSettings(); },
+  });
+}
+
+function openSettings() {
+  settingsTab = 'sound';
+  stopCapture();
+  $('#settings-modal').classList.remove('hidden');
+  paintSettings();
+}
+function closeSettings() {
+  stopCapture();
+  $('#settings-modal').classList.add('hidden');
+}
+
+// Begin (or clear) an input-capture. Only one row listens at a time.
+function startCapture(cap) {
+  stopCapture();
+  settingsCap = cap;
+  if (cap?.kind === 'pad') scanPadForCapture();
+  paintSettings();
+}
+function stopCapture() {
+  settingsCap = null;
+  if (padCapRAF) { cancelAnimationFrame(padCapRAF); padCapRAF = 0; }
+}
+
+// Keyboard capture: the next key pressed while listening becomes the binding.
+addEventListener('keydown', e => {
+  if (!settingsCap || settingsCap.kind !== 'key') return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === 'Escape') { stopCapture(); paintSettings(); return; }
+  settings.bindKey(settingsCap.id, e.key.toLowerCase());
+  stopCapture();
+  paintSettings();
+}, true);
+
+// Controller capture: poll the pad each frame for a freshly-pressed button.
+function scanPadForCapture() {
+  const base = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
+  const wasDown = base ? base.buttons.map(b => b.pressed) : [];
+  const tick = () => {
+    if (!settingsCap || settingsCap.kind !== 'pad') { padCapRAF = 0; return; }
+    const pad = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
+    if (pad) {
+      for (let i = 0; i < pad.buttons.length; i++) {
+        if (pad.buttons[i].pressed && !wasDown[i]) {
+          settings.bindPad(settingsCap.id, i);
+          stopCapture();
+          paintSettings();
+          return;
+        }
+        wasDown[i] = pad.buttons[i].pressed;
+      }
+    }
+    padCapRAF = requestAnimationFrame(tick);
+  };
+  padCapRAF = requestAnimationFrame(tick);
+}
+
+$('#menu-settings').addEventListener('click', openSettings);
+$('#settings-close').addEventListener('click', closeSettings);
+$('#settings-done').addEventListener('click', closeSettings);
+$('#settings-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSettings();      // tap the backdrop to close
+});
+for (const tab of document.querySelectorAll('.settings-tab')) {
+  tab.addEventListener('click', () => { settingsTab = tab.dataset.tab; stopCapture(); paintSettings(); });
+}
+$('#settings-reset').addEventListener('click', () => {
+  settings.reset();
+  stopCapture();
+  renderMute();
+  paintSettings();
+});
 
 // My hats: tap the art to wear it (tap again to take it off), ✏️ edit, ✕ delete.
 function renderHatLibrary() {

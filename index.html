@@ -62,6 +62,7 @@
       <p id="menu-online-empty" class="online-empty">Looking for fighters…</p>
     </div>
     <button id="menu-builder" class="btn ghost">Edit Fighter &amp; Build</button>
+    <button id="menu-settings" class="btn ghost">⚙️ Settings</button>
     <button id="menu-install" class="btn ghost install hidden">📲 Install App</button>
     <p id="install-hint" class="install-hint hidden">
       On iPhone/iPad: tap <b>Share</b> <span class="share-glyph">⎋</span> then
@@ -252,6 +253,32 @@
       <div id="hatlib-town-list" class="hatlib-town-list"></div>
       <p id="hatlib-town-empty" class="hatlib-empty">Looking for town hats…</p>
     </div>
+  </div>
+</div>
+
+<!-- ============ SETTINGS (modal) ============ -->
+<div id="settings-modal" class="modal hidden">
+  <div class="modal-card settings-card">
+    <header class="modal-head">
+      <h2>Settings</h2>
+      <button id="settings-close" class="modal-close" aria-label="Close">✕</button>
+    </header>
+    <div class="settings-tabs">
+      <button class="settings-tab on" data-tab="sound">🔊 Sound</button>
+      <button class="settings-tab" data-tab="keyboard">⌨️ Keyboard</button>
+      <button class="settings-tab" data-tab="controller">🎮 Controller</button>
+      <button class="settings-tab" data-tab="touch">📱 Touch</button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-pane" data-pane="sound"></div>
+      <div class="settings-pane hidden" data-pane="keyboard"></div>
+      <div class="settings-pane hidden" data-pane="controller"></div>
+      <div class="settings-pane hidden" data-pane="touch"></div>
+    </div>
+    <footer class="settings-foot">
+      <button id="settings-reset" class="btn ghost">Reset to defaults</button>
+      <button id="settings-done" class="btn primary">Done</button>
+    </footer>
   </div>
 </div>
 

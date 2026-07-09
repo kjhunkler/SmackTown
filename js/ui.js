@@ -8,6 +8,7 @@ import {
 } from './profile.js';
 import { MAPS } from './game.js';
 import { SFX } from './sfx.js';
+import { settings, KEY_ACTIONS, PAD_ACTIONS, padBtnLabel } from './settings.js';
 
 // ---------- pixel hats ----------
 // Rasterize a hat string once to a tiny offscreen canvas; scaled draws stay
@@ -331,6 +332,7 @@ const ACT_DETAIL = {
   builder: '🔧 tuning a fighter',
   hat: '🎨 drawing a hat',
   hatlib: '🎩 browsing hats',
+  settings: '⚙️ in settings',
   results: '🏆 at the podium',
 };
 
@@ -606,6 +608,103 @@ export function renderResults(players, winnerId, finalFighters, { myId = null, o
     }
     list.appendChild(li);
   });
+}
+
+// ---------- settings ----------
+
+// Pretty-print a raw lowercased key name for the rebind chips.
+const KEY_GLYPH = {
+  ' ': 'Space', 'arrowleft': '←', 'arrowright': '→', 'arrowup': '↑',
+  'arrowdown': '↓', 'escape': 'Esc', 'enter': '⏎', 'tab': 'Tab',
+  'backspace': '⌫', 'delete': 'Del', 'control': 'Ctrl', 'shift': 'Shift',
+  'alt': 'Alt', 'meta': 'Meta',
+};
+function keyLabel(k) { return KEY_GLYPH[k] || (k.length === 1 ? k.toUpperCase() : k); }
+
+// Paint every settings pane from the live store. `active` is the visible tab;
+// `capture` is the {kind, id} row currently awaiting a keypress/button, or
+// null. Callbacks let main.js own the audio engine + capture lifecycle.
+export function renderSettings({ active = 'sound', capture = null,
+  onAudio, onRebindKey, onRebindPad, onResetKey, onResetPad } = {}) {
+  // tab highlight + pane visibility
+  for (const tab of document.querySelectorAll('.settings-tab'))
+    tab.classList.toggle('on', tab.dataset.tab === active);
+  for (const pane of document.querySelectorAll('.settings-pane'))
+    pane.classList.toggle('hidden', pane.dataset.pane !== active);
+
+  renderSoundPane($('[data-pane="sound"]'), onAudio);
+  renderBindPane($('[data-pane="keyboard"]'), 'key', capture, onRebindKey, onResetKey);
+  renderBindPane($('[data-pane="controller"]'), 'pad', capture, onRebindPad, onResetPad);
+  renderTouchPane($('[data-pane="touch"]'));
+}
+
+function renderSoundPane(box, onAudio) {
+  const a = settings.getAudio();
+  box.innerHTML = `<p class="settings-hint">Master scales everything; music and effects mix on top.</p>`;
+  const rows = [
+    ['master', '🔈 Master'], ['music', '🎵 Music'], ['sfx', '💥 Effects'],
+  ];
+  for (const [id, name] of rows) {
+    const row = document.createElement('label');
+    row.className = 'vol-row';
+    const pct = Math.round(a[id] * 100);
+    row.innerHTML = `
+      <span class="vol-name">${name}</span>
+      <input class="vol-slider" type="range" min="0" max="100" value="${pct}"
+             aria-label="${name} volume">
+      <span class="vol-val">${pct}%</span>`;
+    const slider = row.querySelector('.vol-slider');
+    const val = row.querySelector('.vol-val');
+    slider.addEventListener('input', () => {
+      val.textContent = slider.value + '%';
+      onAudio?.(id, slider.value / 100);
+    });
+    box.appendChild(row);
+  }
+}
+
+// One pane drives both keyboard and controller — same layout, different
+// binding source. `kind` is 'key' or 'pad'.
+function renderBindPane(box, kind, capture, onRebind, onReset) {
+  const isKey = kind === 'key';
+  const actions = isKey ? KEY_ACTIONS : PAD_ACTIONS;
+  box.innerHTML = isKey
+    ? `<p class="settings-hint">Tap a binding, then press the new key. Move keys can be held for direction.</p>`
+    : `<p class="settings-hint">Connect a controller, tap a binding, then press the new button. The stick / D-pad always moves.</p>`;
+  for (const act of actions) {
+    const bound = isKey ? settings.keysFor(act.id) : settings.padButtonsFor(act.id);
+    const capturing = capture && capture.kind === kind && capture.id === act.id;
+    const chips = bound.length
+      ? bound.map(b => `<span class="bind-chip">${esc(isKey ? keyLabel(b) : padBtnLabel(b))}</span>`).join('')
+      : '<span class="bind-chip none">unbound</span>';
+    const row = document.createElement('div');
+    row.className = 'bind-row';
+    row.innerHTML = `
+      <div class="bind-info">
+        <div class="bind-name">${esc(act.name)}</div>
+        ${act.note ? `<div class="bind-note">${esc(act.note)}</div>` : ''}
+      </div>
+      <div class="bind-keys">${capturing ? '<span class="bind-chip listening">press…</span>' : chips}</div>
+      <button class="btn tiny ghost bind-set">${capturing ? 'Cancel' : 'Rebind'}</button>`;
+    row.querySelector('.bind-set').addEventListener('click', () => onRebind?.(act.id, capturing));
+    box.appendChild(row);
+  }
+  const reset = document.createElement('button');
+  reset.className = 'btn tiny ghost bind-reset';
+  reset.textContent = isKey ? '↺ Reset keyboard' : '↺ Reset controller';
+  reset.addEventListener('click', () => onReset?.());
+  box.appendChild(reset);
+}
+
+function renderTouchPane(box) {
+  box.innerHTML = `
+    <p class="settings-hint">Touch controls are gesture-based, so they can't be
+      remapped — here's the reference:</p>
+    <div class="touch-ref">
+      <div class="touch-ref-row"><b>Left thumb</b><span>drag = move · flick up = jump · flick down = fast-fall / drop · flick sideways while ducked = dodge roll</span></div>
+      <div class="touch-ref-row"><b>Right thumb</b><span>tap = quick attack · swipe = smash in that direction (hold to charge)</span></div>
+      <div class="touch-ref-row"><b>Corner buttons</b><span>your two equipped abilities</span></div>
+    </div>`;
 }
 
 function esc(s) {

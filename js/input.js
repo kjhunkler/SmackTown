@@ -30,6 +30,8 @@
 // aim while the control is held); the release ALSO queues the classic swipe
 // attack edge so a press-and-release faster than one poll still attacks.
 
+import { settings } from './settings.js';
+
 const FLICK_SPEED = 0.55;    // px/ms — how fast a move must be to be a flick
 const SWIPE_MIN = 24;        // px before a right-zone gesture becomes a swipe
 const TAP_MAX_MS = 220;
@@ -37,16 +39,11 @@ const STICK_RADIUS = 52;
 const PAD_DEAD = 0.25;       // gamepad stick deadzone
 const PAD_AIM_DEAD = 0.35;   // stick tilt before an attack aims off-neutral
 const PAD_FLICK = 0.6;       // stick tilt that counts as a vertical flick
+const PAD_SCAN = 16;         // buttons scanned for bound actions each frame
 
-// standard-mapping button index -> action
-const PAD_BTN = {
-  0: 'tap',                  // A — quick attack (jab)
-  1: 'swipe',                // B — smash attack
-  2: 'ab0',                  // X — ability 1
-  3: 'jump',                 // Y
-  4: 'ab0', 5: 'ab0',        // LB / RB — ability 1
-  6: 'ab1', 7: 'ab1',        // LT / RT — ability 2
-};
+// Keyboard keys and gamepad buttons are user-rebindable (see settings.js).
+// Touch gestures are not — they're continuous drags/flicks, not discrete
+// inputs — so nothing here reads a touch binding.
 
 export class TouchInput {
   constructor(root) {
@@ -197,33 +194,33 @@ export class TouchInput {
     if (!this.enabled || e.repeat) return;
     const k = e.key.toLowerCase();
     if (down) this.keys.add(k); else this.keys.delete(k);
-    const left = this.keys.has('arrowleft') || this.keys.has('a');
-    const right = this.keys.has('arrowright') || this.keys.has('d');
-    const up = this.keys.has('arrowup') || this.keys.has('w');
-    const dn = this.keys.has('arrowdown') || this.keys.has('s');
+    // Which logical action this key drives, and which movement actions are
+    // currently held — both read from the user's (re)bindable keymap.
+    const act = settings.keyAction(k);
+    const held = id => settings.keysFor(id).some(key => this.keys.has(key));
+    const left = held('left'), right = held('right');
     const dir = (right ? 1 : 0) - (left ? 1 : 0);
     this.state.mx = dir;
-    this.state.my = (dn ? 1 : 0) - (up ? 1 : 0);
+    this.state.my = (held('down') ? 1 : 0) - (held('up') ? 1 : 0);
     if (!down) {
       // smash key released: fire the charged attack in the aim locked at press
-      if ((k === 'k' || k === 'x') && this.keyChg
-          && !this.keys.has('k') && !this.keys.has('x')) {
+      if (act === 'smash' && this.keyChg && !held('smash')) {
         this.queue.push({ atk: { kind: 'swipe', dx: this.keyChg.dx, dy: this.keyChg.dy } });
         this.keyChg = null;
       }
       return;
     }
-    if (k === ' ') this.queue.push({ jump: true });
-    if (k === 'arrowdown' || k === 's') this.queue.push({ ff: true, drop: true });
+    if (act === 'jump') this.queue.push({ jump: true });
+    if (act === 'down') this.queue.push({ ff: true, drop: true });
     // a fresh sideways press while holding duck (down) = dodge roll
-    if ((k === 'arrowleft' || k === 'a' || k === 'arrowright' || k === 'd') && this.state.my > 0.6) {
-      this.queue.push({ roll: (k === 'arrowright' || k === 'd') ? 1 : -1 });
+    if ((act === 'left' || act === 'right') && this.state.my > 0.6) {
+      this.queue.push({ roll: act === 'right' ? 1 : -1 });
     }
     const aim = { dx: dir, dy: this.state.my };
-    if (k === 'j' || k === 'z') this.queue.push({ atk: { kind: 'tap', ...aim } });
-    if (k === 'k' || k === 'x') this.keyChg = aim;   // hold to charge the smash
-    if (k === 'l' || k === 'c') this.queue.push({ ab0: true });
-    if (k === ';' || k === 'v') this.queue.push({ ab1: true });
+    if (act === 'tap') this.queue.push({ atk: { kind: 'tap', ...aim } });
+    if (act === 'smash') this.keyChg = aim;   // hold to charge the smash
+    if (act === 'ab0') this.queue.push({ ab0: true });
+    if (act === 'ab1') this.queue.push({ ab1: true });
   }
 
   // Right mouse button = heavy (smash) attack, aimed by the held movement
@@ -286,9 +283,10 @@ export class TouchInput {
         this.padRolled = true; this.queue.push({ roll: Math.sign(mx) });
       } else if (this.padRolled && Math.abs(mx) < PAD_AIM_DEAD) this.padRolled = false;
 
-      for (const [i, act] of Object.entries(PAD_BTN)) {
+      for (let i = 0; i < PAD_SCAN; i++) {
+        const act = settings.padAction(i);
         const down = !!pad.buttons[i]?.pressed;
-        if (down && !this.padPrev[i]) {
+        if (act && down && !this.padPrev[i]) {
           if (act === 'jump') this.queue.push({ jump: true });
           else if (act === 'tap') this.queue.push({ atk: { kind: 'tap', ...octant(mx, my, PAD_AIM_DEAD) } });
           else if (act === 'swipe') this.padChg = octant(mx, my, PAD_AIM_DEAD); // hold to charge
@@ -298,7 +296,7 @@ export class TouchInput {
         this.padPrev[i] = down;
       }
       // smash button released: fire the charged attack in the aim from press
-      const swipeHeld = !!pad.buttons[1]?.pressed;
+      const swipeHeld = settings.padButtonsFor('swipe').some(i => pad.buttons[i]?.pressed);
       if (this.padChg && !swipeHeld) {
         this.queue.push({ atk: { kind: 'swipe', dx: this.padChg.dx, dy: this.padChg.dy } });
         this.padChg = null;
@@ -312,7 +310,7 @@ export class TouchInput {
         this.padRHeld = false;
       }
     } else {
-      for (const i of Object.keys(PAD_BTN)) this.padPrev[i] = !!pad.buttons[i]?.pressed;
+      for (let i = 0; i < PAD_SCAN; i++) this.padPrev[i] = !!pad.buttons[i]?.pressed;
       this.padFlicked = Math.abs(my) > PAD_FLICK;
       this.padChg = null;
       this.padRHeld = rTilt;
