@@ -455,10 +455,12 @@ export function renderLobby(net, onVote = null, fightOn = false) {
 
 // ---------- game HUD ----------
 
-export function buildHud(players, { myId = null, onTry = null, onTrySelf = null, tryingId = null, infiniteStocks = false } = {}) {
+export function buildHud(players, { myId = null, onTry = null, onTrySelf = null, tryingId = null, infiniteStocks = false, coop = false } = {}) {
   const hud = $('#game-hud');
   hud.innerHTML = '';
   hud.dataset.infiniteStocks = infiniteStocks ? '1' : '';
+  hud.dataset.coop = coop ? '1' : '';
+  hud.classList.toggle('coop', !!coop);
   for (const p of players) {
     const canTry = onTry && p.id !== myId;
     const isTrying = canTry && p.id === tryingId;
@@ -466,7 +468,13 @@ export function buildHud(players, { myId = null, onTry = null, onTrySelf = null,
     tile.className = 'hud-tile';
     tile.id = 'hud-' + cssId(p.id);
     tile.style.borderTopColor = p.color;
-    tile.innerHTML = `
+    // Co-op tiles trade the percent + stock dots for a health bar.
+    tile.innerHTML = coop ? `
+      <div class="h-name">${esc(p.name)}</div>
+      <div class="h-hp"><div class="h-hp-fill" style="background:${p.color}"></div></div>
+      <div class="h-hp-txt"></div>
+      ${canTry ? `<button class="h-try${isTrying ? ' h-trying' : ''}">${isTrying ? 'Trying' : 'Try'}</button>` : ''}`
+    : `
       <div class="h-name">${esc(p.name)}</div>
       <div class="h-pct" style="color:${p.color}">0%</div>
       <div class="h-stocks">${infiniteStocks ? '∞' : '●●●●'}</div>
@@ -477,10 +485,30 @@ export function buildHud(players, { myId = null, onTry = null, onTrySelf = null,
 }
 
 export function updateHud(fighters) {
-  const infiniteStocks = $('#game-hud').dataset.infiniteStocks === '1';
+  const hud = $('#game-hud');
+  const infiniteStocks = hud.dataset.infiniteStocks === '1';
+  const coop = hud.dataset.coop === '1';
   for (const f of fighters) {
     const tile = document.getElementById('hud-' + cssId(f.id));
     if (!tile) continue;
+    if (coop) {
+      const maxHp = f.maxHp || 100;
+      const hp = Math.max(0, Math.round(f.hp ?? maxHp));
+      const frac = Math.max(0, Math.min(1, hp / maxHp));
+      const fill = tile.querySelector('.h-hp-fill');
+      const txt = tile.querySelector('.h-hp-txt');
+      fill.style.width = (frac * 100).toFixed(1) + '%';
+      // full green → low red, so a glance reads the danger
+      fill.style.filter = `saturate(${(0.6 + frac * 0.6).toFixed(2)})`;
+      fill.style.opacity = frac < 0.33 ? (0.55 + 0.45 * Math.abs(Math.sin(Date.now() / 180))).toFixed(2) : '1';
+      txt.textContent = f.dead ? 'DOWN' : `${hp}/${maxHp}`;
+      if (hp < (+tile.dataset.hp || maxHp)) {   // took a hit: flash the bar
+        tile.classList.remove('h-hp-hit'); void tile.offsetWidth; tile.classList.add('h-hp-hit');
+      }
+      tile.dataset.hp = hp;
+      tile.classList.toggle('dead', !!f.dead);
+      continue;
+    }
     const pctEl = tile.querySelector('.h-pct');
     const cur = Math.round(f.pct);
     if (cur > (+tile.dataset.pct || 0)) {   // took damage: punch the number

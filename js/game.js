@@ -200,6 +200,7 @@ const LEDGE_GRACE_UP = 40, LEDGE_GRACE_DOWN = 92;
 const ROLL_TIME = 0.38, ROLL_DIST = 150; // ledge getup roll onto the stage
 const F_W = 46, F_H = 64;            // fighter hurtbox
 const STOCKS = 4;
+const COOP_DOWN_TIME = 3.0;          // seconds a co-op fighter lies downed before reviving
 const RESPAWN_INVULN = 2.0;
 const HIT_PAUSE = 0.045;
 const BUFFER = 0.15;                 // edge-input buffer window (s)
@@ -365,6 +366,7 @@ export class Game {
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
       pct: 0, stocks: STOCKS,
+      hp: st.maxHp, maxHp: st.maxHp, downT: 0,   // co-op health & downed timer
       state: 'idle',                // idle|run|air|attack|charge|hitstun|ledge|roll|dead|respawn
       stateT: 0,
       atk: null,                    // active attack name
@@ -424,6 +426,7 @@ export class Game {
     f.color = p.color;
     f.st = derivedStats(p.build);        // rejoiners may bring a new character
     f.jumps = Math.min(f.jumps, f.st.maxJumps);
+    f.maxHp = f.st.maxHp; f.hp = Math.min(f.hp, f.maxHp);
     this.inputs.delete(oldId);
     this.inputs.set(p.id, blankInput());
     this.lagComp.delete(oldId);
@@ -432,6 +435,7 @@ export class Game {
       f.dead = false;
       f.stocks = STOCKS;
       f.pct = 0;
+      f.hp = f.maxHp; f.downT = 0;
       f.guard = GUARD_MAX; f.standT = 0;
       f.usedSecondWind = false;
       f.x = this.stage.spawns[this.fighters.indexOf(f) % this.stage.spawns.length];
@@ -457,6 +461,9 @@ export class Game {
     f.tryBuild = null;
     f.st = derivedStats(build);
     f.jumps = Math.min(f.jumps, f.st.maxJumps);
+    // co-op: retune keeps your current HP but re-tops the ceiling; a heartier
+    // Defense build gains headroom, a shrunk one clamps to fit
+    if (f.maxHp !== f.st.maxHp) { f.hp = Math.min(f.hp + Math.max(0, f.st.maxHp - f.maxHp), f.st.maxHp); f.maxHp = f.st.maxHp; }
     return f;
   }
 
@@ -561,6 +568,7 @@ export class Game {
     this._resolveAttacks();
     this._stepHazards();
     this._checkBlast();
+    if (this.coop) this._stepCoop();
 
     // Co-op runs never resolve to a winner — the expedition just keeps going.
     if (!this.coop) {
@@ -1313,6 +1321,7 @@ export class Game {
     for (const pr of this.projectiles) {
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
+        if (this.coop) continue;   // co-op: no friendly fire between teammates
         if (pr.hit?.has(o.id)) continue;   // piercing shot already cut through them
         const pos = this._rewound(o, pr.owner);
         const ob = hurtBox(o);
@@ -1337,6 +1346,7 @@ export class Game {
     const a = aim && (aim.x || aim.y) ? aim : null;
     for (const o of this.fighters) {
       if (o.id === f.id || o.dead || o.invuln > 0 || hitSet.has(o.id)) continue;
+      if (this.coop) continue;   // co-op: teammates can't hurt each other (enemies are a separate faction)
       const pos = this._rewound(o, f.id);
       const ob = hurtBox(o);
       if (Math.abs(pos.x - cx) < hb.hw + F_W / 2 && Math.abs(pos.y + ob.dy - cy) < hb.hh + ob.hh) {
@@ -1407,6 +1417,7 @@ export class Game {
         e: 'hit', x: vic.x, y: vic.y, dmg: Math.round(dmg),
         heavy: false, vic: vic.id, att: att.id,
       });
+      this._damageHp(vic, dmg, att.id);
       return;
     }
 
@@ -1480,6 +1491,7 @@ export class Game {
       e: 'hit', x: vic.x, y: vic.y, dmg: Math.round(dmg),
       heavy: kb > 700, spike, vic: vic.id, att: att.id,
     });
+    this._damageHp(vic, dmg, att.id);
   }
 
   _stepProjectiles() {
@@ -1602,6 +1614,67 @@ export class Game {
     }
   }
 
+  // ---------- co-op health & respawns ----------
+
+  // Take a chunk out of a co-op fighter's health, attributing the blow for
+  // KO credit. Zero drops them: they go down and revive after a spell.
+  _damageHp(vic, dmg, attId) {
+    if (!this.coop || vic.dead) return;
+    if (attId) vic.lastHitBy = attId;
+    vic.hp -= dmg;
+    if (vic.hp <= 0) this._downFighter(vic);
+  }
+
+  // Down a fighter: they crumple and lie dead until the revive timer runs out,
+  // then reappear with the group. Infinite lives — the expedition rolls on.
+  _downFighter(f) {
+    if (f.dead) return;
+    f.hp = 0;
+    f.dead = true;
+    f.state = 'dead';
+    f.stateT = 0;
+    f.downT = COOP_DOWN_TIME;
+    f.vx = 0; f.vy = 0;
+    f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0; f.chgAim = null;
+    f.burn = null; f.stunned = false;
+    f.score.fall++;
+    const credit = f.lastHitBy ? this.fighters.find(k => k.id === f.lastHitBy && k !== f) : null;
+    if (credit) credit.score.ko++; else f.score.sd++;
+    f.lastHitBy = null;
+    this.events.push({ e: 'ko', x: f.x, y: f.y, id: f.id, stocks: 1 });
+  }
+
+  _stepCoop() {
+    for (const f of this.fighters) {
+      if (!f.dead || f.parked || f.downT <= 0) continue;
+      f.downT -= TICK;
+      if (f.downT <= 0) this._respawnCoop(f);
+    }
+  }
+
+  // Revive a downed fighter above the surviving group (or where they fell if
+  // they're alone), descending like a fresh spawn with a beat of invulnerability.
+  _respawnCoop(f) {
+    const live = this.fighters.filter(o => o !== f && !o.dead && !o.parked);
+    const cx = live.length ? live.reduce((s, o) => s + o.x, 0) / live.length : f.x;
+    f.dead = false;
+    f.downT = 0;
+    f.x = cx + (this.rng() * 160 - 80);
+    f.y = this.stage.respawnY;
+    f.vx = 0; f.vy = 0;
+    f.grounded = false;
+    f.hp = f.maxHp;
+    f.pct = 0;
+    f.guard = GUARD_MAX; f.standT = 0;
+    f.usedSecondWind = false;
+    f.state = 'respawn';
+    f.stateT = 0;
+    f.invuln = RESPAWN_INVULN;
+    f.jumps = f.st.maxJumps;
+    f.burn = null;
+    f.stunned = false;
+  }
+
   // ---------- practice bot ----------
 
   _botThink(f) {
@@ -1696,6 +1769,7 @@ export class Game {
           r2(f.hitstunFor || 0),
           f.stunned ? 1 : 0,
           r2(f.ffLockT),
+          r1(f.hp), f.maxHp, r2(f.downT),   // co-op health (indices 42,43,44)
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
@@ -1749,6 +1823,7 @@ export function restoreFighter(f, row) {
     if (row.length > 39) f.hitstunFor = +row[39] || 0;
     if (row.length > 40) f.stunned = !!row[40];
     if (row.length > 41) f.ffLockT = +row[41] || 0;
+    if (row.length > 43) { f.hp = +row[42] || 0; f.maxHp = +row[43] || f.maxHp; f.downT = +row[44] || 0; }
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.

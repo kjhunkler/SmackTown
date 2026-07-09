@@ -289,6 +289,9 @@ export function derivedStats(build) {
     dmgTaken:  1 - 0.04 * b.stats.defense,
     jumpMult:  1 + 0.05 * b.stats.agility,
     airMult:   1 + 0.08 * b.stats.agility,
+    // Co-op health pool (unused by stock matches): Defense doubles as a
+    // toughness stat, so a tank build carries more HP through an expedition.
+    maxHp:     100 + 25 * b.stats.defense,
     maxJumps:  2 + (has('feather') ? 1 : 0),
     cdMult:    has('quickhands') ? 0.8 : 1,
     weapon:    b.weapon,

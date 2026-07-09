@@ -1171,6 +1171,7 @@ class Session {
       onTrySelf: () => this.requestTrySelf(),
       tryingId: this.trying.get(this.myId)?.targetId || null,
       infiniteStocks: this.map === 'training' || !!MAPS[this.map]?.coop,
+      coop: !!MAPS[this.map]?.coop,
     });
   }
 
@@ -1286,6 +1287,7 @@ class Session {
         mana: f.mana, weapon: f.st.weapon,
         color: this.meta.get(f.id)?.color, hat: this.activeMeta(f.id)?.hat, cds: f.cds,
         score: f.score, parked: f.parked,
+        hp: f.hp, maxHp: f.maxHp, downT: f.downT,
       })),
       projectiles: this.game.projectiles,
     };
@@ -1535,6 +1537,7 @@ class Session {
       color: this.meta.get(r[0])?.color, hat: this.activeMeta(r[0])?.hat,
       score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5] } : null,
       parked: !!r[37],
+      hp: r[42], maxHp: r[43], downT: r[44],
     }));
   }
 

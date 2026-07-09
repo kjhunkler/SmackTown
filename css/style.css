@@ -909,6 +909,29 @@ input[type=text]:focus { border-color: var(--accent); }
 .hud-tile .h-stocks { font-size: 10px; letter-spacing: 2px; }
 .hud-tile.dead { opacity: .4; }
 
+/* co-op health bar */
+.hud-tile .h-hp {
+  width: 92px;
+  height: 9px;
+  margin: 3px auto 2px;
+  border-radius: 5px;
+  background: rgba(255,255,255,.14);
+  overflow: hidden;
+}
+.hud-tile .h-hp-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 5px;
+  transition: width .18s ease-out, opacity .1s linear;
+}
+.hud-tile .h-hp-txt { font-size: 10px; font-weight: 800; color: var(--ink-dim); }
+.hud-tile.h-hp-hit { animation: hp-hit .3s ease-out; }
+@keyframes hp-hit {
+  0% { transform: scale(1.12); filter: brightness(1.9); }
+  100% { transform: scale(1); filter: none; }
+}
+#game-hud.coop .hud-tile.dead .h-hp-txt { color: #ff6a7a; }
+
 #touch-layer { position: absolute; inset: 0; }
 #stick-zone { position: absolute; left: 0; top: 0; bottom: 0; width: 45%; }
 #action-zone { position: absolute; right: 0; top: 0; bottom: 0; width: 55%; }
