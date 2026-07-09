@@ -105,6 +105,24 @@ export const MAPS = {
     spawns: [ -140, 140, -300, 300 ],
     respawnY: -320,
   },
+  // Expedition (PvE co-op): an endless procedurally-generated side-scroller.
+  // The ground is one continuous floor stretching effectively forever; the
+  // floating platforms are a deterministic function of the run's seed and
+  // world x (see expansePlats), so the host and every client build the exact
+  // same world without syncing geometry. 'infinite' switches the sim into
+  // co-op rules: no horizontal blast KOs, the match never ends, and (later
+  // phases) HP + credits replace stocks & percent.
+  expanse: {
+    name: 'The Long Road',
+    hidden: true,
+    infinite: true,
+    coop: true,
+    main: { x: -1e6, y: 0, w: 2e6, h: 46 },              // continuous ground
+    plats: [],                                           // generated per view
+    blast: { l: -1e9, r: 1e9, t: -1500, b: 1200 },       // only a soft top ceiling matters
+    spawns: [ -120, 120, -40, 40, 0, 200, -200, 80 ],
+    respawnY: -360,
+  },
 };
 export const DEFAULT_MAP = 'battlefield';
 // Rotation/votes skip hidden maps (training is reachable only by mode)
@@ -121,6 +139,32 @@ function platPos(p, tickF) {
 export function platsAt(mapId, tickF) {
   const map = MAPS[mapId] || MAPS[DEFAULT_MAP];
   return map.plats.map(p => p.move ? { ...p, ...platPos(p, tickF) } : p);
+}
+
+// Expedition world generation. The endless map is carved into fixed-width
+// chunks; each chunk deterministically seeds its own RNG (run seed XOR chunk
+// index) and lays 0–2 floating platforms. A pure function of (seed, x) means
+// the host, prediction and every client generate an identical world with no
+// geometry ever crossing the wire — collision windows it to the fighters,
+// the renderer windows it to the camera. Chunk 0 (spawn) is always left open.
+const EXPANSE_CHUNK = 540;
+export function expansePlats(seed, minX, maxX) {
+  const c0 = Math.floor(minX / EXPANSE_CHUNK) - 1;
+  const c1 = Math.floor(maxX / EXPANSE_CHUNK) + 1;
+  const out = [];
+  for (let c = c0; c <= c1; c++) {
+    if (c === 0) continue;                       // keep the spawn clearing open
+    const rng = mulberry32(((seed >>> 0) ^ (Math.imul(c, 2654435761) >>> 0)) >>> 0);
+    const roll = rng();
+    const count = roll < 0.22 ? 0 : roll < 0.72 ? 1 : 2;
+    for (let i = 0; i < count; i++) {
+      const w = 120 + Math.floor(rng() * 3) * 45;                 // 120 | 165 | 210
+      const x = c * EXPANSE_CHUNK + 40 + rng() * (EXPANSE_CHUNK - 80 - w);
+      const y = -130 - Math.floor(rng() * 3) * 115;              // -130 | -245 | -360
+      out.push({ x, y, w });
+    }
+  }
+  return out;
 }
 
 // Molten hazards: each vent cycles warn → erupt → idle on a fixed period.
@@ -296,6 +340,8 @@ export class Game {
   constructor(players, seed = 1, mapId = DEFAULT_MAP) {
     this.map = MAPS[mapId] ? mapId : DEFAULT_MAP;
     this.stage = MAPS[this.map];
+    this.seed = seed >>> 0;                 // run seed (world gen + spawns)
+    this.coop = !!this.stage.coop;          // PvE co-op rules (HP, no match end)
     this.tick = 0;
     this.over = false;
     this.winner = null;
@@ -479,7 +525,22 @@ export class Game {
   // fighter and again for projectiles).
   platsNow() {
     if (this._pc?.tick !== this.tick) {
-      this._pc = { tick: this.tick, plats: platsAt(this.map, this.tick) };
+      let plats;
+      if (this.stage.infinite) {
+        // window generation to a band around the fighters — collision only
+        // ever needs the platforms anyone could be standing on
+        let lo = Infinity, hi = -Infinity;
+        for (const f of this.fighters) {
+          if (f.dead) continue;
+          if (f.x < lo) lo = f.x;
+          if (f.x > hi) hi = f.x;
+        }
+        if (!isFinite(lo)) { lo = 0; hi = 0; }
+        plats = expansePlats(this.seed, lo - 1000, hi + 1000);
+      } else {
+        plats = platsAt(this.map, this.tick);
+      }
+      this._pc = { tick: this.tick, plats };
     }
     return this._pc.plats;
   }
@@ -501,11 +562,14 @@ export class Game {
     this._stepHazards();
     this._checkBlast();
 
-    const alive = this.fighters.filter(f => !f.dead);
-    if (alive.length <= (this.fighters.length > 1 ? 1 : 0)) {
-      this.over = true;
-      this.winner = alive[0] || null;
-      this.events.push({ e: 'gameover' });
+    // Co-op runs never resolve to a winner — the expedition just keeps going.
+    if (!this.coop) {
+      const alive = this.fighters.filter(f => !f.dead);
+      if (alive.length <= (this.fighters.length > 1 ? 1 : 0)) {
+        this.over = true;
+        this.winner = alive[0] || null;
+        this.events.push({ e: 'gameover' });
+      }
     }
   }
 
@@ -1495,9 +1559,9 @@ export class Game {
 
   _checkBlast() {
     const b = this.stage.blast;
-    // training room is free play: falls respawn everyone, nobody loses a
-    // stock, and the match never ends — you leave when you're done
-    const freeplay = this.map === 'training';
+    // training room and co-op expeditions are free play: falls respawn
+    // everyone, nobody loses a stock, and the match never ends
+    const freeplay = this.map === 'training' || this.coop;
     for (const f of this.fighters) {
       if (f.dead || f.state === 'respawn') continue;
       if (f.x < b.l || f.x > b.r || f.y < b.t || f.y > b.b) {

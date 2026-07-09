@@ -86,6 +86,7 @@ let voice = null;           // lobby voice chat channel (lives with net)
 let presence = null;        // town-square presence (menu roster + invites)
 let pendingInvite = null;   // {id, name} to ping once our fresh room opens
 let pendingTraining = false; // start the training room once our room opens
+let pendingExpedition = false; // start a PvE expedition once our room opens
 const touch = new TouchInput(document);
 touch.onPad = on => UI.banner(
   on ? '🎮 Controller connected — stick moves · A jumps · X quick · B/Y smash · bumpers = abilities'
@@ -750,6 +751,25 @@ function startTraining() {
   startSession({ mode: 'host', myId: net.myId, players, seed, map: 'training' });
 }
 
+// Expedition (PvE co-op): auto-hosts a joinable room and drops the player
+// straight onto the endless map — no lobby, no vote. Friends walk in like any
+// running fight and fight alongside you; the run never ends.
+$('#menu-pve').addEventListener('click', () => {
+  pendingExpedition = true;
+  enterRoom(null);
+});
+
+function startExpedition() {
+  const players = [
+    {
+      id: net.myId, pid: profile.pid || null, name: profile.name, color: profile.color,
+      build: sanitizeBuild(profile.build), hat: sanitizeHat(profile.hat),
+    },
+  ];
+  const seed = (Math.random() * 1e9) | 0;
+  startSession({ mode: 'host', myId: net.myId, players, seed, map: 'expanse' });
+}
+
 $('#menu-join').addEventListener('click', () => {
   const code = $('#menu-code').value.trim().toUpperCase();
   if (!code) return enterRoom(null);          // no code — host a fresh room
@@ -788,6 +808,11 @@ function enterRoom(joinCode) {
       startTraining();
       return;
     }
+    if (pendingExpedition && net.isHost) {
+      pendingExpedition = false;
+      startExpedition();
+      return;
+    }
     renderLobby();
     UI.showScreen('lobby');
     presence?.update();               // advertise the joinable room
@@ -812,6 +837,7 @@ function enterRoom(joinCode) {
     net?.leave(); net = null;
     pendingInvite = null;
     pendingTraining = false;
+    pendingExpedition = false;
     presence?.update();
   });
   net.on('banner', (text, kind) => UI.banner(text, kind));
@@ -1061,6 +1087,7 @@ class Session {
     if (this.mode !== 'client') this.game = new Game(this.players, this.seed, this.map);
     else this.pred = new Game(this.players, this.seed, this.map);
     renderer.setMap(this.map);
+    renderer.expanseSeed = this.seed >>> 0;      // deterministic endless world
     const me = this.meta.get(this.myId);
     UI.showScreen('game');
     this.buildHud();
@@ -1143,7 +1170,7 @@ class Session {
       onTry: id => this.requestTry(id),
       onTrySelf: () => this.requestTrySelf(),
       tryingId: this.trying.get(this.myId)?.targetId || null,
-      infiniteStocks: this.map === 'training',
+      infiniteStocks: this.map === 'training' || !!MAPS[this.map]?.coop,
     });
   }
 

@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -67,6 +67,13 @@ const THEMES = {
     deck: '#2a3150', lip: '#3c466f', trim: '#5ee1b0',
     plat: '#3c466f', platTop: '#5a67a0',
   },
+  expanse: {
+    sky: ['#141d3a', '#2a2a5c', '#6a3b6e'],
+    motif: 'moon',
+    stars: 0.7,
+    deck: '#2c2f4d', lip: '#464b78', trim: '#ffcf6a',
+    plat: '#464b78', platTop: '#6a71ad',
+  },
 };
 
 export class Renderer {
@@ -74,6 +81,7 @@ export class Renderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.cam = { x: 0, y: -120, zoom: 0.8 };
+    this.expanseSeed = 0;            // run seed for the endless-map generator
     this.shake = 0;
     this.particles = [];
     this.dmgPops = [];               // floating damage numbers
@@ -778,6 +786,7 @@ export class Renderer {
     if (this.mapId === 'garden') { this._gardenStage(ctx, plats, t); return; }
     if (this.mapId === 'foundry') { this._crucibleStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'training') { this._trainingStage(ctx, plats, t); return; }
+    if (this.mapId === 'expanse') { this._expanseStage(ctx, t); return; }
     const th = this.theme;
     const m = this.stage.main;
     // main platform with themed deck & lip
@@ -850,6 +859,50 @@ export class Renderer {
 
     // practice perch
     for (const p of plats) {
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+    }
+  }
+
+  // Expedition: an endless road drawn only where the camera can see it. The
+  // continuous ground fills the visible span; the floating platforms come
+  // from the same deterministic generator the sim collides against, windowed
+  // to the view so the world can run forever.
+  _expanseStage(ctx, t) {
+    const th = this.theme;
+    const halfW = (this.canvas.width / 2) / this.cam.zoom + 240;
+    const left = this.cam.x - halfW, right = this.cam.x + halfW;
+    const gy = this.stage.main.y;
+
+    // distant parallax dunes rolling by
+    ctx.fillStyle = 'rgba(120, 96, 150, .22)';
+    const ox = this.cam.x * 0.4;
+    ctx.beginPath();
+    ctx.moveTo(left, gy);
+    for (let x = left; x <= right; x += 40) {
+      const wx = x + ox;
+      ctx.lineTo(x, gy - 90 - 60 * Math.sin(wx * 0.0016) - 30 * Math.sin(wx * 0.0051));
+    }
+    ctx.lineTo(right, gy); ctx.closePath(); ctx.fill();
+
+    // continuous ground
+    ctx.fillStyle = th.deck;
+    ctx.fillRect(left, gy, right - left, 600);
+    ctx.fillStyle = th.lip;
+    ctx.fillRect(left, gy, right - left, 12);
+    ctx.fillStyle = th.trim;
+    ctx.fillRect(left, gy + 1, right - left, 3);
+
+    // ground seams every 120 units, aligned to world space
+    ctx.fillStyle = 'rgba(0, 0, 0, .16)';
+    for (let x = Math.floor(left / 120) * 120; x < right; x += 120) {
+      ctx.fillRect(x, gy + 22, 4, 44);
+    }
+
+    // floating platforms, straight from the world generator
+    for (const p of expansePlats(this.expanseSeed >>> 0, left, right)) {
       ctx.fillStyle = th.plat;
       roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();
       ctx.fillStyle = th.platTop;
