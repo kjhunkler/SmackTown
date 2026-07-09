@@ -267,6 +267,11 @@ export class Renderer {
       case 'mend':      break;   // the 'mend' event already sparkles green
       case 'shockwave': this.burst(ev.x, ev.y, 8, '#ffb02e', 180); break; // cast; slam booms later
       case 'gale':      break;   // the 'gale' event draws the gust rings
+      case 'enemyko':
+        this.burst(ev.x, ev.y, 18, '#c94f6d', 320);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 60, t: 0, life: 0.3, color: '#ff7a92', w: 5 });
+        this.shake = Math.max(this.shake, 4);
+        break;
     }
   }
 
@@ -450,6 +455,9 @@ export class Renderer {
       }
       ctx.restore();
     }
+
+    // co-op creeps, under the fighters
+    for (const e of view.enemies || []) this._enemy(ctx, e, t);
 
     for (const f of view.fighters) if (!f.dead) this._fighter(ctx, f, f.id === myId, t);
 
@@ -907,6 +915,43 @@ export class Renderer {
       roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();
       ctx.fillStyle = th.platTop;
       ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+    }
+  }
+
+  // Co-op creep: a squat crimson blob that shambles at the party. Placeholder
+  // art for the stub enemy — bobs as it walks, flashes white when struck, and
+  // wears a health pip once it's been hurt.
+  _enemy(ctx, e, t) {
+    const w = 44, h = 52;
+    const bob = Math.sin(t * 7 + e.eid) * 2;
+    const flash = e.hurt;
+    ctx.save();
+    ctx.translate(e.x, e.y + bob);
+    ctx.fillStyle = flash ? '#ffffff' : '#c94f6d';
+    roundRect(ctx, -w / 2, -h / 2, w, h, 13); ctx.fill();
+    ctx.fillStyle = flash ? '#ffe3ea' : '#9c3350';
+    roundRect(ctx, -w / 2 + 5, 3, w - 10, h / 2 - 5, 9); ctx.fill();
+    // little feet
+    ctx.fillStyle = flash ? '#ffe3ea' : '#7c2740';
+    roundRect(ctx, -w / 2 + 4, h / 2 - 6, 12, 8, 4); ctx.fill();
+    roundRect(ctx, w / 2 - 16, h / 2 - 6, 12, 8, 4); ctx.fill();
+    // eyes toward its facing
+    const ex = (e.facing || 1) * 4;
+    ctx.fillStyle = '#1a0d14';
+    ctx.beginPath(); ctx.arc(-9 + ex, -8, 5.5, 0, 7); ctx.arc(11 + ex, -8, 5.5, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(-9 + ex + (e.facing || 1) * 1.6, -9, 2, 0, 7);
+    ctx.arc(11 + ex + (e.facing || 1) * 1.6, -9, 2, 0, 7);
+    ctx.fill();
+    ctx.restore();
+    // health pip once damaged
+    if (e.hp < e.maxHp) {
+      const bw = 42, frac = Math.max(0, e.hp / e.maxHp);
+      ctx.fillStyle = 'rgba(0,0,0,.5)';
+      roundRect(ctx, e.x - bw / 2, e.y - h / 2 - 13, bw, 5, 2); ctx.fill();
+      ctx.fillStyle = '#ff5470';
+      roundRect(ctx, e.x - bw / 2, e.y - h / 2 - 13, bw * frac, 5, 2); ctx.fill();
     }
   }
 

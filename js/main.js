@@ -1342,6 +1342,9 @@ class Session {
         hp: f.hp, maxHp: f.maxHp, downT: f.downT,
       })),
       projectiles: this.game.projectiles,
+      enemies: this.game.enemies.map(e => ({
+        eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing, hurt: e.hurt > 0,
+      })),
     };
     this.renderView(view, dt);
     if (this.game.over && !this.ended) this.finish(this.game.winner?.id ?? null, view.fighters);
@@ -1628,10 +1631,15 @@ class Session {
         guard: mine.guard, mana: mine.mana, weapon: mine.st.weapon,
         cds: mine.cds, color: this.meta.get(mine.id)?.color, hat: this.activeMeta(mine.id)?.hat,
       };
+      // HP, downed state and score are authoritative-only (prediction never
+      // runs combat) — carry them from the latest snapshot row for my fighter
+      const auth = fb.find(f => f.id === this.myId);
+      if (auth) { pv.hp = auth.hp; pv.maxHp = auth.maxHp; pv.downT = auth.downT; pv.score = auth.score; pv.dead = auth.dead; }
       const i = fighters.findIndex(f => f.id === this.myId);
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
     }
     const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0 }));
+    const enemies = (b.s.en || []).map(e => ({ eid: e[0], x: e[1], y: e[2], hp: e[3], maxHp: e[4], facing: e[5], hurt: !!e[6] }));
     const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;
     // riding a moving platform: platforms draw on the interpolated (delayed)
     // timeline while our fighter is predicted ahead — shift us by the
@@ -1645,7 +1653,7 @@ class Session {
         fighters[i].y += drawn.y - simmed.y;
       }
     }
-    return { fighters, projectiles, tick };
+    return { fighters, projectiles, tick, enemies };
   }
 
   // ----- events & endgame -----

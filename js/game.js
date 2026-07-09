@@ -202,6 +202,21 @@ const F_W = 46, F_H = 64;            // fighter hurtbox
 const STOCKS = 4;
 const COOP_DOWN_TIME = 3.0;          // seconds a co-op fighter lies downed before reviving
 const RESPAWN_INVULN = 2.0;
+
+// Co-op enemies: a deliberately simple foe — a ground-bound creep that walks
+// at the nearest fighter and bumps them for contact damage. Placeholder combat
+// until real enemy design lands; everything here is host-authoritative and
+// streamed to clients like projectiles.
+const ENEMY_W = 44, ENEMY_H = 52;    // hurtbox (half-extents are W/2, H/2)
+const ENEMY_HP = 30;
+const ENEMY_SPEED = 155;
+const ENEMY_ACCEL = 900;
+const ENEMY_SPAWN_EVERY = 3.2;       // seconds between spawns
+const ENEMY_MAX = 8;                 // living creeps at once
+const ENEMY_TOUCH_DMG = 8;
+const ENEMY_TOUCH_CD = 0.8;          // per-creep cooldown between bumps
+const ENEMY_KB = 0.6;                // creeps take trimmed knockback (no percent)
+const ENEMY_DESPAWN = 2700;          // cull creeps this far from the group
 const HIT_PAUSE = 0.045;
 const BUFFER = 0.15;                 // edge-input buffer window (s)
 
@@ -348,6 +363,8 @@ export class Game {
     this.winner = null;
     this.events = [];               // transient: hits/kos/sfx for renderer
     this.projectiles = [];
+    this.enemies = [];              // co-op creeps (host-authoritative)
+    this.enemySpawnT = 2.0;        // grace before the first creep wanders in
     this.hitPause = 0;
     this.rng = mulberry32(seed);
     this.fighters = players.map((p, i) => this._spawnFighter(p, i));
@@ -568,7 +585,7 @@ export class Game {
     this._resolveAttacks();
     this._stepHazards();
     this._checkBlast();
-    if (this.coop) this._stepCoop();
+    if (this.coop) { this._stepCoop(); this._stepEnemies(); }
 
     // Co-op runs never resolve to a winner — the expedition just keeps going.
     if (!this.coop) {
@@ -1338,6 +1355,22 @@ export class Game {
         }
       }
     }
+
+    // projectiles vs creeps (co-op)
+    if (this.coop) {
+      for (const pr of this.projectiles) {
+        const att = this.fighters.find(x => x.id === pr.owner);
+        if (!att) continue;
+        for (const e of this.enemies) {
+          if (e.hp <= 0 || pr.hit?.has('e' + e.eid)) continue;
+          if (Math.abs(e.x - pr.x) < ENEMY_W / 2 + pr.r && Math.abs(e.y - pr.y) < ENEMY_H / 2 + pr.r) {
+            this._hitEnemy(att, e, pr, deg(pr.ang ?? -40), Math.sign(pr.vx) || 1, false);
+            if (pr.thru) pr.hit?.add('e' + e.eid);
+            else { pr.ttl = 0; break; }
+          }
+        }
+      }
+    }
   }
 
   _meleeHit(f, spec, hitSet, angDeg, aim = null) {
@@ -1370,6 +1403,19 @@ export class Game {
         // low hits pierce a duck: spikes, dair/dsmash, anything aimed down
         const pierce = spike || !!spec.down || !!spec.both || !!(a && a.y > 0);
         this._applyHit(f, o, spec, ang, dirX, spike, pierce);
+      }
+    }
+    // co-op: the same swing also carves into any creeps it overlaps
+    if (this.coop) {
+      for (const e of this.enemies) {
+        if (e.hp <= 0) continue;
+        const key = 'e' + e.eid;
+        if (hitSet.has(key)) continue;
+        if (Math.abs(e.x - cx) < hb.hw + ENEMY_W / 2 && Math.abs(e.y - cy) < hb.hh + ENEMY_H / 2) {
+          hitSet.add(key);
+          const dirX = spec.both ? (Math.sign(e.x - f.x) || 1) : (a ? (a.x || f.facing) : f.facing);
+          this._hitEnemy(f, e, spec, deg(angDeg), dirX, !!spec.spike);
+        }
       }
     }
   }
@@ -1675,6 +1721,106 @@ export class Game {
     f.stunned = false;
   }
 
+  // ---------- co-op enemies (stub creeps) ----------
+
+  _stepEnemies() {
+    const live = this.fighters.filter(f => !f.dead && !f.parked);
+
+    // trickle new creeps in from just off the group's edges
+    this.enemySpawnT -= TICK;
+    if (live.length && this.enemySpawnT <= 0 && this.enemies.length < ENEMY_MAX) {
+      this.enemySpawnT = ENEMY_SPAWN_EVERY;
+      this._spawnEnemy(live);
+    }
+
+    const floor = this.stage.main.y;
+    for (const e of this.enemies) {
+      e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+      // shamble toward the nearest fighter
+      const tgt = this._nearestPlayer(e, live);
+      const desired = tgt ? Math.sign(tgt.x - e.x) * ENEMY_SPEED : 0;
+      if (tgt) e.facing = Math.sign(tgt.x - e.x) || e.facing;
+      e.vx = approach(e.vx, desired, ENEMY_ACCEL * TICK);
+      e.x += e.vx * TICK;
+      e.y += e.vy * TICK;
+      if (e.y + ENEMY_H / 2 >= floor) { e.y = floor - ENEMY_H / 2; e.vy = 0; e.grounded = true; }
+      else e.grounded = false;
+      if (e.touchCd > 0) e.touchCd -= TICK;
+      if (e.hurt > 0) e.hurt -= TICK;
+
+      // bump any fighter it's overlapping (its whole attack)
+      if (e.touchCd <= 0) {
+        for (const f of live) {
+          if (f.invuln > 0) continue;
+          const ob = hurtBox(f);
+          if (Math.abs(f.x - e.x) < ENEMY_W / 2 + F_W / 2 && Math.abs((f.y + ob.dy) - e.y) < ENEMY_H / 2 + ob.hh) {
+            e.touchCd = ENEMY_TOUCH_CD;
+            const dir = Math.sign(f.x - e.x) || 1;
+            f.vx += dir * 280; f.vy = Math.min(f.vy, -240); f.grounded = false;
+            f.state = 'hitstun'; f.stateT = 0; f.hitstunFor = 0.28;
+            f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0;
+            this.events.push({ e: 'hit', x: f.x, y: f.y, dmg: ENEMY_TOUCH_DMG, heavy: false, vic: f.id, att: 'e' + e.eid });
+            this._damageHp(f, ENEMY_TOUCH_DMG, 'e' + e.eid);
+            break;
+          }
+        }
+      }
+    }
+
+    // cull the dead and any creep that fell too far behind the group
+    const cx = live.length ? live.reduce((s, f) => s + f.x, 0) / live.length : 0;
+    this.enemies = this.enemies.filter(e => e.hp > 0 && Math.abs(e.x - cx) < ENEMY_DESPAWN);
+  }
+
+  _spawnEnemy(live) {
+    const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
+    const side = this.rng() < 0.5 ? -1 : 1;
+    this.enemies.push({
+      eid: nextEid++,
+      x: cx + side * (720 + this.rng() * 260),
+      y: this.stage.main.y - ENEMY_H / 2,
+      vx: 0, vy: 0, hp: ENEMY_HP, maxHp: ENEMY_HP,
+      facing: -side, grounded: true, touchCd: 0, hurt: 0,
+    });
+  }
+
+  _nearestPlayer(e, live) {
+    let best = null, bd = Infinity;
+    for (const f of live) {
+      const d = Math.abs(f.x - e.x);
+      if (d < bd) { bd = d; best = f; }
+    }
+    return best;
+  }
+
+  // A fighter's blow lands on a creep: chip its HP, knock it back, and pay the
+  // attacker in score (which is what mints expedition credits).
+  _hitEnemy(att, e, spec, angRad, dirX, spike) {
+    let dmg = spec.dmg * att.st.dmgMult;
+    if (spec.r && att.st.augments.includes('sniper')) dmg *= 1.2;
+    e.hp -= dmg;
+    e.hurt = 0.14;
+    att.score.dmg += dmg;
+    if (dmg > att.score.maxHit) att.score.maxHit = dmg;
+    const kb = (spec.kb + spec.ks * dmg) * att.st.kbMult * ENEMY_KB;
+    const ang = spike ? Math.PI / 2 : angRad;
+    e.vx = Math.cos(ang) * kb * dirX * (spike ? 0.3 : 1);
+    e.vy = Math.sin(ang) * kb;
+    if (e.vy < 0) e.grounded = false;
+    // vampiric bites heal the striker — the only sustain out on the road
+    if (att.st.augments.includes('vampiric')) att.hp = Math.min(att.maxHp, att.hp + dmg * 0.12);
+    this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
+    this.events.push({ e: 'hit', x: e.x, y: e.y, dmg: Math.round(dmg), heavy: kb > 700, vic: 'e' + e.eid, att: att.id });
+    if (e.hp <= 0) this._killEnemy(e, att);
+  }
+
+  _killEnemy(e, att) {
+    e.hp = 0;
+    att.score.ko++;
+    if (att.st.augments.includes('reaper')) att.hp = Math.min(att.maxHp, att.hp + att.maxHp * 0.12);
+    this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid });
+  }
+
   // ---------- practice bot ----------
 
   _botThink(f) {
@@ -1773,6 +1919,7 @@ export class Game {
         ];
       }),
       p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
+      en: this.enemies.map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0]),
       ev: this.events.slice(),
     };
   }
@@ -1789,6 +1936,11 @@ export function gameFromSnapshot(players, snap, seed = 2) {
     if (!f) continue;
     restoreFighter(f, row);
   }
+  // carry the creeps over so a host handoff doesn't blink the swarm away
+  g.enemies = (snap.en || []).map(r => ({
+    eid: r[0], x: r[1], y: r[2], vx: 0, vy: 0, hp: r[3], maxHp: r[4] || ENEMY_HP,
+    facing: r[5] || 1, grounded: true, touchCd: 0, hurt: 0,
+  }));
   return g;
 }
 
