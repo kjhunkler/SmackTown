@@ -1197,21 +1197,16 @@ export class Game {
       case 'gale':
         // radial windbox: little damage, lots of shove; works midair
         this.events.push({ e: 'gale', id: f.id, x: f.x, y: f.y });
-        for (const o of this.fighters) {
-          if (o.id === f.id || o.dead || o.invuln > 0) continue;
-          const pos = this._rewound(o, f.id);
-          const d = Math.hypot(pos.x - f.x, pos.y - f.y);
-          if (d < 200) {
-            this._applyHit(f, o, { dmg: 5, kb: 420, ks: 6 },
-              Math.atan2(pos.y - f.y, pos.x - f.x) * 0.25 - Math.PI / 6, Math.sign(pos.x - f.x) || 1);
-          }
-        }
+        this._radialHit(f, 200, { dmg: 5, kb: 420, ks: 6 },
+          (dx, dy) => Math.atan2(dy, dx) * 0.25 - Math.PI / 6);
         break;
       case 'bubble':
         f.invuln = Math.max(f.invuln, BUBBLE_INVULN);
         break;
       case 'mend':
-        f.pct = Math.max(0, f.pct - 15);
+        // co-op heals real HP; PvP shaves percent
+        if (this.coop) f.hp = Math.min(f.maxHp, f.hp + f.maxHp * 0.15);
+        else f.pct = Math.max(0, f.pct - 15);
         this.events.push({ e: 'mend', id: f.id, x: f.x, y: f.y });
         break;
       case 'hook':
@@ -1240,14 +1235,27 @@ export class Game {
   _shockwave(f) {
     f.pendingShock = false;
     this.events.push({ e: 'shockwave', id: f.id, x: f.x, y: f.y + F_H / 2 });
+    this._radialHit(f, 190, { dmg: 10, kb: 280, ks: 18 },
+      (dx, dy) => Math.atan2(dy, dx) * 0.3 - Math.PI / 2.4);
+  }
+
+  // Radial AoE (shockwave, gale): in co-op it blasts the creeps and spares
+  // teammates; in PvP it hits every rival in range. angleFn maps the offset
+  // to a launch angle so each victim flies outward from the blast.
+  _radialHit(f, radius, spec, angleFn) {
+    if (this.coop) {
+      for (const e of this.enemies) {
+        if (e.hp <= 0) continue;
+        const dx = e.x - f.x, dy = e.y - f.y;
+        if (Math.hypot(dx, dy) < radius) this._hitEnemy(f, e, spec, angleFn(dx, dy), Math.sign(dx) || 1, false);
+      }
+      return;
+    }
     for (const o of this.fighters) {
       if (o.id === f.id || o.dead || o.invuln > 0) continue;
       const pos = this._rewound(o, f.id);
-      const d = Math.hypot(pos.x - f.x, pos.y - f.y);
-      if (d < 190) {
-        this._applyHit(f, o, { dmg: 10, kb: 280, ks: 18 },
-          Math.atan2(pos.y - f.y, pos.x - f.x) * 0.3 - Math.PI / 2.4, Math.sign(pos.x - f.x) || 1);
-      }
+      const dx = pos.x - f.x, dy = pos.y - f.y;
+      if (Math.hypot(dx, dy) < radius) this._applyHit(f, o, spec, angleFn(dx, dy), Math.sign(dx) || 1);
     }
   }
 
@@ -1750,6 +1758,7 @@ export class Game {
       else e.grounded = false;
       if (e.touchCd > 0) e.touchCd -= TICK;
       if (e.hurt > 0) e.hurt -= TICK;
+      if (e.burn) this._burnEnemy(e);
 
       // bump any fighter it's overlapping (its whole attack)
       if (e.touchCd <= 0) {
@@ -1805,6 +1814,8 @@ export class Game {
     e.hurt = 0.14;
     att.score.dmg += dmg;
     if (dmg > att.score.maxHit) att.score.maxHit = dmg;
+    // fireball and friends set creeps alight: a short damage-over-time
+    if (spec.dot && e.hp > 0) e.burn = { ...spec.dot, tk: spec.dot.every, by: att.id };
     const kb = (spec.kb + spec.ks * dmg) * att.st.kbMult * ENEMY_KB;
     const ang = spike ? Math.PI / 2 : angRad;
     e.vx = Math.cos(ang) * kb * dirX * (spike ? 0.3 : 1);
@@ -1815,6 +1826,23 @@ export class Game {
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({ e: 'hit', x: e.x, y: e.y, dmg: Math.round(dmg), heavy: kb > 700, vic: 'e' + e.eid, att: att.id });
     if (e.hp <= 0) this._killEnemy(e, att);
+  }
+
+  // Afterburn tick on a creep — small damage on an interval, credited to
+  // whoever lit it (so the burn still mints credits, and can land the kill).
+  _burnEnemy(e) {
+    e.burn.tk -= TICK;
+    if (e.burn.tk > 0) return;
+    e.burn.tk += e.burn.every;
+    const att = this.fighters.find(x => x.id === e.burn.by);
+    const dmg = e.burn.dmg;
+    e.hp -= dmg;
+    e.hurt = 0.1;
+    if (att) { att.score.dmg += dmg; }
+    this.events.push({ e: 'burn', x: e.x, y: e.y - ENEMY_H / 2 - 6, vic: 'e' + e.eid, dmg: Math.round(dmg) });
+    if (--e.burn.n <= 0) e.burn = null;
+    if (e.hp <= 0 && att) this._killEnemy(e, att);
+    else if (e.hp <= 0) { e.hp = 0; this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid }); }
   }
 
   _killEnemy(e, att) {
