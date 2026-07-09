@@ -3,7 +3,7 @@
 import {
   loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout, sanitizeHat,
   loadHats, hatArt, saveHat, deleteHat, loadLoadouts, selectedLoadout, selectLoadout,
-  HAT_CHARS, HAT_PALETTE,
+  HAT_CHARS, HAT_PALETTE, buildCost, earnedCredits, MAX_BUILD_COST,
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
@@ -313,11 +313,17 @@ let builderReturn = 'menu';        // 'menu' | 'lobby' — where Save goes back 
 function openBuilder(firstRun = false, returnTo = 'menu') {
   builderFirstRun = firstRun;
   builderReturn = returnTo;
+  // In a co-op expedition the workshop edits your run build against earned
+  // credits — your saved character (and its 1000-cr purse) is left untouched.
+  const pve = returnTo === 'lobby' && !!session && !session.ended && session.coop;
   builderWork = {
     color: profile.color,
-    build: JSON.parse(JSON.stringify(profile.build)),
+    build: JSON.parse(JSON.stringify(pve ? session.myRunBuild() : profile.build)),
     hatId: profile.hatId,
+    pve,
+    budget: pve ? session.myCredits() : undefined,
   };
+  $('#screen-builder').classList.toggle('pve', pve);
   $('#builder-name').value = profile.name;
   $('#builder-name-error').classList.add('hidden');
   $('#loadout-name').value = selectedLoadout() || '';
@@ -346,6 +352,19 @@ $('#loadout-save').addEventListener('click', () => {
 });
 
 $('#builder-save').addEventListener('click', () => {
+  // Co-op run build: apply to my fighter against earned credits, then straight
+  // back to the lobby. Never persisted to my profile or saved characters.
+  if (builderWork.pve) {
+    if (!session || session.ended) { UI.showScreen('menu'); return; }
+    if (!session.applyRunBuild(builderWork.build)) {
+      UI.banner('That build costs more than you’ve earned!', 'bad');
+      return;
+    }
+    UI.renderLobbyCard(profile);
+    renderLobby();
+    UI.showScreen('lobby');
+    return;
+  }
   const nameEl = $('#builder-name');
   const nameErr = $('#builder-name-error');
   if (!validName(nameEl.value)) {
@@ -760,10 +779,12 @@ $('#menu-pve').addEventListener('click', () => {
 });
 
 function startExpedition() {
+  // Expeditions start from scratch: a stock fighter with 0 credits, earned and
+  // spent over the run. Your saved character supplies only name/color/hat.
   const players = [
     {
       id: net.myId, pid: profile.pid || null, name: profile.name, color: profile.color,
-      build: sanitizeBuild(profile.build), hat: sanitizeHat(profile.hat),
+      build: emptyBuild(), hat: sanitizeHat(profile.hat),
     },
   ];
   const seed = (Math.random() * 1e9) | 0;
@@ -845,7 +866,11 @@ function enterRoom(joinCode) {
     // A player walked in while a fight is running: as host, drop them into
     // the live game and re-broadcast the player list so everyone syncs up.
     if (!session || session.ended || !net.isHost || session.mode === 'solo') return;
-    session.addPlayer({ id: rec.peerId, pid: rec.pid || null, name: rec.name, color: rec.color, build: sanitizeBuild(rec.build), hat: sanitizeHat(rec.hat) });
+    // Co-op newcomers start stock with 0 credits, same as everyone did — only
+    // a returning player (matched by pid in addPlayer) keeps their run build.
+    const coop = !!MAPS[session.map]?.coop;
+    const build = coop ? emptyBuild() : sanitizeBuild(rec.build);
+    session.addPlayer({ id: rec.peerId, pid: rec.pid || null, name: rec.name, color: rec.color, build, hat: sanitizeHat(rec.hat) });
     session.broadcastPlayers();
     UI.banner(`${rec.name} joined the fight!`, 'good');
   });
@@ -856,8 +881,9 @@ function enterRoom(joinCode) {
   });
   net.on('game:start', (msg, pid) => {
     if (pid !== net.hostId) return;
-    const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) }));
     const map = MAPS[msg.map] ? msg.map : DEFAULT_MAP;
+    const cap = MAPS[map]?.coop ? MAX_BUILD_COST : undefined;
+    const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build, cap), hat: sanitizeHat(p.hat) }));
     if (session) { session.syncPlayers(players, map, msg.trying || null); return; }  // mid-game roster update
     startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed, map });
   });
@@ -1091,7 +1117,8 @@ class Session {
     const me = this.meta.get(this.myId);
     UI.showScreen('game');
     this.buildHud();
-    UI.setupAbilityButtons(sanitizeBuild(me.build).abilities);
+    $('#game-credits').classList.toggle('hidden', !this.coop);
+    UI.setupAbilityButtons(sanitizeBuild(me.build, this.coop ? MAX_BUILD_COST : undefined).abilities);
     touch.setEnabled(true);
     this.running = true;
     this.lastT = performance.now();
@@ -1136,7 +1163,7 @@ class Session {
     const p = this.meta.get(pid);
     p.name = m.name;
     p.color = m.color;
-    p.build = sanitizeBuild(m.build);
+    p.build = sanitizeBuild(m.build, this.coop ? MAX_BUILD_COST : undefined);
     p.hat = sanitizeHat(m.hat);
     this.trying.delete(pid);
     this.game?.updateBuild(pid, p.build);
@@ -1219,6 +1246,31 @@ class Session {
     const p = this.meta.get(id);
     const tr = this.trying.get(id);
     return tr && p ? { ...p, build: tr.build, hat: tr.hat } : p;
+  }
+
+  // ----- co-op expedition economy -----
+  get coop() { return !!MAPS[this.map]?.coop; }
+
+  // My live fighter, whether I'm the authority or a client reading snapshots.
+  myFighter() {
+    if (this.game) return this.game.fighters.find(f => f.id === this.myId);
+    const rows = this.lastSnap?.f;
+    return rows ? this.rowsToFighters(rows).find(f => f.id === this.myId) : null;
+  }
+
+  // Credits earned so far this run, straight from my authoritative score.
+  myCredits() { return earnedCredits(this.myFighter()?.score); }
+
+  // The build I'm currently running (my in-session loadout, not my profile).
+  myRunBuild() { return sanitizeBuild(this.meta.get(this.myId)?.build, MAX_BUILD_COST); }
+
+  // Re-tune my run character in the workshop. Refused if it would spend beyond
+  // what I've earned; otherwise it broadcasts and my fighter adopts it live.
+  applyRunBuild(build) {
+    const b = sanitizeBuild(build, MAX_BUILD_COST);
+    if (buildCost(b) > this.myCredits()) return false;
+    net?.updateProfile({ ...profile, build: b });   // fans out via profile-changed → onProfileChanged
+    return true;
   }
 
   endTry(pid) {
@@ -1347,6 +1399,11 @@ class Session {
     UI.updateHud(view.fighters);
     const mine = view.fighters.find(f => f.id === this.myId);
     UI.updateAbilityButtons(mine?.cds);
+    if (this.coop) {
+      const cr = earnedCredits(mine?.score);
+      const el = $('#game-credits-val');
+      if (el && el.textContent !== '' + cr) el.textContent = cr;
+    }
   }
 
   // ----- network callbacks -----
@@ -1476,15 +1533,16 @@ class Session {
             cur.build = p.build;
             cur.hat = p.hat;
           }
-          if (activeChanged) this.trying.set(p.id, { targetId, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) });
+          const cap = this.coop ? MAX_BUILD_COST : undefined;
+          if (activeChanged) this.trying.set(p.id, { targetId, build: sanitizeBuild(p.build, cap), hat: sanitizeHat(p.hat) });
           else this.trying.delete(p.id);
           this.pred?.updateBuild(p.id, cur.build);
           this.game?.updateBuild(p.id, cur.build);
           if (activeChanged) {
-            this.pred?.tryBuild(p.id, sanitizeBuild(p.build));
-            this.game?.tryBuild(p.id, sanitizeBuild(p.build));
+            this.pred?.tryBuild(p.id, sanitizeBuild(p.build, cap));
+            this.game?.tryBuild(p.id, sanitizeBuild(p.build, cap));
           }
-          if (p.id === this.myId) UI.setupAbilityButtons(sanitizeBuild(activeChanged ? p.build : cur.build).abilities);
+          if (p.id === this.myId) UI.setupAbilityButtons(sanitizeBuild(activeChanged ? p.build : cur.build, cap).abilities);
           changed = true;
         }
         continue;

@@ -119,9 +119,11 @@ function rr(ctx, x, y, w, h, r) {
 // ---------- fighter builder ----------
 
 export function renderBuilder(work) {
-  // work: {color, build} — mutated in place as the user shops
+  // work: {color, build, budget?} — mutated in place as the user shops. In a
+  // co-op expedition the budget is the credits earned this run, not the PvP purse.
   const spent = buildCost(work.build);
-  const left = TOTAL_CREDITS - spent;
+  const budget = work.budget ?? TOTAL_CREDITS;
+  const left = budget - spent;
   $('#builder-credits').textContent = left;
 
   renderBuilderPreview(work);

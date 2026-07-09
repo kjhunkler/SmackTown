@@ -86,6 +86,8 @@
       </div>
     </header>
     <div class="builder-scroll">
+      <p class="expedition-note">🌌 Expedition run — spend the credits you’ve earned. Your saved character is untouched.</p>
+      <div class="builder-profile-only">
       <h3 class="section-title">Fighter Name <span class="hint">how the town knows you</span></h3>
       <input id="builder-name" type="text" maxlength="14" autocomplete="off"
              placeholder="e.g. KnuckleDuke" spellcheck="false">
@@ -99,6 +101,7 @@
         <button id="loadout-save" class="btn">💾 Save</button>
       </div>
       <p id="loadout-error" class="error hidden"></p>
+      </div>
 
       <h3 class="section-title">Color</h3>
       <div id="builder-colors" class="color-grid"></div>
@@ -205,6 +208,7 @@
     <button id="ability-btn-1" class="ability-btn hidden"><span class="ab-icon"></span><svg viewBox="0 0 40 40"><circle class="cd-ring" cx="20" cy="20" r="18"/></svg></button>
   </div>
   <div id="game-toast" class="hidden"></div>
+  <div id="game-credits" class="hidden">💰 <span id="game-credits-val">0</span> cr</div>
   <button id="game-quit" class="btn tiny ghost">✕</button>
   <div id="game-help" class="hidden">
     <div class="help-card">

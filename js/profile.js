@@ -92,6 +92,29 @@ export const AUGMENTS = [
 export const MAX_ABILITIES = 2;
 export const MAX_AUGMENTS = 2;
 
+// The priciest a fully-legal build can ever cost (every stat maxed, dearest
+// weapon, two dearest abilities & augments). Co-op expeditions cap spending
+// at accumulated credits instead of the 1000 PvP budget, so their builds are
+// validated against this structural ceiling rather than the standard purse.
+export const MAX_BUILD_COST = (() => {
+  let c = 0;
+  for (const s of STATS) c += s.max * s.cost;
+  c += Math.max(...WEAPONS.map(w => w.cost));
+  const top = (arr, n) => arr.map(x => x.cost).sort((a, b) => b - a).slice(0, n).reduce((s, x) => s + x, 0);
+  c += top(ABILITIES, MAX_ABILITIES) + top(AUGMENTS, MAX_AUGMENTS);
+  return c;
+})();
+
+// Expedition economy: credits earned this run, a pure function of the fighter's
+// authoritative score — so every peer derives the same total with nothing extra
+// on the wire. Damage chips in steadily; kills pay a bounty.
+export const CR_PER_DAMAGE = 2;
+export const CR_PER_KILL = 60;
+export function earnedCredits(score) {
+  if (!score) return 0;
+  return Math.floor((score.dmg || 0) * CR_PER_DAMAGE + (score.ko || 0) * CR_PER_KILL);
+}
+
 // ---------- pixel hats ----------
 // A hat is a HAT_W x HAT_H pixel grid drawn in the Hat Studio, worn above
 // the fighter's head. Encoded as one string, row-major: '.' = transparent,
@@ -197,8 +220,10 @@ export function buildCost(build) {
 }
 
 // Clamp/repair an incoming build (also used by the host to validate remote
-// players so nobody joins with an over-budget build).
-export function sanitizeBuild(raw) {
+// players so nobody joins with an over-budget build). The cap defaults to the
+// PvP purse; co-op expeditions pass MAX_BUILD_COST so bigger, earned builds
+// survive (their real limit is enforced against accumulated credits elsewhere).
+export function sanitizeBuild(raw, cap = TOTAL_CREDITS) {
   const b = emptyBuild();
   if (raw && typeof raw === 'object') {
     for (const s of STATS) {
@@ -217,7 +242,7 @@ export function sanitizeBuild(raw) {
         .slice(0, MAX_AUGMENTS);
     }
   }
-  if (buildCost(b) > TOTAL_CREDITS) return emptyBuild();
+  if (buildCost(b) > cap) return emptyBuild();
   return b;
 }
 

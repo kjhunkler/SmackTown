@@ -909,6 +909,22 @@ input[type=text]:focus { border-color: var(--accent); }
 .hud-tile .h-stocks { font-size: 10px; letter-spacing: 2px; }
 .hud-tile.dead { opacity: .4; }
 
+/* expedition (co-op) workshop: run build, not your saved character */
+.expedition-note {
+  display: none;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(122, 92, 255, .16);
+  border: 1px solid rgba(150, 120, 255, .35);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+#screen-builder.pve .expedition-note { display: block; }
+#screen-builder.pve .builder-profile-only,
+#screen-builder.pve #builder-editing { display: none; }
+
 /* co-op health bar */
 .hud-tile .h-hp {
   width: 92px;
@@ -975,6 +991,22 @@ input[type=text]:focus { border-color: var(--accent); }
 #ability-btn-1 { right: 16px; bottom: calc(80px + var(--safe-bottom)); }
 
 #game-quit { position: absolute; top: calc(8px + var(--safe-top)); right: 10px; z-index: 6; }
+
+#game-credits {
+  position: absolute;
+  top: calc(8px + var(--safe-top));
+  left: 10px;
+  z-index: 6;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(10, 12, 25, .72);
+  border: 1px solid rgba(255, 207, 106, .45);
+  color: #ffcf6a;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .3px;
+  pointer-events: none;
+}
 
 #game-toast {
   position: absolute;
