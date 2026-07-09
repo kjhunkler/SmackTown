@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, ENEMY_TYPES, HEART_LIFE } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -267,10 +267,24 @@ export class Renderer {
       case 'mend':      break;   // the 'mend' event already sparkles green
       case 'shockwave': this.burst(ev.x, ev.y, 8, '#ffb02e', 180); break; // cast; slam booms later
       case 'gale':      break;   // the 'gale' event draws the gust rings
-      case 'enemyko':
-        this.burst(ev.x, ev.y, 18, '#c94f6d', 320);
+      case 'enemyko': {
+        const col = (ENEMY_TYPES[ev.kind] || ENEMY_TYPES.grunt).color;
+        this.burst(ev.x, ev.y, ev.kind === 'brute' ? 26 : 18, col, ev.kind === 'brute' ? 440 : 320);
         this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 60, t: 0, life: 0.3, color: '#ff7a92', w: 5 });
-        this.shake = Math.max(this.shake, 4);
+        this.shake = Math.max(this.shake, ev.kind === 'brute' ? 8 : 4);
+        break;
+      }
+      case 'foefire':
+        this.burst(ev.x, ev.y, 6, '#d94fb0', 200);
+        break;
+      case 'telegraph':
+        // a warning flare where a ranged creep is winding up
+        this.rings.push({ x: ev.x, y: ev.y, r0: 40, r1: 12, t: 0, life: 0.55, color: '#ffcf4d', w: 4 });
+        break;
+      case 'heart':
+        this.burst(ev.x, ev.y, 16, '#ff9db3', 240);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 10, r1: 90, t: 0, life: 0.45, color: '#ff5470', w: 5 });
+        this.dmgPops.push({ x: ev.x, y: ev.y - 26, txt: '+HP', t: 0, life: 0.7, heavy: false, color: '#7dffa8' });
         break;
     }
   }
@@ -445,6 +459,16 @@ export class Renderer {
           ctx.fill();
         }
         ctx.globalAlpha = 1;
+      } else if (p.kind === 'foeshot') {
+        // creep spitball: a sickly violet orb with a little trailing wisp
+        const throb = 1 + Math.sin(t * 24 + p.eid) * 0.18;
+        ctx.rotate(Math.atan2(p.vy || 0, p.vx || 1));
+        ctx.fillStyle = 'rgba(217,79,176,.35)';
+        ctx.beginPath(); ctx.ellipse(-8, 0, 14, 6, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#d94fb0';
+        ctx.beginPath(); ctx.arc(0, 0, 11 * throb, 0, 7); ctx.fill();
+        ctx.fillStyle = '#ffdff4';
+        ctx.beginPath(); ctx.arc(0, 0, 5 * throb, 0, 7); ctx.fill();
       } else {
         const bolt = p.kind === 'bolt';
         const flick = 1 + Math.sin(t * 30 + p.eid) * 0.2;
@@ -456,8 +480,9 @@ export class Renderer {
       ctx.restore();
     }
 
-    // co-op creeps, under the fighters
+    // co-op creeps + heart drops, under the fighters
     for (const e of view.enemies || []) this._enemy(ctx, e, t);
+    for (const h of view.hearts || []) this._heart(ctx, h, t);
 
     for (const f of view.fighters) if (!f.dead) this._fighter(ctx, f, f.id === myId, t);
 
@@ -918,41 +943,137 @@ export class Renderer {
     }
   }
 
-  // Co-op creep: a squat crimson blob that shambles at the party. Placeholder
-  // art for the stub enemy — bobs as it walks, flashes white when struck, and
-  // wears a health pip once it's been hurt.
+  // Co-op creep. Each type gets its own silhouette off the shared stat table:
+  // size, color, and a behavior tell (flyer wings, hopper legs, brute bulk,
+  // slinger's telegraph glow). Flashes white when struck, shows a health pip
+  // once hurt, and pulses a wind-up ring while charging a ranged shot.
   _enemy(ctx, e, t) {
-    const w = 44, h = 52;
-    const bob = Math.sin(t * 7 + e.eid) * 2;
+    const ty = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
+    const w = ty.w, h = ty.h;
     const flash = e.hurt;
+    const fly = !!ty.fly;
+    const bob = Math.sin(t * (fly ? 9 : 7) + e.eid) * (fly ? 4 : 2);
+    const base = flash ? '#ffffff' : ty.color;
+    const dark = flash ? '#ffe3ea' : this._shade(ty.color, -0.32);
+
     ctx.save();
     ctx.translate(e.x, e.y + bob);
-    ctx.fillStyle = flash ? '#ffffff' : '#c94f6d';
-    roundRect(ctx, -w / 2, -h / 2, w, h, 13); ctx.fill();
-    ctx.fillStyle = flash ? '#ffe3ea' : '#9c3350';
-    roundRect(ctx, -w / 2 + 5, 3, w - 10, h / 2 - 5, 9); ctx.fill();
-    // little feet
-    ctx.fillStyle = flash ? '#ffe3ea' : '#7c2740';
-    roundRect(ctx, -w / 2 + 4, h / 2 - 6, 12, 8, 4); ctx.fill();
-    roundRect(ctx, w / 2 - 16, h / 2 - 6, 12, 8, 4); ctx.fill();
-    // eyes toward its facing
-    const ex = (e.facing || 1) * 4;
-    ctx.fillStyle = '#1a0d14';
-    ctx.beginPath(); ctx.arc(-9 + ex, -8, 5.5, 0, 7); ctx.arc(11 + ex, -8, 5.5, 0, 7); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(-9 + ex + (e.facing || 1) * 1.6, -9, 2, 0, 7);
-    ctx.arc(11 + ex + (e.facing || 1) * 1.6, -9, 2, 0, 7);
-    ctx.fill();
+
+    // wind-up telegraph: a swelling ring that fills as the shot nears
+    if (e.windup > 0) {
+      const k = 1 - Math.min(1, e.windup / (ty.windup || 0.85));
+      ctx.strokeStyle = `rgba(255,${Math.round(90 - 60 * k)},${Math.round(90 - 40 * k)},${(0.5 + 0.4 * k).toFixed(2)})`;
+      ctx.lineWidth = 3 + 3 * k;
+      ctx.beginPath(); ctx.arc(0, 0, w * 0.7 + 10 * (1 - k), 0, 7); ctx.stroke();
+    }
+
+    // flyer wings flapping behind the body
+    if (fly) {
+      const flap = Math.sin(t * 18 + e.eid) * 0.5 + 0.7;
+      ctx.fillStyle = flash ? '#ffe3ea' : this._shade(ty.color, 0.2);
+      for (const s of [-1, 1]) {
+        ctx.save(); ctx.scale(s, 1);
+        ctx.beginPath();
+        ctx.moveTo(w * 0.32, -4);
+        ctx.quadraticCurveTo(w * 0.9, -10 - 12 * flap, w * 0.62, 8 + 6 * flap);
+        ctx.quadraticCurveTo(w * 0.5, 2, w * 0.32, -4);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // body
+    ctx.fillStyle = base;
+    roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(16, w * 0.32)); ctx.fill();
+    ctx.fillStyle = dark;
+    roundRect(ctx, -w / 2 + 5, 3, w - 10, h / 2 - 5, 8); ctx.fill();
+
+    // legs: hoppers get springy stalks, ground types little feet, flyers none
+    if (!fly) {
+      ctx.fillStyle = dark;
+      const legH = ty.jump ? 12 : 8;
+      roundRect(ctx, -w / 2 + 4, h / 2 - legH + 2, w * 0.24, legH, 4); ctx.fill();
+      roundRect(ctx, w / 2 - w * 0.24 - 4, h / 2 - legH + 2, w * 0.24, legH, 4); ctx.fill();
+    }
+
+    // brute: a couple of horns to read as the heavy
+    if (e.kind === 'brute') {
+      ctx.fillStyle = dark;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * (w * 0.28), -h / 2 + 4);
+        ctx.lineTo(s * (w * 0.4), -h / 2 - 12);
+        ctx.lineTo(s * (w * 0.16), -h / 2 + 2);
+        ctx.fill();
+      }
+    }
+
+    // eyes toward its facing (a single angry eye for the slinger)
+    const ex = (e.facing || 1) * (w * 0.08);
+    const eyeR = Math.max(4, w * 0.12);
+    ctx.fillStyle = '#150a10';
+    if (e.kind === 'slinger') {
+      ctx.beginPath(); ctx.arc(ex, -h * 0.14, eyeR + 1, 0, 7); ctx.fill();
+      ctx.fillStyle = e.windup > 0 ? '#ffe14d' : '#ffd0da';
+      ctx.beginPath(); ctx.arc(ex + (e.facing || 1) * 1.5, -h * 0.14, eyeR * 0.45, 0, 7); ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(-w * 0.2 + ex, -h * 0.14, eyeR, 0, 7);
+      ctx.arc(w * 0.24 + ex, -h * 0.14, eyeR, 0, 7);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(-w * 0.2 + ex + (e.facing || 1) * 1.6, -h * 0.14 - 1, eyeR * 0.36, 0, 7);
+      ctx.arc(w * 0.24 + ex + (e.facing || 1) * 1.6, -h * 0.14 - 1, eyeR * 0.36, 0, 7);
+      ctx.fill();
+    }
     ctx.restore();
+
     // health pip once damaged
     if (e.hp < e.maxHp) {
-      const bw = 42, frac = Math.max(0, e.hp / e.maxHp);
+      const bw = Math.max(30, w), frac = Math.max(0, e.hp / e.maxHp);
       ctx.fillStyle = 'rgba(0,0,0,.5)';
       roundRect(ctx, e.x - bw / 2, e.y - h / 2 - 13, bw, 5, 2); ctx.fill();
       ctx.fillStyle = '#ff5470';
       roundRect(ctx, e.x - bw / 2, e.y - h / 2 - 13, bw * frac, 5, 2); ctx.fill();
     }
+  }
+
+  // Dropped heart: a pulsing pickup that blinks faster as it's about to fade.
+  _heart(ctx, h, t) {
+    const fading = h.tLeft < 2.2;
+    if (fading && Math.sin(t * 16) < -0.1) return;   // blink out near the end
+    const pulse = 1 + Math.sin(t * 5 + h.hid) * 0.12;
+    const s = 11 * pulse;
+    ctx.save();
+    ctx.translate(h.x, h.y + Math.sin(t * 3 + h.hid) * 2);
+    ctx.scale(s / 11, s / 11);
+    // soft glow
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 26);
+    g.addColorStop(0, 'rgba(255,90,130,.5)');
+    g.addColorStop(1, 'rgba(255,90,130,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 26, 0, 7); ctx.fill();
+    // heart shape
+    ctx.fillStyle = '#ff5470';
+    ctx.beginPath();
+    ctx.moveTo(0, 9);
+    ctx.bezierCurveTo(-13, -3, -8, -14, 0, -5);
+    ctx.bezierCurveTo(8, -14, 13, -3, 0, 9);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.7)';
+    ctx.beginPath(); ctx.arc(-4, -4, 2.4, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+
+  // Lighten (>0) or darken (<0) a #rrggbb color by a fraction.
+  _shade(hex, f) {
+    const n = parseInt(hex.slice(1), 16);
+    const cl = v => Math.max(0, Math.min(255, Math.round(v)));
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    if (f >= 0) { r += (255 - r) * f; g += (255 - g) * f; b += (255 - b) * f; }
+    else { r *= 1 + f; g *= 1 + f; b *= 1 + f; }
+    return `rgb(${cl(r)},${cl(g)},${cl(b)})`;
   }
 
   // Ruined City: parallax skyline of collapsed towers behind a broken

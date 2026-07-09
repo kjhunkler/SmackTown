@@ -7,7 +7,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, platsAt } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, platsAt, HEART_LIFE } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -1343,8 +1343,10 @@ class Session {
       })),
       projectiles: this.game.projectiles,
       enemies: this.game.enemies.map(e => ({
-        eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing, hurt: e.hurt > 0,
+        eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing,
+        hurt: e.hurt > 0, kind: e.kind, windup: e.windup || 0,
       })),
+      hearts: this.game.hearts.map(h => ({ hid: h.hid, x: h.x, y: h.y, tLeft: HEART_LIFE - h.t })),
     };
     this.renderView(view, dt);
     if (this.game.over && !this.ended) this.finish(this.game.winner?.id ?? null, view.fighters);
@@ -1639,7 +1641,8 @@ class Session {
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
     }
     const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0 }));
-    const enemies = (b.s.en || []).map(e => ({ eid: e[0], x: e[1], y: e[2], hp: e[3], maxHp: e[4], facing: e[5], hurt: !!e[6] }));
+    const enemies = (b.s.en || []).map(e => ({ eid: e[0], x: e[1], y: e[2], hp: e[3], maxHp: e[4], facing: e[5], hurt: !!e[6], kind: e[7] || 'grunt', windup: e[8] || 0 }));
+    const hearts = (b.s.ht || []).map(h => ({ hid: h[0], x: h[1], y: h[2], tLeft: h[3] || 0 }));
     const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;
     // riding a moving platform: platforms draw on the interpolated (delayed)
     // timeline while our fighter is predicted ahead — shift us by the
@@ -1653,7 +1656,7 @@ class Session {
         fighters[i].y += drawn.y - simmed.y;
       }
     }
-    return { fighters, projectiles, tick, enemies };
+    return { fighters, projectiles, tick, enemies, hearts };
   }
 
   // ----- events & endgame -----
