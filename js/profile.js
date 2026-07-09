@@ -68,7 +68,7 @@ export const AUGMENTS = [
   { id: 'heavy',       icon: '🗿', name: 'Heavyweight',  cost: 160,
     desc: '-15% knockback taken, but -5% run speed' },
   { id: 'berserker',   icon: '😤', name: 'Berserker',    cost: 170,
-    desc: '+20% damage while your own percent is 80+' },
+    desc: '+20% damage while your own percent is 80+ · Expeditions: while your HP is low' },
   { id: 'secondwind',  icon: '💫', name: 'Second Wind',  cost: 200,
     desc: 'Once per stock: heal 30% when you pass 100%' },
   { id: 'glasscannon', icon: '💎', name: 'Glass Cannon', cost: 170,
@@ -84,7 +84,7 @@ export const AUGMENTS = [
   { id: 'bulwark',     icon: '🧱', name: 'Bulwark',      cost: 150,
     desc: 'Your duck guard wears down 40% slower' },
   { id: 'executioner', icon: '🪓', name: 'Executioner',  cost: 160,
-    desc: '+20% knockback vs foes at 100% or more' },
+    desc: '+20% knockback vs foes at 100% or more · Expeditions: +20% damage vs low-HP enemies' },
   { id: 'reaper',      icon: '💀', name: 'Reaper',       cost: 170,
     desc: 'KO a foe to heal 25%' },
 ];
@@ -109,7 +109,7 @@ export const MAX_BUILD_COST = (() => {
 // authoritative score — so every peer derives the same total with nothing extra
 // on the wire. Damage chips in steadily; kills pay a bounty.
 export const CR_PER_DAMAGE = 2;
-export const CR_PER_KILL = 60;
+export const CR_PER_KILL = 6;
 export function earnedCredits(score) {
   if (!score) return 0;
   return Math.floor((score.dmg || 0) * CR_PER_DAMAGE + (score.ko || 0) * CR_PER_KILL);

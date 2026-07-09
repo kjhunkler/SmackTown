@@ -217,6 +217,11 @@ const ENEMY_TOUCH_DMG = 8;
 const ENEMY_TOUCH_CD = 0.8;          // per-creep cooldown between bumps
 const ENEMY_KB = 0.6;                // creeps take trimmed knockback (no percent)
 const ENEMY_DESPAWN = 2700;          // cull creeps this far from the group
+// Percent-keyed augments have no percent to read in co-op, so they retarget
+// onto HP: Berserker rages while the striker is badly hurt, Executioner
+// finishes creeps that are nearly dead. Both fire at/below a third HP.
+const COOP_BERSERK_HP = 0.33;        // attacker HP fraction for the rage bonus
+const COOP_EXEC_HP = 0.33;           // creep HP fraction for the execute bonus
 const HIT_PAUSE = 0.045;
 const BUFFER = 0.15;                 // edge-input buffer window (s)
 
@@ -1810,6 +1815,16 @@ export class Game {
   _hitEnemy(att, e, spec, angRad, dirX, spike) {
     let dmg = spec.dmg * att.st.dmgMult;
     if (spec.r && att.st.augments.includes('sniper')) dmg *= 1.2;
+    // berserker: raging while badly hurt (co-op stand-in for high-percent fury)
+    if (att.st.augments.includes('berserker') && att.hp <= att.maxHp * COOP_BERSERK_HP) {
+      dmg *= 1.2;
+      this.events.push({ e: 'augment', aug: 'berserker', id: att.id, x: att.x, y: att.y });
+    }
+    // executioner: extra bite finishing off a nearly-dead creep
+    if (att.st.augments.includes('executioner') && e.hp <= e.maxHp * COOP_EXEC_HP) {
+      dmg *= 1.2;
+      this.events.push({ e: 'augment', aug: 'executioner', id: att.id, x: e.x, y: e.y });
+    }
     e.hp -= dmg;
     e.hurt = 0.14;
     att.score.dmg += dmg;
