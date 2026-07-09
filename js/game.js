@@ -811,8 +811,10 @@ export class Game {
       if (f.ridePlat != null) {
         const p = plats[f.ridePlat];
         if (p && f.x > p.x && f.x < p.x + p.w && feet >= p.y - 34 && feet <= p.y + 34) {
-          const was = platPos(this.stage.plats[f.ridePlat], this.tick - 1);
-          f.x += p.x - was.x;          // carried sideways with the sweep
+          // moving platforms carry their rider; static/generated ones don't
+          // drift (and have no static spec to look up, on the endless map)
+          const spec = this.stage.plats[f.ridePlat];
+          if (spec?.move) f.x += p.x - platPos(spec, this.tick - 1).x;
           f.y = p.y - F_H / 2; f.vy = 0; f.grounded = true;
         } else f.ridePlat = null;
       }
@@ -926,9 +928,10 @@ export class Game {
     const step = f.rollDir * (ROLL_DIST / ROLL_TIME) * TICK;
     const p = f.ridePlat != null ? this.platsNow()[f.ridePlat] : null;
     if (p) {
-      // rolling on a platform: ride its drift, stop at its edges
-      const was = platPos(this.stage.plats[f.ridePlat], this.tick - 1);
-      f.x = clamp(f.x + step + (p.x - was.x), p.x + F_W / 4, p.x + p.w - F_W / 4);
+      // rolling on a platform: ride its drift (moving platforms only), stop at its edges
+      const spec = this.stage.plats[f.ridePlat];
+      const driftX = spec?.move ? (p.x - platPos(spec, this.tick - 1).x) : 0;
+      f.x = clamp(f.x + step + driftX, p.x + F_W / 4, p.x + p.w - F_W / 4);
       f.y = p.y - F_H / 2;
     } else {
       const m = this.stage.main;
