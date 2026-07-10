@@ -228,8 +228,11 @@ const ENEMY_BASE_MAX = 16;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 48;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
 const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger'];
-const ENEMY_BASE_SPAWN = 3.2;        // seconds between spawns at difficulty 0
-const DIFF_STEP = 40;                // run seconds per difficulty tier
+const ENEMY_TEMPERAMENTS = ['bold', 'cautious', 'vengeful', 'pack'];
+const ENEMY_BASE_SPAWN = 2.4;        // seconds between spawns at difficulty 0
+const ENEMY_MIN_SPAWN = 0.55;        // fastest spawn cadence at high difficulty
+const ENEMY_CAP_PER_LEVEL = 3;       // additional living creeps per difficulty tier
+const DIFF_STEP = 15;                // run seconds per difficulty tier
 // Percent-keyed augments have no percent to read in co-op, so they retarget
 // onto HP: Berserker rages while the striker is badly hurt, Executioner
 // finishes creeps that are nearly dead. Both fire at/below a third HP.
@@ -489,7 +492,7 @@ export class Game {
       parked: false,                // owner stepped out to the lobby: asleep, untouchable
       dead: false,
       lastDir: { x: 1, y: 0 },
-      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0 }, // podium stats
+      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: 0 }, // podium stats + expedition credits
     };
   }
 
@@ -1866,18 +1869,20 @@ export class Game {
     const plats = this.platsNow();
 
     // spawn: faster and up to a bigger swarm the longer the run goes
-    const spawnEvery = Math.max(1.1, ENEMY_BASE_SPAWN - level * 0.22);
-    const maxEnemies = Math.min(ENEMY_MAX_CAP, ENEMY_BASE_MAX + level);
+    const spawnEvery = Math.max(ENEMY_MIN_SPAWN, ENEMY_BASE_SPAWN - level * 0.30);
+    const maxEnemies = Math.min(ENEMY_MAX_CAP, ENEMY_BASE_MAX + level * ENEMY_CAP_PER_LEVEL);
     this.enemySpawnT -= TICK;
     if (live.length && this.enemySpawnT <= 0 && this.enemies.length < maxEnemies) {
       this.enemySpawnT = spawnEvery;
-      this._spawnEnemy(live, level);
+      const count = level > 0 && this.rng() < 0.28 ? Math.min(3, maxEnemies - this.enemies.length) : 1;
+      const side = this.rng() < 0.5 ? -1 : 1;
+      for (let i = 0; i < count; i++) this._spawnEnemy(live, level, side, i, count);
     }
 
     const floor = this.stage.main.y;
     for (const e of this.enemies) {
       const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
-      const tgt = this._nearestPlayer(e, live);
+      const tgt = this._enemyTarget(e, live);
       if (tgt) e.facing = Math.sign(tgt.x - e.x) || e.facing;
 
       if (e.windup > 0) {
@@ -1889,13 +1894,16 @@ export class Game {
       } else if (t.fly) {
         // flyer: home straight in at altitude, ignoring gravity
         if (tgt) {
-          e.vx = approach(e.vx, Math.sign(tgt.x - e.x) * t.speed, t.accel * TICK);
+          const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1);
+          e.vx = approach(e.vx, Math.sign(tgt.x - e.x) * speed, t.accel * TICK);
           e.vy = approach(e.vy, clamp(((tgt.y - 30) - e.y) * 3, -t.speed, t.speed), t.accel * TICK);
         } else { e.vx = approach(e.vx, 0, t.accel * TICK); e.vy = approach(e.vy, 0, t.accel * TICK); }
       } else {
         // ground types: chase under gravity
         e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
-        let desired = tgt ? Math.sign(tgt.x - e.x) * t.speed : 0;
+        const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1);
+        let desired = tgt ? Math.sign(tgt.x - e.x) * speed : 0;
+        if (e.temperament === 'cautious' && tgt && !t.ranged && Math.abs(tgt.x - e.x) < 115) desired = -Math.sign(tgt.x - e.x) * speed * 0.55;
         if (t.ranged && tgt) {
           e.atkCd -= TICK;
           const d = Math.abs(tgt.x - e.x);
@@ -1975,21 +1983,41 @@ export class Game {
     return 'grunt';
   }
 
-  _spawnEnemy(live, level) {
+  _spawnEnemy(live, level, side = this.rng() < 0.5 ? -1 : 1, slot = 0, count = 1) {
     const kind = this._pickEnemyKind(level);
     const t = ENEMY_TYPES[kind];
     const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
-    const side = this.rng() < 0.5 ? -1 : 1;
     const hp = Math.round(t.hp * (1 + Math.min(1.5, level * 0.1)));   // gentle HP creep
+    const cr = 1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0);
     const hh = t.h / 2, hw = t.w / 2;
+    const formationOffset = (slot - (count - 1) / 2) * 72;
     this.enemies.push({
       eid: nextEid++, kind, hw, hh,
-      x: cx + side * (760 + this.rng() * 280),
+      x: cx + side * (760 + this.rng() * 280) + formationOffset,
       y: t.fly ? this.stage.main.y - 190 - this.rng() * 150 : this.stage.main.y - hh,
       vx: 0, vy: 0, hp, maxHp: hp,
+      cr,
       facing: -side, grounded: !t.fly, touchCd: 0, hurt: 0,
       windup: 0, atkCd: (t.atkCd || 0) * (0.4 + this.rng() * 0.6),   // stagger the first shot
+      temperament: ENEMY_TEMPERAMENTS[Math.floor(this.rng() * ENEMY_TEMPERAMENTS.length)],
+      focusId: null,
     });
+  }
+
+  _enemyTarget(e, live) {
+    if (e.temperament === 'vengeful' && e.focusId) {
+      const focus = live.find(f => f.id === e.focusId);
+      if (focus) return focus;
+    }
+    if (e.temperament === 'pack') {
+      let target = null, best = Infinity;
+      for (const f of live) {
+        const score = f.hp / f.maxHp * 600 + Math.abs(f.x - e.x);
+        if (score < best) { best = score; target = f; }
+      }
+      return target;
+    }
+    return this._nearestPlayer(e, live);
   }
 
   // A telegraphed creep looses a slow, dodgeable shot at where the target is now.
@@ -2091,6 +2119,7 @@ export class Game {
       this.events.push({ e: 'augment', aug: 'executioner', id: att.id, x: e.x, y: e.y });
     }
     e.hp -= dmg;
+    e.focusId = att.id;
     e.hurt = 0.14;
     att.score.dmg += dmg;
     if (dmg > att.score.maxHit) att.score.maxHit = dmg;
@@ -2130,9 +2159,10 @@ export class Game {
     e.hp = 0;
     if (att) {
       att.score.ko++;
+      att.score.cr += e.cr || 1;
       if (att.st.augments.includes('reaper')) att.hp = Math.min(att.maxHp, att.hp + att.maxHp * 0.12);
     }
-    this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid, kind: e.kind });
+    this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid, kind: e.kind, cr: e.cr || 1, att: att?.id || null });
     if (this.rng() < HEART_DROP_CHANCE) this._spawnHeart(e.x, e.y);
   }
 
@@ -2223,7 +2253,7 @@ export class Game {
           f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
           r1(f.guard), r2(f.standT), r2(f.chg), r2(f.riseT), f.lastHitBy || 0,
           f.ridePlat == null ? -1 : f.ridePlat,
-          [f.score.ko, f.score.fall, f.score.sd, r1(f.score.dmg), r1(f.score.taken), r1(f.score.maxHit)],
+          [f.score.ko, f.score.fall, f.score.sd, r1(f.score.dmg), r1(f.score.taken), r1(f.score.maxHit), f.score.cr || 0],
           r2(f.burnT),
           r2(f.slideT),
           f.parked ? 1 : 0,
@@ -2281,7 +2311,7 @@ export function gameFromSnapshot(players, snap, seed = 2) {
     return {
       eid: r[0], x: r[1], y: r[2], vx: 0, vy: 0, hp: r[3], maxHp: r[4] || t.hp,
       facing: r[5] || 1, kind, hw: t.w / 2, hh: t.h / 2,
-      grounded: !t.fly, touchCd: 0, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0,
+      grounded: !t.fly, touchCd: 0, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1,
     };
   });
   g.hearts = (snap.ht || []).map(r => ({
@@ -2314,7 +2344,7 @@ export function restoreFighter(f, row) {
     f.ridePlat = (row[33] ?? -1) >= 0 ? row[33] : null;
     f.chgAim = f.state === 'charge' ? { dx: row[26] | 0, dy: row[27] | 0 } : null;
     const sc = row[34];
-    if (sc) f.score = { ko: sc[0] | 0, fall: sc[1] | 0, sd: sc[2] | 0, dmg: +sc[3] || 0, taken: +sc[4] || 0, maxHit: +sc[5] || 0 };
+    if (sc) f.score = { ko: sc[0] | 0, fall: sc[1] | 0, sd: sc[2] | 0, dmg: +sc[3] || 0, taken: +sc[4] || 0, maxHit: +sc[5] || 0, cr: sc[6] | 0 };
     f.burnT = +row[35] || 0;
     f.slideT = +row[36] || 0;
     f.parked = !!row[37];

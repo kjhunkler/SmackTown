@@ -141,6 +141,10 @@ export class Renderer {
           this.burst(ev.x, ev.y, 20, '#ffffff', 500);
           this.shake = 22;
           break;
+        case 'enemyko':
+          this.burst(ev.x, ev.y, 12, '#ffcf6a', 280);
+          this.dmgPops.push({ x: ev.x, y: ev.y - 46, txt: `+${ev.cr || 1} CR`, t: 0, life: 0.9, heavy: false, color: '#ffcf6a' });
+          break;
         case 'shockwave':
           this.burst(ev.x, ev.y, 26, '#ffb02e', 520);
           this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: 190, t: 0, life: 0.4, color: '#ffb02e', w: 7 });

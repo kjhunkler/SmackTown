@@ -1731,7 +1731,7 @@ class Session {
       guard: r[28],
       mana: r[38], weapon: this.activeMeta(r[0])?.build?.weapon,
       color: this.meta.get(r[0])?.color, hat: this.activeMeta(r[0])?.hat,
-      score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5] } : null,
+      score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5], cr: r[34][6] || 0 } : null,
       parked: !!r[37],
       hp: r[42], maxHp: r[43], downT: r[44],
     }));
