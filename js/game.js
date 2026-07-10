@@ -2034,6 +2034,10 @@ export class Game {
       if (e.x < cx - ENEMY_RECYCLE_BEHIND) this._recycleEnemy(e, cx);
       this.enemies[kept++] = e;
     }
+    this.enemies.length = kept;
+
+    this._stepHearts(live, plats);
+  }
 
   _recycleEnemy(e, partyX) {
     const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
@@ -2044,10 +2048,6 @@ export class Game {
     e.touchCd = 0; e.hurt = 0; e.windup = 0; e.stagger = 0;
     e.atkCd = (t.atkCd || 0) * (0.4 + this.rng() * 0.6);
     e.burn = null; e.focusId = null;
-  }
-    this.enemies.length = kept;
-
-    this._stepHearts(live, plats);
   }
 
   // Weighted pick of what wanders in next. Grunts stay common; tougher and
