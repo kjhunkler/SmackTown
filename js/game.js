@@ -230,13 +230,13 @@ const RESPAWN_INVULN = 2.0;
 //   speed    chase speed             kbTaken  how far our hits fling it
 //   touchKb  shove dealt on a bump   fly/jump/ranged  behavior flags
 export const ENEMY_TYPES = {
-  grunt:   { hp: 9,  speed: 150, accel: 900,  w: 44, h: 52, dmg: 8,  kbTaken: 0.60, touchKb: 280, color: '#c94f6d' },
-  runner:  { hp: 5,  speed: 330, accel: 1600, w: 34, h: 38, dmg: 6,  kbTaken: 0.95, touchKb: 230, color: '#e8a33d' },
-  brute:   { hp: 29, speed: 90,  accel: 620,  w: 66, h: 74, dmg: 15, kbTaken: 0.26, touchKb: 470, color: '#8a56d6' },
-  hopper:  { hp: 8,  speed: 155, accel: 980,  w: 42, h: 44, dmg: 8,  kbTaken: 0.62, touchKb: 300, color: '#3dc98f', jump: true },
-  flyer:   { hp: 6,  speed: 170, accel: 720,  w: 40, h: 38, dmg: 7,  kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', fly: true },
-  slinger: { hp: 7,  speed: 120, accel: 820,  w: 42, h: 48, dmg: 6,  kbTaken: 0.72, touchKb: 230, color: '#d94fb0',
-             ranged: true, shotDmg: 7, shotSpd: 360, range: 440, windup: 0.85, atkCd: 2.6 },
+  grunt:   { hp: 9,  speed: 150, accel: 900,  w: 44, h: 52, dmg: 3, kbTaken: 0.60, touchKb: 280, color: '#c94f6d' },
+  runner:  { hp: 5,  speed: 330, accel: 1600, w: 34, h: 38, dmg: 2, kbTaken: 0.95, touchKb: 230, color: '#e8a33d' },
+  brute:   { hp: 29, speed: 90,  accel: 620,  w: 66, h: 74, dmg: 5, kbTaken: 0.26, touchKb: 470, color: '#8a56d6' },
+  hopper:  { hp: 8,  speed: 155, accel: 980,  w: 42, h: 44, dmg: 3, kbTaken: 0.62, touchKb: 300, color: '#3dc98f', jump: true },
+  flyer:   { hp: 6,  speed: 170, accel: 720,  w: 40, h: 38, dmg: 3, kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', fly: true },
+  slinger: { hp: 7,  speed: 120, accel: 820,  w: 42, h: 48, dmg: 2, kbTaken: 0.72, touchKb: 230, color: '#d94fb0',
+             ranged: true, shotDmg: 3, shotSpd: 360, range: 440, windup: 0.85, atkCd: 2.6 },
 };
 const ENEMY_TOUCH_CD = 0.8;          // per-creep cooldown between contact bumps
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
