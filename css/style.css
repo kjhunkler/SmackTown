@@ -79,7 +79,20 @@ body { position: fixed; inset: 0; width: 100%; }
   text-shadow: 0 4px 0 rgba(0,0,0,.35);
 }
 .logo span { color: var(--accent); }
+.logo-word { position: relative; display: inline-block; }
+.logo-version {
+  position: absolute;
+  right: -27px;
+  bottom: 1px;
+  color: var(--ink-dim);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
 .logo.small { font-size: 26px; }
+.logo.small .logo-version { right: -24px; font-size: 8px; }
 .tagline { text-align: center; color: var(--ink-dim); font-size: 13px; margin-top: -8px; }
 
 .field-label { font-size: 13px; color: var(--ink-dim); font-weight: 600; }
