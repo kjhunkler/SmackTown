@@ -2,7 +2,7 @@
 // everyone's latest inputs and broadcasts snapshots; clients interpolate.
 // All tuning constants live here so host handoff resumes identical rules.
 
-import { derivedStats } from './profile.js';
+import { derivedStats, buildCost, emptyBuild, STATS, WEAPONS, ABILITIES, AUGMENTS } from './profile.js';
 
 export const TICK = 1 / 60;
 export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
@@ -620,9 +620,17 @@ export class Game {
   // Swap a live fighter's kit (lobby workshop edit applied on rejoin):
   // derived stats refresh in place and anything the new kit shrinks
   // (air jumps) clamps to fit. Percent, stocks and cooldowns ride along.
-  updateBuild(id, build) {
+  updateBuild(id, build, enforce = true) {
     const f = this.fighters.find(x => x.id === id);
     if (!f) return null;
+    // Co-op economy: a swap settles against the CR wallet — upgrades spend,
+    // downsizes refund. A swap the wallet can't cover is refused outright.
+    // (Prediction mirrors pass enforce=false: the host already settled it.)
+    if (this.coop && enforce) {
+      const delta = buildCost(build) - buildCost(f.baseBuild || emptyBuild());
+      if (delta > (f.score.cr || 0)) return null;
+      f.score.cr = (f.score.cr || 0) - delta;
+    }
     f.baseBuild = build;
     f.tryBuild = null;
     f.st = derivedStats(build);
@@ -1912,6 +1920,42 @@ export class Game {
     if (credit) credit.score.ko++; else f.score.sd++;
     f.lastHitBy = null;
     this.events.push({ e: 'ko', x: f.x, y: f.y, id: f.id, stocks: 1 });
+    // Death drops the kit: the CR sunk into it is gone — no sell-back — and
+    // the wallet immediately re-buys as much of the same build as it can
+    // afford, base stats first, then weapon, abilities, augments.
+    const redo = this._rebuyBuild(f.baseBuild || emptyBuild(), f.score.cr || 0);
+    f.score.cr = redo.cr;
+    f.baseBuild = redo.build;
+    f.tryBuild = null;
+    f.st = derivedStats(redo.build);
+    f.jumps = Math.min(f.jumps, f.st.maxJumps);
+    f.maxHp = f.st.maxHp;                       // hp is 0; revive tops up to the new ceiling
+    this.events.push({ e: 'rebuild', id: f.id, build: redo.build, cr: redo.cr });
+  }
+
+  // Greedily re-purchase a lost kit from a wallet: stat levels first (round-
+  // robin across the four stats so partial funds spread evenly), then the
+  // weapon, then abilities and augments in owned order. Unaffordable pieces
+  // are skipped, not queued — whatever CR remains stays in the wallet.
+  _rebuyBuild(old, wallet) {
+    const build = emptyBuild();
+    let cr = wallet;
+    for (let lvl = 1; lvl <= 5; lvl++) {
+      for (const s of STATS) {
+        if ((old.stats?.[s.id] || 0) >= lvl && cr >= s.cost) { build.stats[s.id]++; cr -= s.cost; }
+      }
+    }
+    const w = WEAPONS.find(x => x.id === old.weapon);
+    if (w && w.cost <= cr) { build.weapon = w.id; cr -= w.cost; }
+    for (const id of old.abilities || []) {
+      const a = ABILITIES.find(x => x.id === id);
+      if (a && a.cost <= cr && build.abilities.length < 2) { build.abilities.push(id); cr -= a.cost; }
+    }
+    for (const id of old.augments || []) {
+      const a = AUGMENTS.find(x => x.id === id);
+      if (a && a.cost <= cr && build.augments.length < 2) { build.augments.push(id); cr -= a.cost; }
+    }
+    return { build, cr };
   }
 
   _stepCoop() {
@@ -2190,7 +2234,7 @@ export class Game {
     const kind = forcedKind || this._pickEnemyKind(level, biome);
     const t = ENEMY_TYPES[kind];
     const hp = Math.round(t.hp * (1 + Math.min(1.2, level * 0.08)) * (elite ? 1.65 : 1));
-    const cr = (1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0) + (elite ? 3 : 0)) * 5;
+    const cr = Math.floor((1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0) + (elite ? 3 : 0)) * 5 / 2);
     const hh = t.h / 2, hw = t.w / 2;
     const formationOffset = (slot - (count - 1) / 2) * 72;
     this.enemies.push({

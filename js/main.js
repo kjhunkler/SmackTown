@@ -322,7 +322,9 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
     build: JSON.parse(JSON.stringify(pve ? session.myRunBuild() : profile.build)),
     hatId: profile.hatId,
     pve,
-    budget: pve ? session.myCredits() : undefined,
+    // Wallet plus the sell-back value of the current kit: swapping pieces
+    // one-for-one stays budget-neutral in the shop's math.
+    budget: pve ? session.myCredits() + buildCost(session.myRunBuild()) : undefined,
   };
   $('#screen-builder').classList.toggle('pve', pve);
   $('#builder-name').value = profile.name;
@@ -1233,11 +1235,14 @@ class Session {
     const p = this.meta.get(pid);
     p.name = m.name;
     p.color = m.color;
-    p.build = sanitizeBuild(m.build, this.coop ? MAX_BUILD_COST : undefined);
+    const b = sanitizeBuild(m.build, this.coop ? MAX_BUILD_COST : undefined);
+    // The sim settles the swap against the fighter's CR wallet and may refuse
+    // it (host is authoritative); only an accepted swap sticks to the roster.
+    const applied = this.game ? !!this.game.updateBuild(pid, b) : true;
+    if (applied) p.build = b;
     p.hat = sanitizeHat(m.hat);
     this.trying.delete(pid);
-    this.game?.updateBuild(pid, p.build);
-    this.pred?.updateBuild(pid, p.build);
+    this.pred?.updateBuild(pid, p.build, false);
     if (pid === this.myId) UI.setupAbilityButtons(p.build.abilities);
     // host: re-broadcast the roster so clients repaint colors/hats/builds
     if (this.mode === 'host' && net) this.broadcastPlayers();
@@ -1334,11 +1339,12 @@ class Session {
   // The build I'm currently running (my in-session loadout, not my profile).
   myRunBuild() { return sanitizeBuild(this.meta.get(this.myId)?.build, MAX_BUILD_COST); }
 
-  // Re-tune my run character in the workshop. Refused if it would spend beyond
-  // what I've earned; otherwise it broadcasts and my fighter adopts it live.
+  // Re-tune my run character in the workshop. Swaps settle against the CR
+  // wallet — only the upgrade delta over the current kit's value must be
+  // affordable; otherwise it broadcasts and my fighter adopts it live.
   applyRunBuild(build) {
     const b = sanitizeBuild(build, MAX_BUILD_COST);
-    if (buildCost(b) > this.myCredits()) return false;
+    if (buildCost(b) - buildCost(this.myRunBuild()) > this.myCredits()) return false;
     net?.updateProfile({ ...profile, build: b });   // fans out via profile-changed → onProfileChanged
     return true;
   }
@@ -1810,6 +1816,19 @@ class Session {
         UI.toast(ev.id === this.myId ? 'You got smacked!' : `${name} KO’d!`);
         if (navigator.vibrate && ev.id === this.myId) navigator.vibrate(80);
         this.endTry(ev.id);
+      }
+      if (ev.e === 'rebuild') {
+        // Expedition death penalty: the sim dropped this fighter's kit and
+        // re-bought what the wallet covered — mirror it into the roster/HUD.
+        const p = this.meta.get(ev.id);
+        if (p) p.build = sanitizeBuild(ev.build, MAX_BUILD_COST);
+        this.pred?.updateBuild(ev.id, p?.build, false);
+        if (ev.id === this.myId) {
+          UI.setupAbilityButtons(p?.build.abilities || []);
+          UI.toast('Kit lost! Re-bought what your CR could cover.', 2600);
+        }
+        this.buildHud();
+        if (this.mode === 'host' && net) this.broadcastPlayers();
       }
       if (ev.e === 'gameover') UI.toast('GAME!', 2000);
     }
