@@ -16,6 +16,18 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
+.expedition-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(122, 92, 255, .14);
+  border: 1px solid rgba(150, 120, 255, .35);
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+.expedition-summary b { color: #ffcf6a; font-size: 13px; }
 #game-expedition {
   position: absolute;
   top: calc(42px + var(--safe-top));

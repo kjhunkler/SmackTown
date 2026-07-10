@@ -18,7 +18,7 @@
 <!-- ============ LOGIN (first run) ============ -->
 <section id="screen-login" class="screen">
   <div class="panel narrow">
-    <h1 class="logo"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version">v114</small></span></h1>
+    <h1 class="logo"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version"></small></span></h1>
     <p class="tagline">P2P pocket brawler</p>
     <label class="field-label" for="login-name">Pick your fighter name</label>
     <input id="login-name" type="text" maxlength="14" autocomplete="off"
@@ -33,7 +33,7 @@
 <!-- ============ MAIN MENU ============ -->
 <section id="screen-menu" class="screen hidden">
   <div class="panel narrow">
-    <h1 class="logo small"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version">v114</small></span></h1>
+    <h1 class="logo small"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version"></small></span></h1>
     <div class="menu-char-row">
       <button id="menu-char-prev" class="hat-arrow" aria-label="Previous character">◀</button>
       <div id="menu-card" class="fighter-card" role="button" tabindex="0"
@@ -232,6 +232,7 @@
 <section id="screen-results" class="screen hidden">
   <div class="panel narrow">
     <h2 id="results-title">Game Over</h2>
+    <div id="results-expedition" class="expedition-summary hidden"></div>
     <ul id="results-list" class="roster"></ul>
     <button id="results-again" class="btn primary big">Back to Lobby</button>
     <button id="results-menu" class="btn ghost">Main Menu</button>
@@ -292,6 +293,7 @@
 
 <button id="sfx-mute" aria-label="Toggle music">🎵</button>
 
+<script src="js/version.js"></script>
 <script src="vendor/peerjs.min.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>

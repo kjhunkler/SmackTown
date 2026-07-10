@@ -17,6 +17,7 @@ import { SFX } from './sfx.js';
 import { settings } from './settings.js';
 
 const $ = s => document.querySelector(s);
+for (const el of document.querySelectorAll('.logo-version')) el.textContent = self.SMACKTOWN_VERSION || '';
 
 function smartColorConvertHat(hat, fromColor, toColor) {
   const art = sanitizeHat(hat);
@@ -1737,7 +1738,7 @@ class Session {
       guard: r[28],
       mana: r[38], weapon: this.activeMeta(r[0])?.build?.weapon,
       color: this.meta.get(r[0])?.color, hat: this.activeMeta(r[0])?.hat,
-      score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5], cr: r[34][6] || 0 } : null,
+      score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5], cr: r[34][6] || 0, elite: r[34][7] || 0 } : null,
       parked: !!r[37],
       hp: r[42], maxHp: r[43], downT: r[44],
     }));
@@ -1816,9 +1817,21 @@ class Session {
 
   finish(winnerId, finalFighters) {
     this.ended = true;
+    const mine = finalFighters.find(f => f.id === this.myId);
+    const runSummary = this.coop && mine ? {
+      distance: Math.max(0, Math.floor(mine.x / 100)) * 100,
+      tier: Math.floor((this.game?.tick || this.lastSnap?.tk || 0) / 900) + 1,
+      biomes: Math.max(1, Math.floor(Math.max(0, mine.x) / 3600) + 1),
+      defeats: mine.score?.ko || 0,
+      elites: mine.score?.elite || 0,
+      credits: earnedCredits(mine.score),
+    } : null;
     for (const pid of [...this.trying.keys()]) this.endTry(pid);
     setTimeout(() => {
       this.stop();
+      const summary = $('#results-expedition');
+      summary.classList.toggle('hidden', !runSummary);
+      if (runSummary) summary.innerHTML = `<b>Expedition Report</b><span>${runSummary.distance}m · Tier ${runSummary.tier} · ${runSummary.biomes} biome${runSummary.biomes === 1 ? '' : 's'}</span><span>${runSummary.defeats} defeated · ${runSummary.elites} elite${runSummary.elites === 1 ? '' : 's'} · 💰 ${runSummary.credits} CR</span>`;
       UI.renderResults(this.players, winnerId, finalFighters, { myId: this.myId, onCopy: copyCharacter });
       $('#results-again').textContent = this.mode === 'solo' ? 'Rematch' : 'Back to Lobby';
       UI.showScreen('results');

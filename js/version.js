@@ -1,0 +1,1 @@
+self.SMACKTOWN_VERSION = 'v115';

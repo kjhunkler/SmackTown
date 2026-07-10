@@ -528,7 +528,7 @@ export class Game {
       parked: false,                // owner stepped out to the lobby: asleep, untouchable
       dead: false,
       lastDir: { x: 1, y: 0 },
-      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: 0 }, // podium stats + expedition credits
+      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: 0, elite: 0 }, // podium stats + expedition credits
     };
   }
 
@@ -2229,6 +2229,7 @@ export class Game {
     if (att) {
       att.score.ko++;
       att.score.cr += e.cr || 1;
+      if (e.elite) att.score.elite++;
       if (att.st.augments.includes('reaper')) att.hp = Math.min(att.maxHp, att.hp + att.maxHp * 0.12);
     }
     this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid, kind: e.kind, cr: e.cr || 1, att: att?.id || null });
@@ -2322,7 +2323,7 @@ export class Game {
           f.atkDir ? f.atkDir.x : 0, f.atkDir ? f.atkDir.y : 0,
           r1(f.guard), r2(f.standT), r2(f.chg), r2(f.riseT), f.lastHitBy || 0,
           f.ridePlat == null ? -1 : f.ridePlat,
-          [f.score.ko, f.score.fall, f.score.sd, r1(f.score.dmg), r1(f.score.taken), r1(f.score.maxHit), f.score.cr || 0],
+          [f.score.ko, f.score.fall, f.score.sd, r1(f.score.dmg), r1(f.score.taken), r1(f.score.maxHit), f.score.cr || 0, f.score.elite || 0],
           r2(f.burnT),
           r2(f.slideT),
           f.parked ? 1 : 0,
@@ -2413,7 +2414,7 @@ export function restoreFighter(f, row) {
     f.ridePlat = (row[33] ?? -1) >= 0 ? row[33] : null;
     f.chgAim = f.state === 'charge' ? { dx: row[26] | 0, dy: row[27] | 0 } : null;
     const sc = row[34];
-    if (sc) f.score = { ko: sc[0] | 0, fall: sc[1] | 0, sd: sc[2] | 0, dmg: +sc[3] || 0, taken: +sc[4] || 0, maxHit: +sc[5] || 0, cr: sc[6] | 0 };
+    if (sc) f.score = { ko: sc[0] | 0, fall: sc[1] | 0, sd: sc[2] | 0, dmg: +sc[3] || 0, taken: +sc[4] || 0, maxHit: +sc[5] || 0, cr: sc[6] | 0, elite: sc[7] | 0 };
     f.burnT = +row[35] || 0;
     f.slideT = +row[36] || 0;
     f.parked = !!row[37];
