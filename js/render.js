@@ -149,7 +149,7 @@ export class Renderer {
           break;
         case 'enemyko':
           this.burst(ev.x, ev.y, 12, '#ffcf6a', 280);
-          this.dmgPops.push({ x: ev.x, y: ev.y - 46, txt: `+${ev.cr || 1} CR`, t: 0, life: 0.9, heavy: false, color: '#ffcf6a' });
+          this.dmgPops.push({ x: ev.x + 52, y: ev.y - 34, txt: `+${ev.cr || 5} CR`, t: 0, life: 0.9, heavy: false, color: '#ffcf6a' });
           break;
         case 'shockwave':
           this.burst(ev.x, ev.y, 26, '#ffb02e', 520);

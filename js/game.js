@@ -2048,7 +2048,7 @@ export class Game {
     const kind = forcedKind || this._pickEnemyKind(level, biome);
     const t = ENEMY_TYPES[kind];
     const hp = Math.round(t.hp * (1 + Math.min(1.5, level * 0.1)) * (elite ? 1.65 : 1));
-    const cr = 1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0) + (elite ? 3 : 0);
+    const cr = (1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0) + (elite ? 3 : 0)) * 5;
     const hh = t.h / 2, hw = t.w / 2;
     const formationOffset = (slot - (count - 1) / 2) * 72;
     this.enemies.push({

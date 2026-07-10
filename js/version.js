@@ -1,1 +1,1 @@
-self.SMACKTOWN_VERSION = 'v117';
+self.SMACKTOWN_VERSION = 'v118';
