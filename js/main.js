@@ -7,7 +7,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, platsAt, HEART_LIFE } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, platsAt, HEART_LIFE } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -1081,6 +1081,66 @@ function startSession(cfg) {
 // host's copies are dropped for our own fighter to avoid double effects.
 const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'shockwave', 'gale', 'mend', 'duck']);
 
+class PerfStats {
+  constructor() {
+    this.size = 300;
+    this.series = new Map();
+    this.heap = 0;
+    this.longTasks = 0;
+    this.longTaskMs = 0;
+    this.lastHeapSample = 0;
+    this.observer = null;
+    try {
+      this.observer = new PerformanceObserver(list => {
+        for (const e of list.getEntries()) {
+          this.longTasks++;
+          this.longTaskMs += e.duration;
+        }
+      });
+      this.observer.observe({ type: 'longtask', buffered: true });
+    } catch (_) {}
+  }
+
+  add(name, value) {
+    let s = this.series.get(name);
+    if (!s) {
+      s = { values: new Float32Array(this.size), next: 0, count: 0 };
+      this.series.set(name, s);
+    }
+    s.values[s.next] = value;
+    s.next = (s.next + 1) % this.size;
+    s.count = Math.min(this.size, s.count + 1);
+  }
+
+  sampleHeap(now) {
+    if (now - this.lastHeapSample < 1000) return;
+    this.lastHeapSample = now;
+    this.heap = performance.memory?.usedJSHeapSize || 0;
+  }
+
+  snapshot() {
+    const phases = {};
+    for (const [name, s] of this.series) {
+      const values = Array.from(s.values.slice(0, s.count)).sort((a, b) => a - b);
+      const sum = values.reduce((n, v) => n + v, 0);
+      phases[name] = {
+        avgMs: +(sum / values.length).toFixed(2),
+        p95Ms: +values[Math.floor((values.length - 1) * 0.95)].toFixed(2),
+        maxMs: +values[values.length - 1].toFixed(2),
+        samples: values.length,
+      };
+    }
+    return {
+      phases,
+      heapMB: this.heap ? +(this.heap / 1048576).toFixed(1) : null,
+      longTasks: this.longTasks,
+      longTaskMs: +this.longTaskMs.toFixed(1),
+    };
+  }
+
+  stop() { this.observer?.disconnect(); }
+}
+
 class Session {
   constructor({ mode, myId, players, seed = 1, map = DEFAULT_MAP }) {
     this.mode = mode;               // 'solo' | 'host' | 'client'
@@ -1107,6 +1167,8 @@ class Session {
     this.running = false;
     this.ended = false;
     this.raf = 0;
+    this.perf = new PerfStats();
+    this.lastSnapshotAt = 0;
   }
 
   start() {
@@ -1136,6 +1198,7 @@ class Session {
   stop() {
     this.running = false;
     cancelAnimationFrame(this.raf);
+    this.perf.stop();
     touch.setEnabled(false);
   }
 
@@ -1290,13 +1353,29 @@ class Session {
 
   frame(t) {
     if (!this.running) return;
+    const frameStart = performance.now();
     const dt = Math.min(0.1, (t - this.lastT) / 1000);
     this.lastT = t;
+    this.perf.add('schedule', dt * 1000);
+    this.perf.sampleHeap(t);
 
     if (this.mode === 'client') this.clientFrame(t, dt);
     else this.hostFrame(t, dt);
 
+    this.perf.add('frame', performance.now() - frameStart);
+
     this.raf = requestAnimationFrame(tt => this.frame(tt));
+  }
+
+  perfReport() {
+    return {
+      mode: this.mode,
+      map: this.map,
+      fighters: this.game?.fighters.length ?? this.lastSnap?.f?.length ?? 0,
+      enemies: this.game?.enemies.length ?? this.lastSnap?.en?.length ?? 0,
+      projectiles: this.game?.projectiles.length ?? this.lastSnap?.p?.length ?? 0,
+      ...this.perf.snapshot(),
+    };
   }
 
   // ----- authoritative loop (solo & host) -----
@@ -1305,7 +1384,9 @@ class Session {
     this.acc += dt;
     while (this.acc >= TICK) {
       this.acc -= TICK;
+      const simStart = performance.now();
       this.game.step();
+      this.perf.add('simulation', performance.now() - simStart);
       if (this.game.events.length) {
         if (!this.backgrounded) {
           renderer.onEvents(this.game.events);
@@ -1315,10 +1396,12 @@ class Session {
       }
       if (this.mode === 'host' && net &&
           (this.game.tick % SNAP_RATE === 0 || this.game.over)) {
+        const snapshotStart = performance.now();
         const s = this.game.snapshot();
         s.ev = this.pendingEv.splice(0);
         s.ack = Object.fromEntries(this.acks);
         net.broadcast({ t: 'snap', s });
+        this.perf.add('snapshot+send', performance.now() - snapshotStart);
       }
       // Refresh lag compensation ~1/s from measured pings: victims are
       // rewound by each attacker's one-way latency + interp delay.
@@ -1389,7 +1472,9 @@ class Session {
     const decay = Math.pow(0.002, dt);
     this.corr.x *= decay; this.corr.y *= decay;
 
+    const interpolateStart = performance.now();
     const view = this.interpolate(performance.now() - 130);
+    this.perf.add('interpolation', performance.now() - interpolateStart);
     if (view) this.renderView(view, dt);
 
     const s = this.lastSnap;
@@ -1400,6 +1485,7 @@ class Session {
 
   renderView(view, dt) {
     if (this.backgrounded) return;
+    const renderStart = performance.now();
     renderer.draw(view, dt, this.myId);
     UI.updateHud(view.fighters);
     const mine = view.fighters.find(f => f.id === this.myId);
@@ -1409,6 +1495,7 @@ class Session {
       const el = $('#game-credits-val');
       if (el && el.textContent !== '' + cr) el.textContent = cr;
     }
+    this.perf.add('render+ui', performance.now() - renderStart);
   }
 
   // ----- network callbacks -----
@@ -1421,6 +1508,9 @@ class Session {
 
   onSnapshot(s, pid) {
     if (this.mode !== 'client' || pid !== net?.hostId) return;
+    const now = performance.now();
+    if (this.lastSnapshotAt) this.perf.add('snapshot-gap', now - this.lastSnapshotAt);
+    this.lastSnapshotAt = now;
     if (s.map && MAPS[s.map] && s.map !== this.map) {
       this.map = s.map;
       this.pred = new Game(this.players, this.seed, this.map);
@@ -1430,7 +1520,7 @@ class Session {
       this.corr = { x: 0, y: 0 };
     }
     this.lastSnap = s;
-    this.snaps.push({ rt: performance.now(), s });
+    this.snaps.push({ rt: now, s });
     if (this.snaps.length > 40) this.snaps.shift();
     if (s.ev?.length) {
       // our own movement cosmetics already fired locally via prediction
@@ -1643,6 +1733,7 @@ class Session {
     const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0 }));
     const enemies = (b.s.en || []).map(e => ({ eid: e[0], x: e[1], y: e[2], hp: e[3], maxHp: e[4], facing: e[5], hurt: !!e[6], kind: e[7] || 'grunt', windup: e[8] || 0 }));
     const hearts = (b.s.ht || []).map(h => ({ hid: h[0], x: h[1], y: h[2], tLeft: h[3] || 0 }));
+    const enemies = interpolateEnemyRows(a.s.en, b.s.en, k);
     const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;
     // riding a moving platform: platforms draw on the interpolated (delayed)
     // timeline while our fighter is predicted ahead — shift us by the

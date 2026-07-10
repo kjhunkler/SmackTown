@@ -2219,6 +2219,22 @@ export function restoreFighter(f, row) {
   if (!f.atk) { f.atkDir = null; f.lowJab = false; f.chg = 0; f.chgAim = null; }
 }
 
+// Build render-only enemy views between two authoritative snapshots. Keeping
+// this outside the simulation makes PvE motion smooth without predicting AI
+// or changing host authority, combat, snapshot cadence, or handoff state.
+export function interpolateEnemyRows(aRows, bRows, k) {
+  const from = new Map((aRows || []).map(e => [e[0], e]));
+  return (bRows || []).map(e2 => {
+    const e1 = from.get(e2[0]) || e2;
+    return {
+      eid: e2[0],
+      x: e1[1] + (e2[1] - e1[1]) * k,
+      y: e1[2] + (e2[2] - e1[2]) * k,
+      hp: e2[3], maxHp: e2[4], facing: e2[5], hurt: !!e2[6],
+    };
+  });
+}
+
 export function blankInput() {
   return {
     mx: 0, my: 0, jump: false, ff: false, drop: false, atk: null, roll: 0,
