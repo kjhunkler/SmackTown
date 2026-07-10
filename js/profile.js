@@ -296,8 +296,12 @@ export function validName(name) {
 }
 
 // Derived combat stats used by the sim (must match on host & clients).
+// Sanitized against the structural ceiling, not the PvP purse: budget
+// enforcement happens where builds enter (host validation, workshop save),
+// and expedition run builds legitimately cost more than 1000 cr — capping
+// here used to silently strip such fighters to an empty kit.
 export function derivedStats(build) {
-  const b = sanitizeBuild(build);
+  const b = sanitizeBuild(build, MAX_BUILD_COST);
   const has = id => b.augments.includes(id);
   const glass = has('glasscannon');
   return {

@@ -1351,7 +1351,7 @@ class Session {
     this.game?.clearTryBuild(pid);
     this.pred?.clearTryBuild(pid);
     if (pid === this.myId) {
-      UI.setupAbilityButtons(sanitizeBuild(p.build).abilities);
+      UI.setupAbilityButtons(sanitizeBuild(p.build, this.coop ? MAX_BUILD_COST : undefined).abilities);
       UI.toast('Back to your fighter!');
     }
     this.buildHud();
