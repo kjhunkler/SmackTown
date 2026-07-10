@@ -297,8 +297,13 @@ export class Renderer {
         this.burst(ev.x, ev.y, 6, '#d94fb0', 200);
         break;
       case 'telegraph':
-        // a warning flare where a ranged creep is winding up
+        // a warning flare where a creep is winding up (shot or melee swing)
         this.rings.push({ x: ev.x, y: ev.y, r0: 40, r1: 12, t: 0, life: 0.55, color: '#ffcf4d', w: 4 });
+        break;
+      case 'strike':
+        // the swing itself: a short slash flare across the strike box, so
+        // whiffs read as a dodged attack rather than nothing happening
+        this.burst(ev.x, ev.y, 6, '#ffd9a0', 200);
         break;
       case 'heart':
         this.burst(ev.x, ev.y, 16, '#ff9db3', 240);

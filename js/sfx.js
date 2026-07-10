@@ -382,6 +382,7 @@ class Sfx {
       case 'burn':    this.stopCharge(ev.vic); this.play('burn'); break;
       case 'ledge':   this.stopCharge(ev.id); this.play('ledge'); break;
       case 'jump':    this.play('jump'); break;
+      case 'strike':  this.play('swing'); break;   // creep melee swing (hit or whiff)
       case 'spikebounce': this.play('jump'); break;
       case 'land':    this.play('land'); break;
       case 'roll':    this.play('roll'); break;

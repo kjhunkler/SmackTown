@@ -236,19 +236,24 @@ const RESPAWN_INVULN = 2.0;
 // Co-op creeps come in a handful of flavors. Gameplay stats live here and are
 // shared with the renderer (for size + color); behavior lives in _stepEnemies.
 // Tuned to stay approachable: modest damage, readable telegraphs, gentle ramp.
-//   w/h      hurtbox size            dmg      contact damage
+// Touching a creep is harmless — every attack is telegraphed: the creep
+// plants for `windup` seconds (the renderer pulses a ring), then swings a
+// `reach`-length strike ahead of its locked facing. Step out or hit it to
+// cancel; only what's still in front when it swings gets hurt.
+//   w/h      hurtbox size            dmg      strike damage
 //   speed    chase speed             kbTaken  how far our hits fling it
-//   touchKb  shove dealt on a bump   fly/jump/ranged  behavior flags
+//   touchKb  shove dealt by a strike   fly/jump/ranged  behavior flags
+//   reach    strike range            windup/atkCd  telegraph & cooldown
 export const ENEMY_TYPES = {
-  grunt:   { hp: 9,  speed: 150, accel: 900,  w: 44, h: 52, dmg: 3, kbTaken: 0.60, touchKb: 280, color: '#c94f6d' },
-  runner:  { hp: 5,  speed: 290, accel: 1600, w: 34, h: 38, dmg: 2, kbTaken: 0.95, touchKb: 175, color: '#e8a33d' },
-  brute:   { hp: 29, speed: 90,  accel: 620,  w: 66, h: 74, dmg: 5, kbTaken: 0.26, touchKb: 470, color: '#8a56d6' },
-  hopper:  { hp: 8,  speed: 155, accel: 980,  w: 42, h: 44, dmg: 3, kbTaken: 0.62, touchKb: 240, color: '#3dc98f', jump: true },
-  flyer:   { hp: 6,  speed: 170, accel: 720,  w: 40, h: 38, dmg: 3, kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', fly: true },
+  grunt:   { hp: 9,  speed: 150, accel: 900,  w: 44, h: 52, dmg: 3, kbTaken: 0.60, touchKb: 280, color: '#c94f6d', reach: 54, windup: 0.42, atkCd: 1.5 },
+  runner:  { hp: 5,  speed: 290, accel: 1600, w: 34, h: 38, dmg: 2, kbTaken: 0.95, touchKb: 175, color: '#e8a33d', reach: 46, windup: 0.28, atkCd: 1.1 },
+  brute:   { hp: 29, speed: 90,  accel: 620,  w: 66, h: 74, dmg: 5, kbTaken: 0.26, touchKb: 470, color: '#8a56d6', reach: 84, windup: 0.70, atkCd: 2.4 },
+  hopper:  { hp: 8,  speed: 155, accel: 980,  w: 42, h: 44, dmg: 3, kbTaken: 0.62, touchKb: 240, color: '#3dc98f', reach: 52, windup: 0.38, atkCd: 1.5, jump: true },
+  flyer:   { hp: 6,  speed: 170, accel: 720,  w: 40, h: 38, dmg: 3, kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', reach: 48, windup: 0.45, atkCd: 1.9, fly: true },
   slinger: { hp: 7,  speed: 120, accel: 820,  w: 42, h: 48, dmg: 2, kbTaken: 0.72, touchKb: 230, color: '#d94fb0',
              ranged: true, shotDmg: 3, shotSpd: 360, range: 440, windup: 0.85, atkCd: 2.6 },
 };
-const ENEMY_TOUCH_CD = 0.8;          // per-creep cooldown between contact bumps
+const ENEMY_HIT_MERCY = 0.55;        // post-hit invulnerability so a swarm can't chain-stun
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
 const ENEMY_RECYCLE_BEHIND = 1200;   // recycle stragglers ahead of the forward-only party
 const EXPANSE_BACKTRACK = 640;        // players may approach the left screen edge without leaving the route
@@ -1574,6 +1579,7 @@ export class Game {
               o.atk = null; o.atkDir = null; o.melee = null; o.chg = 0;
               this.events.push({ e: 'hit', x: o.x, y: o.y, dmg: Math.round(pr.dmg), heavy: false, vic: o.id, att: pr.owner });
               this._damageHp(o, pr.dmg, pr.owner);
+              if (this.coop) o.invuln = Math.max(o.invuln, ENEMY_HIT_MERCY);
               pr.ttl = 0;
             }
             break;
@@ -1990,7 +1996,9 @@ export class Game {
     for (const e of this.enemies) {
       const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
       const tgt = this._enemyTarget(e, live);
-      if (tgt) e.facing = Math.sign(tgt.x - e.x) || e.facing;
+      // facing locks through a windup so a telegraphed swing can be dodged
+      // by stepping around the creep
+      if (tgt && e.windup <= 0) e.facing = Math.sign(tgt.x - e.x) || e.facing;
 
       if (e.stagger > 0) {
         e.stagger = Math.max(0, e.stagger - TICK);
@@ -1998,11 +2006,16 @@ export class Game {
         e.vx = approach(e.vx, 0, t.accel * TICK);
         if (!t.fly) e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
       } else if (e.windup > 0) {
-        // telegraphing a ranged shot: plant, then loose it when the wind-up ends
+        // telegraphing: plant in place, then loose the shot / swing the strike
         e.windup -= TICK;
         e.vx = approach(e.vx, 0, t.accel * TICK);
-        if (!t.fly) e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
-        if (e.windup <= 0) { e.windup = 0; this._enemyFire(e, t, tgt); }
+        if (t.fly) e.vy = approach(e.vy, 0, t.accel * TICK);
+        else e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+        if (e.windup <= 0) {
+          e.windup = 0;
+          if (t.ranged) this._enemyFire(e, t, tgt);
+          else this._enemyStrike(e, t, live);
+        }
       } else if (t.fly) {
         // flyer: home straight in at altitude, ignoring gravity
         if (tgt) {
@@ -2017,7 +2030,6 @@ export class Game {
         let desired = tgt ? Math.sign(tgt.x - e.x) * speed : 0;
         if (e.temperament === 'cautious' && tgt && !t.ranged && Math.abs(tgt.x - e.x) < 115) desired = -Math.sign(tgt.x - e.x) * speed * 0.55;
         if (t.ranged && tgt) {
-          e.atkCd -= TICK;
           const d = Math.abs(tgt.x - e.x);
           if (d < t.range * 0.65) desired = Math.sign(e.x - tgt.x) * t.speed * 0.6;  // kite back
           else if (d < t.range) desired = 0;                                          // hold at range
@@ -2029,6 +2041,18 @@ export class Game {
         e.vx = approach(e.vx, desired, t.accel * TICK);
         // hopper: spring up to chase a target perched above it
         if (t.jump && e.grounded && tgt && tgt.y < e.y - 70 && this.rng() < 0.05) { e.vy = -1000; e.grounded = false; }
+      }
+
+      // melee types: plant and telegraph a swing once a fighter is in reach.
+      // Nothing lands until the windup ends — step out of the arc (or stagger
+      // the creep with a hit) and the swing whiffs.
+      if (!t.ranged && e.stagger <= 0 && e.windup <= 0 && e.atkCd <= 0 && tgt
+          && (t.fly || e.grounded)
+          && Math.abs(tgt.x - e.x) < t.reach + e.hw + F_W / 2
+          && Math.abs(tgt.y - e.y) < e.hh + F_H / 2 + 26) {
+        e.windup = t.windup;
+        e.atkCd = t.atkCd * (0.75 + this.rng() * 0.5);
+        this.events.push({ e: 'telegraph', x: e.x, y: e.y, kind: e.kind });
       }
 
       e.x += e.vx * TICK;
@@ -2046,27 +2070,9 @@ export class Game {
         }
       }
 
-      if (e.touchCd > 0) e.touchCd -= TICK;
+      if (e.atkCd > 0) e.atkCd -= TICK;
       if (e.hurt > 0) e.hurt -= TICK;
       if (e.burn) this._burnEnemy(e);
-
-      // contact bump: every type shoves and chips whoever it touches
-      if (e.stagger <= 0 && e.touchCd <= 0 && e.hp > 0) {
-        for (const f of live) {
-          if (f.invuln > 0) continue;
-          const ob = hurtBox(f);
-          if (Math.abs(f.x - e.x) < e.hw + F_W / 2 && Math.abs((f.y + ob.dy) - e.y) < e.hh + ob.hh) {
-            e.touchCd = ENEMY_TOUCH_CD;
-            const dir = Math.sign(f.x - e.x) || 1;
-            f.vx += dir * t.touchKb; f.vy = Math.min(f.vy, -240); f.grounded = false;
-            f.state = 'hitstun'; f.stateT = 0; f.hitstunFor = 0.28;
-            f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0;
-            this.events.push({ e: 'hit', x: f.x, y: f.y, dmg: t.dmg, heavy: t.dmg >= 12, vic: f.id, att: 'e' + e.eid });
-            this._damageHp(f, t.dmg, 'e' + e.eid);
-            break;
-          }
-        }
-      }
     }
 
     // Recycle stragglers behind the forward-only party so the encounter keeps
@@ -2094,7 +2100,7 @@ export class Game {
     e.y = t.fly ? this.stage.main.y - 190 - this.rng() * 150 : this.stage.main.y - e.hh;
     e.vx = 0; e.vy = 0; e.hp = e.maxHp;
     e.facing = -1; e.grounded = !t.fly;
-    e.touchCd = 0; e.hurt = 0; e.windup = 0; e.stagger = 0;
+    e.hurt = 0; e.windup = 0; e.stagger = 0;
     e.atkCd = (t.atkCd || 0) * (0.4 + this.rng() * 0.6);
     e.burn = null; e.focusId = null;
   }
@@ -2127,7 +2133,7 @@ export class Game {
       y: t.fly ? this.stage.main.y - 190 - this.rng() * 150 : this.stage.main.y - hh,
       vx: 0, vy: 0, hp, maxHp: hp,
       cr,
-      facing: -side, grounded: !t.fly, touchCd: 0, hurt: 0,
+      facing: -side, grounded: !t.fly, hurt: 0,
       windup: 0, atkCd: (t.atkCd || 0) * (0.4 + this.rng() * 0.6),   // stagger the first shot
       stagger: 0,
       temperament: ENEMY_TEMPERAMENTS[Math.floor(this.rng() * ENEMY_TEMPERAMENTS.length)],
@@ -2180,6 +2186,31 @@ export class Game {
       dmg: t.shotDmg || 7, kb: 260, ks: 4, r: 12,
     });
     this.events.push({ e: 'foefire', x: e.x, y: e.y, kind: e.kind });
+  }
+
+  // A melee creep's windup ends: swing a strike box ahead of the facing it
+  // locked when the telegraph began. Whoever is still inside gets shoved
+  // mostly sideways (a low pop, not a juggle launch) and a mercy window of
+  // invulnerability so a crowd can't chain-stun.
+  _enemyStrike(e, t, live) {
+    const half = (t.reach || 50) / 2;
+    const sx = e.x + e.facing * (e.hw + half);
+    for (const f of live) {
+      if (f.invuln > 0) continue;
+      const ob = hurtBox(f);
+      if (Math.abs(f.x - sx) < half + F_W / 2 && Math.abs((f.y + ob.dy) - e.y) < e.hh + 26 + ob.hh) {
+        const dir = Math.sign(f.x - e.x) || e.facing;
+        f.vx += dir * t.touchKb;
+        f.vy = Math.min(f.vy, -150);
+        f.grounded = false;
+        f.state = 'hitstun'; f.stateT = 0; f.hitstunFor = 0.26;
+        f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0;
+        this.events.push({ e: 'hit', x: f.x, y: f.y, dmg: t.dmg, heavy: t.dmg >= 12, vic: f.id, att: 'e' + e.eid });
+        this._damageHp(f, t.dmg, 'e' + e.eid);
+        f.invuln = Math.max(f.invuln, ENEMY_HIT_MERCY);
+      }
+    }
+    this.events.push({ e: 'strike', x: sx, y: e.y, kind: e.kind, facing: e.facing });
   }
 
   // ---------- hearts ----------
@@ -2323,7 +2354,6 @@ export class Game {
     e.stagger = 0.32;
     e.windup = 0;
     e.atkCd = Math.max(e.atkCd || 0, 0.2);
-    e.touchCd = Math.max(e.touchCd || 0, 0.32);
   }
 
   // ---------- practice bot ----------
@@ -2472,7 +2502,7 @@ export function gameFromSnapshot(players, snap, seed = 2) {
     return {
       eid: r[0], x: r[1], y: r[2], vx: 0, vy: 0, hp: r[3], maxHp: r[4] || t.hp,
       facing: r[5] || 1, kind, hw: t.w / 2, hh: t.h / 2,
-      grounded: !t.fly, touchCd: 0, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11], stagger: r[12] || 0,
+      grounded: !t.fly, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11], stagger: r[12] || 0,
     };
   });
   g.hearts = (snap.ht || []).map(r => ({
