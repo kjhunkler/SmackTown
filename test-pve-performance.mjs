@@ -1,11 +1,12 @@
-import { Game, interpolateEnemyRows } from './js/game.js';
+import { Game, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta } from './js/game.js';
 
 const build = {
   stats: { power: 0, speed: 0, defense: 0, agility: 0 },
   weapon: 'unarmed', abilities: [], augments: [],
 };
 const enemyCount = 48;
-const game = new Game([{ id: 'A', name: 'Alice', color: '#fff', build }], 7, 'expanse');
+const players = Array.from({ length: 8 }, (_, i) => ({ id: String.fromCharCode(65 + i), name: `Fighter ${i + 1}`, color: '#fff', build }));
+const game = new Game(players, 7, 'expanse');
 for (let i = 0; i < enemyCount; i++) {
   game.enemies.push({
     eid: i + 1, kind: 'grunt', hw: 22, hh: 26,
@@ -38,6 +39,22 @@ game.snapshotDelta(cache, 0, 1800);
 const idleDelta = game.snapshotDelta(cache, 0, 1800);
 const idleDeltaBytes = new TextEncoder().encode(JSON.stringify(idleDelta)).byteLength;
 if (idleDelta.dp[0].length || idleDelta.den[0].length || idleDelta.dht[0].length) throw new Error('Idle delta retained unchanged entities');
+const activeDelta = game.snapshotDelta({ p: new Map(), en: new Map(), ht: new Map() }, null, Infinity);
+const enemyBinary = packEnemyDelta(activeDelta.den);
+const unpackedEnemyDelta = unpackEnemyDelta(enemyBinary);
+if (JSON.stringify(unpackedEnemyDelta) !== JSON.stringify(activeDelta.den)) throw new Error('Binary enemy delta round-trip failed');
+for (const f of game.fighters) {
+  f.state = 'attack'; f.atk = 'jab'; f.stateT = 0.08;
+}
+const loadStart = performance.now();
+let serializedBytes = 0;
+for (let i = 0; i < 120; i++) {
+  game.step();
+  const snapshot = game.snapshot();
+  serializedBytes += new TextEncoder().encode(JSON.stringify(snapshot)).byteLength;
+  interpolateEnemyRows(before.en, snapshot.en, 0.5);
+}
+const combatLoadMs = performance.now() - loadStart;
 console.log(JSON.stringify({
   enemies: game.enemies.length,
   ticksPerRun: 600,
@@ -46,5 +63,9 @@ console.log(JSON.stringify({
   medianUsPerTick: +(samples[10] * 1000 / 600).toFixed(2),
   fullSnapshotBytes: snapshotBytes,
   idleDeltaBytes,
+  enemyDeltaBytes: enemyBinary.byteLength,
+  players: players.length,
+  combatLoadMs: +combatLoadMs.toFixed(2),
+  averageSnapshotBytes: Math.round(serializedBytes / 120),
   interpolation: 'PASS',
 }));

@@ -227,6 +227,7 @@ const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
 const ENEMY_BASE_MAX = 16;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 48;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
+const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger'];
 const ENEMY_BASE_SPAWN = 3.2;        // seconds between spawns at difficulty 0
 const DIFF_STEP = 40;                // run seconds per difficulty tier
 // Percent-keyed augments have no percent to read in co-op, so they retarget
@@ -329,6 +330,54 @@ const BURST_R0   = 12,   BURST_R1   = 20;    // burst radius vs charge
 // keep climbing linearly so a full overcharge (k=2) doubles the k=1 value.
 function chargeScale(base0, base1, k) {
   return k <= 1 ? base0 + (base1 - base0) * k : base1 * k;
+}
+
+// Compact wire format for high-volume enemy deltas. Full snapshots remain
+// JSON rows for host recovery; intermediate updates avoid repeated strings and
+// number formatting overhead.
+export function packEnemyDelta(delta) {
+  const [changed = [], removed = []] = delta || [];
+  const bytes = 4 + changed.length * 27 + removed.length * 4;
+  const view = new DataView(new ArrayBuffer(bytes));
+  let offset = 0;
+  view.setUint16(offset, changed.length, true); offset += 2;
+  view.setUint16(offset, removed.length, true); offset += 2;
+  for (const row of changed) {
+    view.setUint32(offset, row[0], true); offset += 4;
+    view.setFloat32(offset, row[1], true); offset += 4;
+    view.setFloat32(offset, row[2], true); offset += 4;
+    view.setFloat32(offset, row[3], true); offset += 4;
+    view.setFloat32(offset, row[4], true); offset += 4;
+    view.setInt8(offset, row[5]); offset++;
+    view.setUint8(offset, row[6]); offset++;
+    view.setUint8(offset, Math.max(0, ENEMY_KIND_IDS.indexOf(row[7]))); offset++;
+    view.setFloat32(offset, row[8], true); offset += 4;
+  }
+  for (const id of removed) { view.setUint32(offset, id, true); offset += 4; }
+  return view.buffer;
+}
+
+export function unpackEnemyDelta(buffer) {
+  const view = new DataView(buffer);
+  let offset = 0;
+  const changedCount = view.getUint16(offset, true); offset += 2;
+  const removedCount = view.getUint16(offset, true); offset += 2;
+  const changed = new Array(changedCount);
+  for (let i = 0; i < changedCount; i++) {
+    const id = view.getUint32(offset, true); offset += 4;
+    const x = view.getFloat32(offset, true); offset += 4;
+    const y = view.getFloat32(offset, true); offset += 4;
+    const hp = view.getFloat32(offset, true); offset += 4;
+    const maxHp = view.getFloat32(offset, true); offset += 4;
+    const facing = view.getInt8(offset); offset++;
+    const hurt = view.getUint8(offset); offset++;
+    const kind = ENEMY_KIND_IDS[view.getUint8(offset)] || 'grunt'; offset++;
+    const windup = view.getFloat32(offset, true); offset += 4;
+    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup];
+  }
+  const removed = new Array(removedCount);
+  for (let i = 0; i < removedCount; i++) { removed[i] = view.getUint32(offset, true); offset += 4; }
+  return [changed, removed];
 }
 
 // Charged strong attacks: holding the strong-attack control (finger kept

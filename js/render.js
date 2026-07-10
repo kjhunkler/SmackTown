@@ -89,6 +89,7 @@ export class Renderer {
     this.auras = new Map();          // fighter id -> {kind, t} bubble/counter overlays
     this.rings = [];                 // expanding shock rings {x,y,r0,r1,t,life,color,w}
     this.ambient = [];               // ambient weather: embers & ash (ruins), rain (neon heights)
+    this.enemySprites = new Map();   // cached static common-creep silhouettes
     this.setMap(DEFAULT_MAP);
     this.stars = Array.from({ length: 90 }, () => ({
       x: Math.random() * 2900 - 1450,
@@ -970,6 +971,16 @@ export class Renderer {
     ctx.save();
     ctx.translate(e.x, e.y + bob);
 
+    const sprite = !flash && !e.windup && !fly && e.kind !== 'brute' && e.kind !== 'slinger'
+      ? this._enemySprite(e.kind, ty) : null;
+    if (sprite) {
+      ctx.scale(e.facing || 1, 1);
+      ctx.drawImage(sprite.canvas, -w / 2 - sprite.pad, -h / 2 - sprite.pad);
+      ctx.restore();
+      if (e.hp < e.maxHp) this._enemyHealth(ctx, e, w, h);
+      return;
+    }
+
     // wind-up telegraph: a swelling ring that fills as the shot nears
     if (e.windup > 0) {
       const k = 1 - Math.min(1, e.windup / (ty.windup || 0.85));
@@ -1040,14 +1051,40 @@ export class Renderer {
     }
     ctx.restore();
 
-    // health pip once damaged
-    if (e.hp < e.maxHp) {
-      const bw = Math.max(30, w), frac = Math.max(0, e.hp / e.maxHp);
-      ctx.fillStyle = 'rgba(0,0,0,.5)';
-      roundRect(ctx, e.x - bw / 2, e.y - h / 2 - 13, bw, 5, 2); ctx.fill();
-      ctx.fillStyle = '#ff5470';
-      roundRect(ctx, e.x - bw / 2, e.y - h / 2 - 13, bw * frac, 5, 2); ctx.fill();
-    }
+    if (e.hp < e.maxHp) this._enemyHealth(ctx, e, w, h);
+  }
+
+  _enemyHealth(ctx, e, w, h) {
+    const bw = Math.max(30, w), frac = Math.max(0, e.hp / e.maxHp);
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
+    roundRect(ctx, e.x - bw / 2, e.y - h / 2 - 13, bw, 5, 2); ctx.fill();
+    ctx.fillStyle = '#ff5470';
+    roundRect(ctx, e.x - bw / 2, e.y - h / 2 - 13, bw * frac, 5, 2); ctx.fill();
+  }
+
+  _enemySprite(kind, ty) {
+    let sprite = this.enemySprites.get(kind);
+    if (sprite) return sprite;
+    const pad = 8, canvas = document.createElement('canvas');
+    canvas.width = ty.w + pad * 2; canvas.height = ty.h + pad * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(pad + ty.w / 2, pad + ty.h / 2);
+    const w = ty.w, h = ty.h, dark = this._shade(ty.color, -0.32);
+    ctx.fillStyle = ty.color;
+    roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(16, w * 0.32)); ctx.fill();
+    ctx.fillStyle = dark;
+    roundRect(ctx, -w / 2 + 5, 3, w - 10, h / 2 - 5, 8); ctx.fill();
+    const legH = ty.jump ? 12 : 8;
+    roundRect(ctx, -w / 2 + 4, h / 2 - legH + 2, w * 0.24, legH, 4); ctx.fill();
+    roundRect(ctx, w / 2 - w * 0.24 - 4, h / 2 - legH + 2, w * 0.24, legH, 4); ctx.fill();
+    const eyeR = Math.max(4, w * 0.12);
+    ctx.fillStyle = '#150a10';
+    ctx.beginPath(); ctx.arc(-w * 0.2 + w * 0.08, -h * 0.14, eyeR, 0, 7); ctx.arc(w * 0.24 + w * 0.08, -h * 0.14, eyeR, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-w * 0.2 + w * 0.08 + 1.6, -h * 0.14 - 1, eyeR * 0.36, 0, 7); ctx.arc(w * 0.24 + w * 0.08 + 1.6, -h * 0.14 - 1, eyeR * 0.36, 0, 7); ctx.fill();
+    sprite = { canvas, pad };
+    this.enemySprites.set(kind, sprite);
+    return sprite;
   }
 
   // Dropped heart: a pulsing pickup that blinks faster as it's about to fade.

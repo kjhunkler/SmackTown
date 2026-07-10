@@ -7,7 +7,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, platsAt, HEART_LIFE } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, platsAt, HEART_LIFE } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -1080,6 +1080,8 @@ function startSession(cfg) {
 // Cosmetic events the client already plays locally via prediction; the
 // host's copies are dropped for our own fighter to avoid double effects.
 const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'shockwave', 'gale', 'mend', 'duck']);
+const SNAPSHOT_INTEREST_RADIUS = 1800;
+const FULL_SNAPSHOT_TICKS = 60;
 
 class PerfStats {
   constructor() {
@@ -1420,6 +1422,8 @@ class Session {
               this.snapshotCaches.set(pid, cache);
             }
             const s = this.game.snapshotDelta(cache, fighter?.x ?? null, SNAPSHOT_INTEREST_RADIUS);
+            s.eb = packEnemyDelta(s.den);
+            delete s.den;
             s.ev = ev;
             s.ack = ack;
             net.send(pid, { t: 'snap', s });
@@ -1550,6 +1554,7 @@ class Session {
       }
       this.lastFullSnap = s;
     } else {
+      if (s.eb instanceof ArrayBuffer) s.den = unpackEnemyDelta(s.eb);
       for (const type of ['p', 'en', 'ht']) {
         const [changed, removed] = s['d' + type] || [[], []];
         for (const row of changed) this.entityRows[type].set(row[0], row);
