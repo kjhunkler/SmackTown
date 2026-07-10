@@ -1731,7 +1731,6 @@ class Session {
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
     }
     const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0 }));
-    const enemies = (b.s.en || []).map(e => ({ eid: e[0], x: e[1], y: e[2], hp: e[3], maxHp: e[4], facing: e[5], hurt: !!e[6], kind: e[7] || 'grunt', windup: e[8] || 0 }));
     const hearts = (b.s.ht || []).map(h => ({ hid: h[0], x: h[1], y: h[2], tLeft: h[3] || 0 }));
     const enemies = interpolateEnemyRows(a.s.en, b.s.en, k);
     const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;

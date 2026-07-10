@@ -107,9 +107,9 @@ export const MAX_BUILD_COST = (() => {
 
 // Expedition economy: credits earned this run, a pure function of the fighter's
 // authoritative score — so every peer derives the same total with nothing extra
-// on the wire. Damage chips in steadily; kills pay a bounty.
-export const CR_PER_DAMAGE = 2;
-export const CR_PER_KILL = 6;
+// on the wire. Each defeated enemy pays one credit.
+export const CR_PER_DAMAGE = 0;
+export const CR_PER_KILL = 1;
 export function earnedCredits(score) {
   if (!score) return 0;
   return Math.floor((score.dmg || 0) * CR_PER_DAMAGE + (score.ko || 0) * CR_PER_KILL);

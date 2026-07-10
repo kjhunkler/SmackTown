@@ -214,18 +214,18 @@ const RESPAWN_INVULN = 2.0;
 //   speed    chase speed             kbTaken  how far our hits fling it
 //   touchKb  shove dealt on a bump   fly/jump/ranged  behavior flags
 export const ENEMY_TYPES = {
-  grunt:   { hp: 30, speed: 150, accel: 900,  w: 44, h: 52, dmg: 8,  kbTaken: 0.60, touchKb: 280, color: '#c94f6d' },
-  runner:  { hp: 16, speed: 330, accel: 1600, w: 34, h: 38, dmg: 6,  kbTaken: 0.95, touchKb: 230, color: '#e8a33d' },
-  brute:   { hp: 95, speed: 90,  accel: 620,  w: 66, h: 74, dmg: 15, kbTaken: 0.26, touchKb: 470, color: '#8a56d6' },
-  hopper:  { hp: 26, speed: 155, accel: 980,  w: 42, h: 44, dmg: 8,  kbTaken: 0.62, touchKb: 300, color: '#3dc98f', jump: true },
-  flyer:   { hp: 20, speed: 170, accel: 720,  w: 40, h: 38, dmg: 7,  kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', fly: true },
-  slinger: { hp: 24, speed: 120, accel: 820,  w: 42, h: 48, dmg: 6,  kbTaken: 0.72, touchKb: 230, color: '#d94fb0',
+  grunt:   { hp: 9,  speed: 150, accel: 900,  w: 44, h: 52, dmg: 8,  kbTaken: 0.60, touchKb: 280, color: '#c94f6d' },
+  runner:  { hp: 5,  speed: 330, accel: 1600, w: 34, h: 38, dmg: 6,  kbTaken: 0.95, touchKb: 230, color: '#e8a33d' },
+  brute:   { hp: 29, speed: 90,  accel: 620,  w: 66, h: 74, dmg: 15, kbTaken: 0.26, touchKb: 470, color: '#8a56d6' },
+  hopper:  { hp: 8,  speed: 155, accel: 980,  w: 42, h: 44, dmg: 8,  kbTaken: 0.62, touchKb: 300, color: '#3dc98f', jump: true },
+  flyer:   { hp: 6,  speed: 170, accel: 720,  w: 40, h: 38, dmg: 7,  kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', fly: true },
+  slinger: { hp: 7,  speed: 120, accel: 820,  w: 42, h: 48, dmg: 6,  kbTaken: 0.72, touchKb: 230, color: '#d94fb0',
              ranged: true, shotDmg: 7, shotSpd: 360, range: 440, windup: 0.85, atkCd: 2.6 },
 };
 const ENEMY_TOUCH_CD = 0.8;          // per-creep cooldown between contact bumps
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
-const ENEMY_BASE_MAX = 8;            // living creeps at once at difficulty 0
-const ENEMY_MAX_CAP = 16;            // hard ceiling however long the run goes
+const ENEMY_BASE_MAX = 16;           // living creeps at once at difficulty 0
+const ENEMY_MAX_CAP = 48;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_BASE_SPAWN = 3.2;        // seconds between spawns at difficulty 0
 const DIFF_STEP = 40;                // run seconds per difficulty tier
 // Percent-keyed augments have no percent to read in co-op, so they retarget
@@ -394,6 +394,7 @@ export class Game {
     this.fighters = players.map((p, i) => this._spawnFighter(p, i));
     this.inputs = new Map();        // id -> latest input
     for (const f of this.fighters) this.inputs.set(f.id, blankInput());
+    this._liveFighters = [];        // reusable co-op query buffer
     this.hist = [];                 // recent positions per tick (lag compensation)
     this.lagComp = new Map();       // attacker id -> ticks to rewind their victims
   }
@@ -1791,8 +1792,11 @@ export class Game {
   _difficulty() { return Math.floor((this.tick * TICK) / DIFF_STEP); }
 
   _stepEnemies() {
-    const live = this.fighters.filter(f => !f.dead && !f.parked);
+    const live = this._liveFighters;
+    live.length = 0;
+    for (const f of this.fighters) if (!f.dead && !f.parked) live.push(f);
     const level = this._difficulty();
+    const plats = this.platsNow();
 
     // spawn: faster and up to a bigger swarm the longer the run goes
     const spawnEvery = Math.max(1.1, ENEMY_BASE_SPAWN - level * 0.22);
@@ -1849,7 +1853,7 @@ export class Game {
         if (e.vy >= 0) {
           const feet = e.y + e.hh;
           if (feet >= floor && feet <= floor + 46) { e.y = floor - e.hh; e.vy = 0; e.grounded = true; }
-          else for (const p of this.platsNow()) {
+          else for (const p of plats) {
             if (feet >= p.y && feet <= p.y + 22 && e.x > p.x && e.x < p.x + p.w) { e.y = p.y - e.hh; e.vy = 0; e.grounded = true; break; }
           }
         }
@@ -1879,10 +1883,16 @@ export class Game {
     }
 
     // cull the dead and any creep that fell too far behind the group
-    const cx = live.length ? live.reduce((s, f) => s + f.x, 0) / live.length : 0;
-    this.enemies = this.enemies.filter(e => e.hp > 0 && Math.abs(e.x - cx) < ENEMY_DESPAWN);
+    let cx = 0;
+    for (const f of live) cx += f.x;
+    cx = live.length ? cx / live.length : 0;
+    let kept = 0;
+    for (const e of this.enemies) {
+      if (e.hp > 0 && Math.abs(e.x - cx) < ENEMY_DESPAWN) this.enemies[kept++] = e;
+    }
+    this.enemies.length = kept;
 
-    this._stepHearts(live);
+    this._stepHearts(live, plats);
   }
 
   // Weighted pick of what wanders in next. Grunts stay common; tougher and
@@ -1936,7 +1946,7 @@ export class Game {
     this.hearts.push({ hid: nextEid++, x, y: y - 10, vx: (this.rng() * 2 - 1) * 70, vy: -260, grounded: false, t: 0, taken: false });
   }
 
-  _stepHearts(live) {
+  _stepHearts(live, plats) {
     const floor = this.stage.main.y;
     for (const h of this.hearts) {
       h.t += TICK;
@@ -1946,7 +1956,7 @@ export class Game {
         h.x += h.vx * TICK; h.y += h.vy * TICK;
         if (h.vy >= 0) {
           if (h.y >= floor - 12) { h.y = floor - 12; h.vy = 0; h.grounded = true; }
-          else for (const p of this.platsNow()) {
+          else for (const p of plats) {
             if (h.y >= p.y - 14 && h.y <= p.y + 6 && h.x > p.x && h.x < p.x + p.w) { h.y = p.y - 12; h.vy = 0; h.grounded = true; break; }
           }
         }
