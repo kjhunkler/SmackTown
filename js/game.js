@@ -241,6 +241,7 @@ export const ENEMY_TYPES = {
 const ENEMY_TOUCH_CD = 0.8;          // per-creep cooldown between contact bumps
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
 const ENEMY_RECYCLE_BEHIND = 1200;   // recycle stragglers ahead of the forward-only party
+const EXPANSE_BACKTRACK = 420;        // players may retreat, but never leave the active route view
 const ENEMY_BASE_MAX = 16;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 48;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
@@ -879,9 +880,9 @@ export class Game {
 
     this._collide(f);
     if (this.stage.infinite) {
-      f.x = Math.max(f.forwardX, f.x);
-      f.forwardX = f.x;
-      if (f.vx < 0) f.vx = 0;
+      f.forwardX = Math.max(f.forwardX, f.x);
+      const leftLimit = Math.max(0, f.forwardX - EXPANSE_BACKTRACK);
+      if (f.x < leftLimit) { f.x = leftLimit; if (f.vx < 0) f.vx = 0; }
     }
     this._tryLedgeGrab(f);
     this._decayInput(inp);

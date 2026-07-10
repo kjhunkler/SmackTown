@@ -365,7 +365,11 @@ export class Renderer {
         minY = Math.min(minY, f.y); maxY = Math.max(maxY, f.y);
       }
       const pad = 260;
-      const tx = (minX + maxX) / 2;
+      let tx = (minX + maxX) / 2;
+      if (this.mapId === 'expanse') {
+        this.expanseCamX = Math.max(this.expanseCamX ?? tx, tx);
+        tx = this.expanseCamX;
+      }
       const ty = (minY + maxY) / 2 - 40;
       const zx = W / (maxX - minX + pad * 2);
       const zy = H / (maxY - minY + pad * 2);
