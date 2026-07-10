@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, HEART_LIFE, EXPANSE_CAM_RETREAT } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, HEART_LIFE, EXPANSE_CAM_RETREAT } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -304,6 +304,29 @@ export class Renderer {
         // the swing itself: a short slash flare across the strike box, so
         // whiffs read as a dodged attack rather than nothing happening
         this.burst(ev.x, ev.y, 6, '#ffd9a0', 200);
+        break;
+      case 'boss':
+        // a boss bars the road: arrival flare + rumble
+        this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: 170, t: 0, life: 0.9, color: '#ff5470', w: 6 });
+        this.shake = Math.max(this.shake, 12);
+        break;
+      case 'bosswarn':
+        // ground marker where a delayed boss attack will land
+        this.rings.push({ x: ev.x, y: ev.y - 8, r0: 12, r1: ev.r || 150, t: 0, life: ev.life || 1, color: '#ff5470', w: 5 });
+        break;
+      case 'stomp':
+        this.burst(ev.x, ev.y, 16, '#c9b49a', 300);
+        this.shake = Math.max(this.shake, 14);
+        break;
+      case 'eruption':
+        this.burst(ev.x, ev.y, 20, '#ff8a4f', 380);
+        this.shake = Math.max(this.shake, 12);
+        break;
+      case 'bossdown':
+        // defeat fireworks to match the heart shower
+        this.burst(ev.x, ev.y, 40, '#ff9db3', 420);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 20, r1: 230, t: 0, life: 0.8, color: '#ff9db3', w: 6 });
+        this.shake = Math.max(this.shake, 16);
         break;
       case 'heart':
         this.burst(ev.x, ev.y, 16, '#ff9db3', 240);
@@ -1038,8 +1061,10 @@ export class Renderer {
     const flash = e.hurt;
     const fly = !!ty.fly;
     const bob = Math.sin(t * (fly ? 9 : 7) + e.eid) * (fly ? 4 : 2);
-    const base = flash ? '#ffffff' : ty.color;
-    const dark = flash ? '#ffe3ea' : this._shade(ty.color, -0.32);
+    // bosses wear their variation's color (Stone/Iron/Magma etc.)
+    const tint = ty.boss ? (BOSS_VARIANTS[e.kind]?.[e.variant || 0]?.color || ty.color) : ty.color;
+    const base = flash ? '#ffffff' : tint;
+    const dark = flash ? '#ffe3ea' : this._shade(tint, -0.32);
 
     ctx.save();
     ctx.translate(e.x, e.y + bob);
@@ -1047,10 +1072,16 @@ export class Renderer {
       ctx.strokeStyle = '#ffcf6a'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, Math.max(w, h) * .72, 0, 7); ctx.stroke();
     }
+    if (ty.boss) {
+      // a slow-pulsing aura so the boss reads as the centerpiece
+      ctx.strokeStyle = `rgba(255,84,112,${(0.25 + 0.15 * Math.sin(t * 3)).toFixed(2)})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(w, h) * 0.68 + 6 * Math.sin(t * 3), 0, 7); ctx.stroke();
+    }
     const temperamentColor = { bold: '#ff6a7a', cautious: '#bfe3ff', vengeful: '#ffcf6a', pack: '#b388ff' }[e.temperament];
     if (temperamentColor) { ctx.fillStyle = temperamentColor; ctx.beginPath(); ctx.arc(0, -h / 2 - 8, 3.5, 0, 7); ctx.fill(); }
 
-    const sprite = !flash && !e.windup && !fly && e.kind !== 'brute' && e.kind !== 'slinger'
+    const sprite = !flash && !e.windup && !fly && !ty.boss && e.kind !== 'brute' && e.kind !== 'slinger'
       ? this._enemySprite(e.kind, ty) : null;
     if (sprite) {
       ctx.scale(e.facing || 1, 1);
@@ -1097,8 +1128,8 @@ export class Renderer {
       roundRect(ctx, w / 2 - w * 0.24 - 4, h / 2 - legH + 2, w * 0.24, legH, 4); ctx.fill();
     }
 
-    // brute: a couple of horns to read as the heavy
-    if (e.kind === 'brute') {
+    // brutes and bosses: horns to read as the heavy
+    if (e.kind === 'brute' || ty.boss) {
       ctx.fillStyle = dark;
       for (const s of [-1, 1]) {
         ctx.beginPath();
@@ -1130,7 +1161,7 @@ export class Renderer {
     }
     ctx.restore();
 
-    if (e.hp < e.maxHp) this._enemyHealth(ctx, e, w, h);
+    if (e.hp < e.maxHp || ty.boss) this._enemyHealth(ctx, e, w, h);
   }
 
   _enemyHealth(ctx, e, w, h) {

@@ -1830,6 +1830,8 @@ class Session {
         this.buildHud();
         if (this.mode === 'host' && net) this.broadcastPlayers();
       }
+      if (ev.e === 'boss') UI.toast(`⚠️ ${ev.name} bars the road!`, 2600);
+      if (ev.e === 'bossdown') UI.toast(`🏆 ${ev.name || 'Boss'} defeated!`, 2600);
       if (ev.e === 'gameover') UI.toast('GAME!', 2000);
     }
   }

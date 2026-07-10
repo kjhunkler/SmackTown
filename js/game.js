@@ -252,7 +252,46 @@ export const ENEMY_TYPES = {
   flyer:   { hp: 6,  speed: 170, accel: 720,  w: 40, h: 38, dmg: 3, kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', reach: 48, windup: 0.45, atkCd: 1.9, fly: true },
   slinger: { hp: 7,  speed: 120, accel: 820,  w: 42, h: 48, dmg: 2, kbTaken: 0.72, touchKb: 230, color: '#d94fb0',
              ranged: true, shotDmg: 3, shotSpd: 360, range: 440, windup: 0.85, atkCd: 2.6 },
+  // Bosses: huge road-blocking creeps with three telegraphed attacks each
+  // (picked in _bossTelegraph, resolved in _bossAttack). They shrug off
+  // stagger, ignore crowd rules, and burst into hearts when they fall.
+  colossus: { hp: 150, speed: 74,  accel: 520, w: 132, h: 150, dmg: 7, kbTaken: 0.08, touchKb: 560, color: '#a08d76',
+              boss: true, reach: 120, windup: 0.85, atkCd: 2.6 },
+  tempest:  { hp: 110, speed: 205, accel: 660, w: 118, h: 104, dmg: 5, kbTaken: 0.12, touchKb: 430, color: '#7ec4ec',
+              boss: true, fly: true, reach: 100, windup: 0.75, atkCd: 2.4 },
+  warlock:  { hp: 120, speed: 95,  accel: 620, w: 108, h: 138, dmg: 5, kbTaken: 0.12, touchKb: 390, color: '#e88a4f',
+              boss: true, ranged: true, range: 560, shotDmg: 4, shotSpd: 430, reach: 96, windup: 0.9, atkCd: 2.8 },
 };
+
+// Three escalating variations per boss type. Which tier shows up follows the
+// difficulty level at the encounter, so late runs meet the nastier cousins.
+export const BOSS_KINDS = ['colossus', 'tempest', 'warlock'];
+export const BOSS_VARIANTS = {
+  colossus: [
+    { name: 'Stone Colossus', color: '#a08d76', hp: 1.0,  dmg: 1.0,  spd: 1.0 },
+    { name: 'Iron Colossus',  color: '#93a1c4', hp: 1.4,  dmg: 1.2,  spd: 1.12 },
+    { name: 'Magma Colossus', color: '#e8663a', hp: 1.8,  dmg: 1.45, spd: 1.22 },
+  ],
+  tempest: [
+    { name: 'Gale Tempest',  color: '#7ec4ec', hp: 1.0,  dmg: 1.0,  spd: 1.0 },
+    { name: 'Storm Tempest', color: '#5b8fe8', hp: 1.4,  dmg: 1.2,  spd: 1.12 },
+    { name: 'Void Tempest',  color: '#8a5fd6', hp: 1.8,  dmg: 1.45, spd: 1.22 },
+  ],
+  warlock: [
+    { name: 'Ember Warlock', color: '#e88a4f', hp: 1.0,  dmg: 1.0,  spd: 1.0 },
+    { name: 'Hex Warlock',   color: '#c44fe8', hp: 1.4,  dmg: 1.2,  spd: 1.12 },
+    { name: 'Doom Warlock',  color: '#e84f6a', hp: 1.8,  dmg: 1.45, spd: 1.22 },
+  ],
+};
+// Per-type attack telegraphs (seconds of windup per attack index).
+const BOSS_ATTACKS = {
+  colossus: [0.85, 1.15, 0.9],   // 0 slam · 1 stomp · 2 charge
+  tempest:  [0.7, 0.95, 0.9],    // 0 talon · 1 dive · 2 volley
+  warlock:  [0.9, 1.25, 0.95],   // 0 bolt burst · 1 eruption · 2 nova
+};
+const BOSS_REGION_EVERY = 3;         // a boss bars the road every Nth biome region
+const BOSS_SPAWN_SLOW = 5.0;         // trickle spawn cadence floor while a boss lives
+const BOSS_HEARTS = 10;              // defeat fireworks: hearts flung in all directions
 const ENEMY_HIT_MERCY = 0.55;        // post-hit invulnerability so a swarm can't chain-stun
 const ENEMY_SEP_PUSH = 300;          // max px/s creeps shoulder each other apart (beats any chase speed)
 const ENEMY_SEP_GAP = 0.9;           // fraction of summed half-widths creeps keep between centers
@@ -263,7 +302,7 @@ export const EXPANSE_CAM_RETREAT = 260; // how far the held camera eases back be
 const ENEMY_BASE_MAX = 14;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 36;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
-const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger'];
+const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger', 'colossus', 'tempest', 'warlock'];
 const ENEMY_TEMPERAMENTS = ['bold', 'cautious', 'vengeful', 'pack'];
 const BIOME_ENEMY_WEIGHTS = {
   battlefield: { flyer: 1, hopper: 1 },
@@ -394,7 +433,7 @@ function chargeScale(base0, base1, k) {
 // number formatting overhead.
 export function packEnemyDelta(delta) {
   const [changed = [], removed = []] = delta || [];
-  const bytes = 4 + changed.length * 35 + removed.length * 4;
+  const bytes = 4 + changed.length * 36 + removed.length * 4;
   const view = new DataView(new ArrayBuffer(bytes));
   let offset = 0;
   view.setUint16(offset, changed.length, true); offset += 2;
@@ -413,6 +452,7 @@ export function packEnemyDelta(delta) {
     view.setUint8(offset, Math.max(0, ENEMY_TEMPERAMENTS.indexOf(row[10]))); offset++;
     view.setUint8(offset, row[11] ? 1 : 0); offset++;
     view.setFloat32(offset, row[12] || 0, true); offset += 4;
+    view.setUint8(offset, row[13] || 0); offset++;
   }
   for (const id of removed) { view.setUint32(offset, id, true); offset += 4; }
   return view.buffer;
@@ -440,7 +480,8 @@ export function unpackEnemyDelta(buffer) {
     const temperament = ENEMY_TEMPERAMENTS[view.getUint8(offset)] || 'bold'; offset++;
     const elite = view.getUint8(offset); offset++;
     const stagger = r2(view.getFloat32(offset, true)); offset += 4;
-    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, cr, temperament, elite, stagger];
+    const variant = view.getUint8(offset); offset++;
+    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, cr, temperament, elite, stagger, variant];
   }
   const removed = new Array(removedCount);
   for (let i = 0; i < removedCount; i++) { removed[i] = view.getUint32(offset, true); offset += 4; }
@@ -1552,7 +1593,7 @@ export class Game {
         if (pr.foe) continue;                          // creeps' own shots don't hit creeps
         const att = this.fighters.find(x => x.id === pr.owner);
         if (!att) continue;
-        const radius = pr.r + 40;
+        const radius = pr.r + 80;   // pad covers the widest body (bosses)
         const c0 = Math.floor((pr.x - radius) / ENEMY_GRID_CELL);
         const c1 = Math.floor((pr.x + radius) / ENEMY_GRID_CELL);
         for (let cell = c0; cell <= c1 && pr.ttl > 0; cell++) {
@@ -1633,8 +1674,8 @@ export class Game {
     }
     // co-op: the same swing also carves into any creeps it overlaps
     if (this.coop) {
-      const c0 = Math.floor((cx - hb.hw - 40) / ENEMY_GRID_CELL);
-      const c1 = Math.floor((cx + hb.hw + 40) / ENEMY_GRID_CELL);
+      const c0 = Math.floor((cx - hb.hw - 80) / ENEMY_GRID_CELL);   // pad covers the widest body (bosses)
+      const c1 = Math.floor((cx + hb.hw + 80) / ENEMY_GRID_CELL);
       for (let cell = c0; cell <= c1; cell++) {
         const enemies = this._enemyGrid.get(cell);
         if (!enemies) continue;
@@ -2003,10 +2044,18 @@ export class Game {
     const level = this._difficulty();
     const plats = this.platsNow();
 
+    let bossAlive = false;
+    for (const e of this.enemies) {
+      if (e.hp > 0 && (ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt).boss) { bossAlive = true; break; }
+    }
+
     if (live.length) {
       this.runT += TICK;
-      // spawn: faster and up to a bigger swarm the longer the run goes
-      const spawnEvery = Math.max(ENEMY_MIN_SPAWN, ENEMY_BASE_SPAWN - level * ENEMY_SPAWN_RAMP);
+      // spawn: faster and up to a bigger swarm the longer the run goes —
+      // but while a boss holds the field, the trickle slows to a drip so
+      // the duel stays the show
+      let spawnEvery = Math.max(ENEMY_MIN_SPAWN, ENEMY_BASE_SPAWN - level * ENEMY_SPAWN_RAMP);
+      if (bossAlive) spawnEvery = Math.max(spawnEvery, BOSS_SPAWN_SLOW);
       const maxEnemies = Math.min(ENEMY_MAX_CAP, ENEMY_BASE_MAX + level * ENEMY_CAP_PER_LEVEL);
       let partyX = 0;
       for (const f of live) partyX += f.x;
@@ -2015,7 +2064,11 @@ export class Game {
       if (this._biomeRegion == null) this._biomeRegion = biome.region;
       else if (biome.region !== this._biomeRegion) {
         this._biomeRegion = biome.region;
-        this._spawnBiomePatrol(live, level, maxEnemies, biome.id);
+        // every third region a boss bars the road instead of the patrol
+        if (Math.abs(biome.region) % BOSS_REGION_EVERY === 2 && !bossAlive) {
+          this._spawnBoss(live, level);
+          bossAlive = true;
+        } else this._spawnBiomePatrol(live, level, maxEnemies, biome.id);
       }
       const lowParty = live.every(f => f.hp / f.maxHp < 0.38);
       if (lowParty && !this.recoveryT && this.enemies.length < maxEnemies - 2) {
@@ -2027,7 +2080,7 @@ export class Game {
       this.enemySpawnT -= TICK;
       if (this.enemySpawnT <= 0 && this.recoveryT <= 0 && this.enemies.length < maxEnemies) {
         this.enemySpawnT = spawnEvery;
-        const count = level > 0 && this.rng() < 0.28 ? Math.min(3, maxEnemies - this.enemies.length) : 1;
+        const count = !bossAlive && level > 0 && this.rng() < 0.28 ? Math.min(3, maxEnemies - this.enemies.length) : 1;
         const side = this.rng() < 0.5 ? -1 : 1;
         for (let i = 0; i < count; i++) this._spawnEnemy(live, level, side, i, count);
       }
@@ -2051,6 +2104,13 @@ export class Game {
         e.windup = 0;
         e.vx = approach(e.vx, 0, t.accel * TICK);
         if (!t.fly) e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+      } else if (e.rushT > 0) {
+        // boss mid-rush (charge / dive): barrel along, clipping whoever it hits
+        e.rushT -= TICK;
+        if (!t.fly) e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+        this._bossRushContact(e, t, live);
+        if (t.fly && e.y > floor - e.hh - 6) { e.y = floor - e.hh - 6; e.vy = 0; e.rushT = 0; }
+        if (e.rushT <= 0) { e.vx *= 0.25; if (t.fly) e.vy = -180; e.rushHit = null; }
       } else if (e.windup > 0) {
         // telegraphing: plant in place, then loose the shot / swing the strike
         e.windup -= TICK;
@@ -2059,24 +2119,25 @@ export class Game {
         else e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
         if (e.windup <= 0) {
           e.windup = 0;
-          if (t.ranged) this._enemyFire(e, t, tgt);
+          if (t.boss) this._bossAttack(e, t, live);
+          else if (t.ranged) this._enemyFire(e, t, tgt);
           else this._enemyStrike(e, t, live);
         }
       } else if (t.fly) {
         // flyer: home straight in at altitude, ignoring gravity, holding at
         // the edge of its strike arc instead of parking inside the target
         if (tgt) {
-          const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1);
+          const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1) * (t.boss ? this._bossVar(e).spd : 1);
           const hold = Math.abs(tgt.x - e.x) < (t.reach + e.hw) * 0.85;
           let want = hold ? 0 : Math.sign(tgt.x - e.x) * speed;
-          if (want !== 0 && this._enemyBlocked(e, t, Math.sign(want))) want = 0;
+          if (want !== 0 && !t.boss && this._enemyBlocked(e, t, Math.sign(want))) want = 0;
           e.vx = approach(e.vx, want, t.accel * TICK);
           e.vy = approach(e.vy, clamp(((tgt.y - 30) - e.y) * 3, -t.speed, t.speed), t.accel * TICK);
         } else { e.vx = approach(e.vx, 0, t.accel * TICK); e.vy = approach(e.vy, 0, t.accel * TICK); }
       } else {
         // ground types: chase under gravity
         e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
-        const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1);
+        const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1) * (t.boss ? this._bossVar(e).spd : 1);
         let desired = tgt ? Math.sign(tgt.x - e.x) * speed : 0;
         // melee creeps stop at the edge of their strike arc: the swarm forms
         // a fightable front line rather than a pile standing inside its prey
@@ -2084,12 +2145,12 @@ export class Game {
         if (e.temperament === 'cautious' && tgt && !t.ranged && Math.abs(tgt.x - e.x) < 115) desired = -Math.sign(tgt.x - e.x) * speed * 0.55;
         // queue discipline: never push into a packmate directly ahead — wait
         // for the line to move instead of compressing it into a blob
-        if (desired !== 0 && this._enemyBlocked(e, t, Math.sign(desired))) desired = 0;
+        if (desired !== 0 && !t.boss && this._enemyBlocked(e, t, Math.sign(desired))) desired = 0;
         if (t.ranged && tgt) {
           const d = Math.abs(tgt.x - e.x);
           if (d < t.range * 0.65) desired = Math.sign(e.x - tgt.x) * t.speed * 0.6;  // kite back
           else if (d < t.range) desired = 0;                                          // hold at range
-          if (e.atkCd <= 0 && d < t.range * 1.15 && Math.abs(tgt.y - e.y) < 220) {
+          if (!t.boss && e.atkCd <= 0 && d < t.range * 1.15 && Math.abs(tgt.y - e.y) < 220) {
             e.windup = t.windup; e.atkCd = t.atkCd;
             this.events.push({ e: 'telegraph', x: e.x, y: e.y, kind: e.kind });
           }
@@ -2102,13 +2163,19 @@ export class Game {
       // melee types: plant and telegraph a swing once a fighter is in reach.
       // Nothing lands until the windup ends — step out of the arc (or stagger
       // the creep with a hit) and the swing whiffs.
-      if (!t.ranged && e.stagger <= 0 && e.windup <= 0 && e.atkCd <= 0 && tgt
+      if (!t.ranged && !t.boss && e.stagger <= 0 && e.windup <= 0 && e.atkCd <= 0 && tgt
           && (t.fly || e.grounded)
           && Math.abs(tgt.x - e.x) < t.reach + e.hw + F_W / 2
           && Math.abs(tgt.y - e.y) < e.hh + F_H / 2 + 26) {
         e.windup = t.windup;
         e.atkCd = t.atkCd * (0.75 + this.rng() * 0.5);
         this.events.push({ e: 'telegraph', x: e.x, y: e.y, kind: e.kind });
+      }
+
+      // bosses: once in engagement range, pick one of three telegraphed attacks
+      if (t.boss && tgt && e.stagger <= 0 && e.windup <= 0 && e.rushT <= 0 && e.atkCd <= 0
+          && (t.fly || e.grounded) && Math.abs(tgt.x - e.x) < 640) {
+        this._bossTelegraph(e, t, tgt);
       }
 
       e.x += e.vx * TICK;
@@ -2142,8 +2209,11 @@ export class Game {
       cx /= live.length;
       let kept = 0;
       for (const e of this.enemies) {
-        if (e.hp <= 0 || e.x > cx + ENEMY_DESPAWN) continue;
-        if (e.x < cx - ENEMY_RECYCLE_BEHIND) this._recycleEnemy(e, cx);
+        const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
+        // bosses never teleport-recycle (that would heal-and-ambush); a party
+        // that outruns one far enough simply escapes it
+        if (e.hp <= 0 || e.x > cx + ENEMY_DESPAWN || (t.boss && e.x < cx - ENEMY_DESPAWN)) continue;
+        if (!t.boss && e.x < cx - ENEMY_RECYCLE_BEHIND) this._recycleEnemy(e, cx);
         this.enemies[kept++] = e;
       }
       this.enemies.length = kept;
@@ -2249,7 +2319,36 @@ export class Game {
       temperament: ENEMY_TEMPERAMENTS[Math.floor(this.rng() * ENEMY_TEMPERAMENTS.length)],
       focusId: null,
       elite,
+      variant: 0, rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
     });
+  }
+
+  // A boss bars the road ahead of the party. Type rolls on the run rng; the
+  // variation tier climbs with the difficulty level, so late runs meet the
+  // nastier cousins of each boss.
+  _spawnBoss(live, level) {
+    const kind = BOSS_KINDS[Math.floor(this.rng() * BOSS_KINDS.length)];
+    const variant = Math.min(2, Math.floor(level / 4));
+    const t = ENEMY_TYPES[kind];
+    const v = BOSS_VARIANTS[kind][variant];
+    const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
+    const hw = t.w / 2, hh = t.h / 2;
+    const hp = Math.round(t.hp * v.hp * (1 + Math.min(1, level * 0.05)));
+    const x = cx + 900;
+    const y = t.fly ? this.stage.main.y - 220 : this.stage.main.y - hh;
+    this.enemies.push({
+      eid: nextEid++, kind, hw, hh, x, y,
+      vx: 0, vy: 0, hp, maxHp: hp,
+      cr: 25 + level * 5 + variant * 10,      // a real bounty on top of the heart burst
+      facing: -1, grounded: !t.fly, hurt: 0,
+      windup: 0, atkCd: 1.6,                  // a beat of menace before the first telegraph
+      stagger: 0,
+      temperament: 'bold',
+      focusId: null,
+      elite: false,
+      variant, rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
+    });
+    this.events.push({ e: 'boss', name: v.name, kind, variant, x, y });
   }
 
   _spawnBiomePatrol(live, level, maxEnemies, biome) {
@@ -2302,31 +2401,157 @@ export class Game {
   // locked when the telegraph began. Whoever is still inside gets shoved
   // mostly sideways (a low pop, not a juggle launch) and a mercy window of
   // invulnerability so a crowd can't chain-stun.
-  _enemyStrike(e, t, live) {
+  _enemyStrike(e, t, live, dmgMult = 1) {
     const half = (t.reach || 50) / 2;
     const sx = e.x + e.facing * (e.hw + half);
     for (const f of live) {
       if (f.invuln > 0) continue;
       const ob = hurtBox(f);
       if (Math.abs(f.x - sx) < half + F_W / 2 && Math.abs((f.y + ob.dy) - e.y) < e.hh + 26 + ob.hh) {
+        const dmg = t.dmg * dmgMult;
         const dir = Math.sign(f.x - e.x) || e.facing;
         f.vx += dir * t.touchKb;
         f.vy = Math.min(f.vy, -150);
         f.grounded = false;
         f.state = 'hitstun'; f.stateT = 0; f.hitstunFor = 0.26;
         f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0;
-        this.events.push({ e: 'hit', x: f.x, y: f.y, dmg: t.dmg, heavy: t.dmg >= 12, vic: f.id, att: 'e' + e.eid });
-        this._damageHp(f, t.dmg, 'e' + e.eid);
+        this.events.push({ e: 'hit', x: f.x, y: f.y, dmg: Math.round(dmg), heavy: dmg >= 6, vic: f.id, att: 'e' + e.eid });
+        this._damageHp(f, dmg, 'e' + e.eid);
         f.invuln = Math.max(f.invuln, ENEMY_HIT_MERCY);
       }
     }
     this.events.push({ e: 'strike', x: sx, y: e.y, kind: e.kind, facing: e.facing });
   }
 
+  // ---------- bosses ----------
+
+  _bossVar(e) { return (BOSS_VARIANTS[e.kind] || BOSS_VARIANTS.colossus)[e.variant || 0] || BOSS_VARIANTS[e.kind][0]; }
+
+  // Every boss blow funnels through here: heavy shove, hitstun, and the same
+  // post-hit mercy window regular creeps grant.
+  _bossHit(e, t, f, dmg, kb, pop) {
+    const dir = Math.sign(f.x - e.x) || e.facing;
+    f.vx += dir * kb;
+    f.vy = Math.min(f.vy, pop);
+    f.grounded = false;
+    f.state = 'hitstun'; f.stateT = 0; f.hitstunFor = 0.3;
+    f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0;
+    this.events.push({ e: 'hit', x: f.x, y: f.y, dmg: Math.round(dmg), heavy: true, vic: f.id, att: 'e' + e.eid });
+    this._damageHp(f, dmg, 'e' + e.eid);
+    f.invuln = Math.max(f.invuln, ENEMY_HIT_MERCY);
+  }
+
+  // Pick which of the three attacks to telegraph, by spacing with a dash of
+  // rng. Aim is locked NOW — spot attacks land where the target stood when
+  // the windup began, so watching the telegraph is what saves you.
+  _bossTelegraph(e, t, tgt) {
+    const dx = Math.abs(tgt.x - e.x);
+    let atk;
+    if (e.kind === 'colossus') atk = dx < t.reach + e.hw ? 0 : dx < 460 && this.rng() < 0.55 ? 1 : 2;
+    else if (e.kind === 'tempest') atk = dx < t.reach + e.hw && Math.abs(tgt.y - e.y) < 140 ? 0 : this.rng() < 0.5 ? 1 : 2;
+    else atk = dx < 190 ? 2 : this.rng() < 0.55 ? 0 : 1;
+    e.atkKind = atk;
+    e.aimX = tgt.x; e.aimY = tgt.y;
+    e.windup = BOSS_ATTACKS[e.kind][atk];
+    e.atkCd = t.atkCd * (0.8 + this.rng() * 0.4);
+    this.events.push({ e: 'telegraph', x: e.x, y: e.y, kind: e.kind });
+    // the warlock's eruption marks its landing spot on the ground
+    if (e.kind === 'warlock' && atk === 1) {
+      this.events.push({ e: 'bosswarn', x: e.aimX, y: this.stage.main.y, r: 150, life: e.windup });
+    }
+  }
+
+  // The windup ended: resolve whichever attack was telegraphed.
+  _bossAttack(e, t, live) {
+    const v = this._bossVar(e);
+    const dmg = t.dmg * v.dmg;
+    const a = e.atkKind | 0;
+    if (e.kind === 'colossus') {
+      if (a === 0) this._enemyStrike(e, t, live, v.dmg);           // slam: huge frontal swing
+      else if (a === 1) {
+        // stomp: a grounded shockwave on both sides — jump to dodge it
+        this.events.push({ e: 'stomp', x: e.x, y: this.stage.main.y });
+        for (const f of live) {
+          if (f.invuln > 0 || !f.grounded) continue;
+          if (Math.abs(f.x - e.x) < 330 && Math.abs(f.y - e.y) < 190) this._bossHit(e, t, f, dmg, t.touchKb * 0.8, -420);
+        }
+      } else {
+        // charge: barrel down the lane in the locked facing
+        e.rushT = 0.85; e.rushHit = new Set();
+        e.vx = e.facing * 640 * v.spd;
+        this.events.push({ e: 'strike', x: e.x, y: e.y, kind: e.kind, facing: e.facing });
+      }
+    } else if (e.kind === 'tempest') {
+      if (a === 0) this._enemyStrike(e, t, live, v.dmg);           // talon rake
+      else if (a === 1) {
+        // dive through the marked spot, pulling up after
+        const dx = e.aimX - e.x, dy = (e.aimY + 20) - e.y;
+        const n = Math.hypot(dx, dy) || 1;
+        e.rushT = 0.55; e.rushHit = new Set();
+        e.vx = dx / n * 820 * v.spd; e.vy = dy / n * 820 * v.spd;
+        this.events.push({ e: 'strike', x: e.x, y: e.y, kind: e.kind, facing: e.facing });
+      } else this._bossShots(e, t, 4, 0.3, v.dmg);                 // volley: fan of four
+    } else {
+      if (a === 0) this._bossShots(e, t, 3, 0.12, v.dmg);          // bolt burst
+      else if (a === 1) {
+        // eruption: the marked ground detonates
+        const gy = this.stage.main.y;
+        this.events.push({ e: 'eruption', x: e.aimX, y: gy });
+        for (const f of live) {
+          if (f.invuln > 0) continue;
+          if (Math.abs(f.x - e.aimX) < 150 && f.y > gy - 200) this._bossHit(e, t, f, dmg * 1.2, 240, -520);
+        }
+      } else this._bossShotsRadial(e, t, 8, v.dmg);                // nova: ring of bolts
+    }
+  }
+
+  _bossShots(e, t, n, spread, dmgMult) {
+    const base = Math.atan2((e.aimY - 8) - e.y, e.aimX - e.x);
+    const spd = t.shotSpd || 430;
+    for (let i = 0; i < n; i++) {
+      const ang = base + (n > 1 ? (i / (n - 1) - 0.5) * 2 * spread : 0);
+      this.projectiles.push({
+        eid: nextEid++, kind: 'foeshot', owner: 'e' + e.eid, foe: true,
+        x: e.x + Math.cos(ang) * (e.hw + 10), y: e.y - 6 + Math.sin(ang) * 12,
+        vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        ttl: 2.6, dmg: (t.shotDmg || 4) * dmgMult, kb: 300, ks: 4, r: 13,
+      });
+    }
+    this.events.push({ e: 'foefire', x: e.x, y: e.y, kind: e.kind });
+  }
+
+  _bossShotsRadial(e, t, n, dmgMult) {
+    const spd = (t.shotSpd || 430) * 0.85;
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2;
+      this.projectiles.push({
+        eid: nextEid++, kind: 'foeshot', owner: 'e' + e.eid, foe: true,
+        x: e.x + Math.cos(ang) * (e.hw + 10), y: e.y - 6 + Math.sin(ang) * (e.hh * 0.5),
+        vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        ttl: 2.2, dmg: (t.shotDmg || 4) * dmgMult, kb: 280, ks: 4, r: 13,
+      });
+    }
+    this.events.push({ e: 'foefire', x: e.x, y: e.y, kind: e.kind });
+  }
+
+  // Contact damage while a boss charge/dive is in flight: each fighter can
+  // only be clipped once per rush.
+  _bossRushContact(e, t, live) {
+    const v = this._bossVar(e);
+    for (const f of live) {
+      if (f.invuln > 0 || e.rushHit?.has(f.id)) continue;
+      const ob = hurtBox(f);
+      if (Math.abs(f.x - e.x) < e.hw + F_W / 2 && Math.abs((f.y + ob.dy) - e.y) < e.hh + ob.hh) {
+        e.rushHit?.add(f.id);
+        this._bossHit(e, t, f, t.dmg * v.dmg, t.touchKb, -300);
+      }
+    }
+  }
+
   // ---------- hearts ----------
 
-  _spawnHeart(x, y) {
-    this.hearts.push({ hid: nextEid++, x, y: y - 10, vx: (this.rng() * 2 - 1) * 70, vy: -260, grounded: false, t: 0, taken: false });
+  _spawnHeart(x, y, vx = (this.rng() * 2 - 1) * 70, vy = -260) {
+    this.hearts.push({ hid: nextEid++, x, y: y - 10, vx, vy, grounded: false, t: 0, taken: false });
   }
 
   _stepHearts(live, plats) {
@@ -2454,13 +2679,23 @@ export class Game {
       if (att.st.augments.includes('reaper')) att.hp = Math.min(att.maxHp, att.hp + att.maxHp * 0.12);
     }
     this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid, kind: e.kind, cr: e.cr || 1, att: att?.id || null });
-    if (this.rng() < HEART_DROP_CHANCE) this._spawnHeart(e.x, e.y);
+    const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
+    if (t.boss) {
+      // defeat fireworks: hearts burst in every direction for the whole party
+      const n = BOSS_HEARTS + (e.variant || 0) * 2;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const spd = 240 + this.rng() * 220;
+        this._spawnHeart(e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd - 340);
+      }
+      this.events.push({ e: 'bossdown', x: e.x, y: e.y, kind: e.kind, variant: e.variant || 0, name: this._bossVar(e).name });
+    } else if (this.rng() < HEART_DROP_CHANCE) this._spawnHeart(e.x, e.y);
   }
 
   // Small enemies lose their attack and contact priority when struck. Brutes
   // deliberately power through hits, giving the roster a readable exception.
   _staggerEnemy(e) {
-    if (e.kind === 'brute' || e.hp <= 0) return;
+    if (e.kind === 'brute' || ENEMY_TYPES[e.kind]?.boss || e.hp <= 0) return;
     e.stagger = 0.32;
     e.windup = 0;
     e.atkCd = Math.max(e.atkCd || 0, 0.2);
@@ -2566,7 +2801,7 @@ export class Game {
         ];
       }),
       p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
-      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0)]),
+      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0]),
       ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),
     };
@@ -2612,7 +2847,8 @@ export function gameFromSnapshot(players, snap, seed = 2) {
     return {
       eid: r[0], x: r[1], y: r[2], vx: 0, vy: 0, hp: r[3], maxHp: r[4] || t.hp,
       facing: r[5] || 1, kind, hw: t.w / 2, hh: t.h / 2,
-      grounded: !t.fly, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11], stagger: r[12] || 0,
+      grounded: !t.fly, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11], stagger: r[12] || 0, variant: r[13] || 0,
+      rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
     };
   });
   g.hearts = (snap.ht || []).map(r => ({
@@ -2685,7 +2921,7 @@ export function interpolateEnemyRows(aRows, bRows, k, from = new Map(), out = []
     view.eid = e2[0];
     view.x = e1[1] + (e2[1] - e1[1]) * k;
     view.y = e1[2] + (e2[2] - e1[2]) * k;
-    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11]; view.stagger = e2[12] || 0;
+    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11]; view.stagger = e2[12] || 0; view.variant = e2[13] || 0;
   }
   return out;
 }
