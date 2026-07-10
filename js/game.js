@@ -253,6 +253,14 @@ const BIOME_ENEMY_WEIGHTS = {
   foundry: { brute: 3, slinger: 1 },
   garden: { hopper: 3, runner: 1 },
 };
+const BIOME_PATROLS = {
+  battlefield: ['flyer', 'hopper', 'grunt'],
+  flatlands: ['runner', 'runner', 'hopper'],
+  skyline: ['flyer', 'slinger', 'flyer'],
+  ruins: ['brute', 'grunt', 'grunt'],
+  foundry: ['brute', 'slinger', 'grunt'],
+  garden: ['hopper', 'hopper', 'runner'],
+};
 const ENEMY_BASE_SPAWN = 2.4;        // seconds between spawns at difficulty 0
 const ENEMY_MIN_SPAWN = 0.55;        // fastest spawn cadence at high difficulty
 const ENEMY_CAP_PER_LEVEL = 3;       // additional living creeps per difficulty tier
@@ -1895,6 +1903,15 @@ export class Game {
     // spawn: faster and up to a bigger swarm the longer the run goes
     const spawnEvery = Math.max(ENEMY_MIN_SPAWN, ENEMY_BASE_SPAWN - level * 0.30);
     const maxEnemies = Math.min(ENEMY_MAX_CAP, ENEMY_BASE_MAX + level * ENEMY_CAP_PER_LEVEL);
+    let partyX = 0;
+    for (const f of live) partyX += f.x;
+    partyX = live.length ? partyX / live.length : 0;
+    const biome = expanseBiomeAt(this.seed, partyX);
+    if (this._biomeRegion == null) this._biomeRegion = biome.region;
+    else if (biome.region !== this._biomeRegion) {
+      this._biomeRegion = biome.region;
+      this._spawnBiomePatrol(live, level, maxEnemies, biome.id);
+    }
     this.enemySpawnT -= TICK;
     if (live.length && this.enemySpawnT <= 0 && this.enemies.length < maxEnemies) {
       this.enemySpawnT = spawnEvery;
@@ -2007,10 +2024,10 @@ export class Game {
     return 'grunt';
   }
 
-  _spawnEnemy(live, level, side = this.rng() < 0.5 ? -1 : 1, slot = 0, count = 1) {
+  _spawnEnemy(live, level, side = this.rng() < 0.5 ? -1 : 1, slot = 0, count = 1, forcedKind = null) {
     const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
     const biome = expanseBiomeAt(this.seed, cx).id;
-    const kind = this._pickEnemyKind(level, biome);
+    const kind = forcedKind || this._pickEnemyKind(level, biome);
     const t = ENEMY_TYPES[kind];
     const hp = Math.round(t.hp * (1 + Math.min(1.5, level * 0.1)));   // gentle HP creep
     const cr = 1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0);
@@ -2027,6 +2044,19 @@ export class Game {
       temperament: ENEMY_TEMPERAMENTS[Math.floor(this.rng() * ENEMY_TEMPERAMENTS.length)],
       focusId: null,
     });
+  }
+
+  _spawnBiomePatrol(live, level, maxEnemies, biome) {
+    const choices = BIOME_PATROLS[biome] || BIOME_PATROLS.battlefield;
+    const unlocked = choices.filter(kind => {
+      const minLevel = { grunt: 0, runner: 1, hopper: 1, flyer: 2, slinger: 2, brute: 3 }[kind];
+      return level >= minLevel;
+    });
+    const count = Math.min(Math.max(2, unlocked.length), maxEnemies - this.enemies.length);
+    if (!count || !unlocked.length) return;
+    const side = this.rng() < 0.5 ? -1 : 1;
+    for (let i = 0; i < count; i++) this._spawnEnemy(live, level, side, i, count, unlocked[i % unlocked.length]);
+    this.events.push({ e: 'patrol', biome, count });
   }
 
   _enemyTarget(e, live) {
