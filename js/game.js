@@ -397,7 +397,6 @@ export class Game {
     for (const f of this.fighters) this.inputs.set(f.id, blankInput());
     this._liveFighters = [];        // reusable co-op query buffer
     this._enemyGrid = new Map();    // reusable broad-phase cells for combat queries
-    this._enemyGridTouched = [];
     this.hist = [];                 // recent positions per tick (lag compensation)
     this.lagComp = new Map();       // attacker id -> ticks to rewind their victims
   }
@@ -2006,14 +2005,12 @@ export class Game {
   }
 
   _rebuildEnemyGrid() {
-    for (const cell of this._enemyGridTouched) cell.length = 0;
-    this._enemyGridTouched.length = 0;
+    this._enemyGrid.clear();
     for (const e of this.enemies) {
       if (e.hp <= 0) continue;
       const key = Math.floor(e.x / ENEMY_GRID_CELL);
       let cell = this._enemyGrid.get(key);
       if (!cell) { cell = []; this._enemyGrid.set(key, cell); }
-      if (!cell.length) this._enemyGridTouched.push(cell);
       cell.push(e);
     }
   }

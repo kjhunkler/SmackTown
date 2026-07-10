@@ -481,8 +481,19 @@ export class Renderer {
     }
 
     // co-op creeps + heart drops, under the fighters
-    for (const e of view.enemies || []) this._enemy(ctx, e, t);
-    for (const h of view.hearts || []) this._heart(ctx, h, t);
+    const halfW = W / (this.cam.zoom * 2) + 80;
+    const halfH = H / (this.cam.zoom * 2) + 80;
+    const left = this.cam.x - halfW, right = this.cam.x + halfW;
+    const top = this.cam.y - halfH, bottom = this.cam.y + halfH;
+    for (const e of view.enemies || []) {
+      const ty = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
+      if (e.x + ty.w / 2 < left || e.x - ty.w / 2 > right || e.y + ty.h / 2 < top || e.y - ty.h / 2 > bottom) continue;
+      this._enemy(ctx, e, t);
+    }
+    for (const h of view.hearts || []) {
+      if (h.x < left || h.x > right || h.y < top || h.y > bottom) continue;
+      this._heart(ctx, h, t);
+    }
 
     for (const f of view.fighters) if (!f.dead) this._fighter(ctx, f, f.id === myId, t);
 
