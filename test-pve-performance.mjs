@@ -14,7 +14,7 @@ for (let i = 0; i < enemyCount; i++) {
   game.enemies.push({
     eid: i + 1, kind: 'grunt', hw: 22, hh: 26,
     x: i * 20, y: -26, vx: 0, vy: 0, hp: 9, maxHp: 9,
-    facing: 1, grounded: true, touchCd: 0, hurt: 0, windup: 0, atkCd: 0, temperament: 'bold', elite: false,
+    facing: 1, grounded: true, touchCd: 0, hurt: 0, windup: 0, atkCd: 0, stagger: 0, temperament: 'bold', elite: false,
   });
 }
 

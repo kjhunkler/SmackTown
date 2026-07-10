@@ -372,7 +372,7 @@ function chargeScale(base0, base1, k) {
 // number formatting overhead.
 export function packEnemyDelta(delta) {
   const [changed = [], removed = []] = delta || [];
-  const bytes = 4 + changed.length * 29 + removed.length * 4;
+  const bytes = 4 + changed.length * 33 + removed.length * 4;
   const view = new DataView(new ArrayBuffer(bytes));
   let offset = 0;
   view.setUint16(offset, changed.length, true); offset += 2;
@@ -389,6 +389,7 @@ export function packEnemyDelta(delta) {
     view.setFloat32(offset, row[8], true); offset += 4;
     view.setUint8(offset, Math.max(0, ENEMY_TEMPERAMENTS.indexOf(row[10]))); offset++;
     view.setUint8(offset, row[11] ? 1 : 0); offset++;
+    view.setFloat32(offset, row[12] || 0, true); offset += 4;
   }
   for (const id of removed) { view.setUint32(offset, id, true); offset += 4; }
   return view.buffer;
@@ -412,7 +413,8 @@ export function unpackEnemyDelta(buffer) {
     const windup = view.getFloat32(offset, true); offset += 4;
     const temperament = ENEMY_TEMPERAMENTS[view.getUint8(offset)] || 'bold'; offset++;
     const elite = view.getUint8(offset); offset++;
-    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, 1, temperament, elite];
+    const stagger = view.getFloat32(offset, true); offset += 4;
+    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, 1, temperament, elite, stagger];
   }
   const removed = new Array(removedCount);
   for (let i = 0; i < removedCount; i++) { removed[i] = view.getUint32(offset, true); offset += 4; }
@@ -1937,7 +1939,12 @@ export class Game {
       const tgt = this._enemyTarget(e, live);
       if (tgt) e.facing = Math.sign(tgt.x - e.x) || e.facing;
 
-      if (e.windup > 0) {
+      if (e.stagger > 0) {
+        e.stagger = Math.max(0, e.stagger - TICK);
+        e.windup = 0;
+        e.vx = approach(e.vx, 0, t.accel * TICK);
+        if (!t.fly) e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+      } else if (e.windup > 0) {
         // telegraphing a ranged shot: plant, then loose it when the wind-up ends
         e.windup -= TICK;
         e.vx = approach(e.vx, 0, t.accel * TICK);
@@ -1991,7 +1998,7 @@ export class Game {
       if (e.burn) this._burnEnemy(e);
 
       // contact bump: every type shoves and chips whoever it touches
-      if (e.touchCd <= 0 && e.hp > 0) {
+      if (e.stagger <= 0 && e.touchCd <= 0 && e.hp > 0) {
         for (const f of live) {
           if (f.invuln > 0) continue;
           const ob = hurtBox(f);
@@ -2052,6 +2059,7 @@ export class Game {
       cr,
       facing: -side, grounded: !t.fly, touchCd: 0, hurt: 0,
       windup: 0, atkCd: (t.atkCd || 0) * (0.4 + this.rng() * 0.6),   // stagger the first shot
+      stagger: 0,
       temperament: ENEMY_TEMPERAMENTS[Math.floor(this.rng() * ENEMY_TEMPERAMENTS.length)],
       focusId: null,
       elite,
@@ -2189,6 +2197,7 @@ export class Game {
     }
     e.hp -= dmg;
     e.focusId = att.id;
+    this._staggerEnemy(e);
     e.hurt = 0.14;
     att.score.dmg += dmg;
     if (dmg > att.score.maxHit) att.score.maxHit = dmg;
@@ -2217,6 +2226,7 @@ export class Game {
     const dmg = e.burn.dmg;
     e.hp -= dmg;
     e.hurt = 0.1;
+    this._staggerEnemy(e);
     if (att) { att.score.dmg += dmg; }
     this.events.push({ e: 'burn', x: e.x, y: e.y - e.hh - 6, vic: 'e' + e.eid, dmg: Math.round(dmg) });
     if (--e.burn.n <= 0) e.burn = null;
@@ -2234,6 +2244,16 @@ export class Game {
     }
     this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid, kind: e.kind, cr: e.cr || 1, att: att?.id || null });
     if (this.rng() < HEART_DROP_CHANCE) this._spawnHeart(e.x, e.y);
+  }
+
+  // Small enemies lose their attack and contact priority when struck. Brutes
+  // deliberately power through hits, giving the roster a readable exception.
+  _staggerEnemy(e) {
+    if (e.kind === 'brute' || e.hp <= 0) return;
+    e.stagger = 0.32;
+    e.windup = 0;
+    e.atkCd = Math.max(e.atkCd || 0, 0.2);
+    e.touchCd = Math.max(e.touchCd || 0, 0.32);
   }
 
   // ---------- practice bot ----------
@@ -2381,7 +2401,7 @@ export function gameFromSnapshot(players, snap, seed = 2) {
     return {
       eid: r[0], x: r[1], y: r[2], vx: 0, vy: 0, hp: r[3], maxHp: r[4] || t.hp,
       facing: r[5] || 1, kind, hw: t.w / 2, hh: t.h / 2,
-      grounded: !t.fly, touchCd: 0, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11],
+      grounded: !t.fly, touchCd: 0, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11], stagger: r[12] || 0,
     };
   });
   g.hearts = (snap.ht || []).map(r => ({
@@ -2453,7 +2473,7 @@ export function interpolateEnemyRows(aRows, bRows, k, from = new Map(), out = []
     view.eid = e2[0];
     view.x = e1[1] + (e2[1] - e1[1]) * k;
     view.y = e1[2] + (e2[2] - e1[2]) * k;
-    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11];
+    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11]; view.stagger = e2[12] || 0;
   }
   return out;
 }
