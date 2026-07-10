@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, HEART_LIFE } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, HEART_LIFE, EXPANSE_CAM_RETREAT } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -106,6 +106,7 @@ export class Renderer {
     this.stage = MAPS[this.mapId];
     this.theme = THEMES[this.mapId] || THEMES[DEFAULT_MAP];
     this.ambient = [];
+    this.expanseCamMax = null;    // fresh expedition, fresh forward-progress watermark
     this.city = this.mapId === 'ruins' ? buildCityScape('ruins')
       : this.mapId === 'skyline' ? buildCityScape('neon')
       : null;
@@ -367,11 +368,12 @@ export class Renderer {
       const pad = 260;
       let tx = (minX + maxX) / 2;
       if (this.mapId === 'expanse') {
-        const prior = this.expanseCamX ?? tx;
-        // Forward travel immediately advances the view; retreat can ease the
-        // camera left only a short distance, keeping the road's momentum.
-        this.expanseCamX = tx >= prior ? tx : Math.max(tx, prior - 180);
-        tx = this.expanseCamX;
+        // The road presses forward: retreating eases the view back only a
+        // short way from the party's best progress, then the camera holds so
+        // a backtracking fighter walks toward the left screen edge instead
+        // of dragging the whole run backwards.
+        this.expanseCamMax = Math.max(this.expanseCamMax ?? tx, tx);
+        tx = Math.max(tx, this.expanseCamMax - EXPANSE_CAM_RETREAT);
       }
       const ty = (minY + maxY) / 2 - 40;
       const zx = W / (maxX - minX + pad * 2);
