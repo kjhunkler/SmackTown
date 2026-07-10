@@ -367,7 +367,10 @@ export class Renderer {
       const pad = 260;
       let tx = (minX + maxX) / 2;
       if (this.mapId === 'expanse') {
-        this.expanseCamX = Math.max(this.expanseCamX ?? tx, tx);
+        const prior = this.expanseCamX ?? tx;
+        // Forward travel immediately advances the view; retreat can ease the
+        // camera left only a short distance, keeping the road's momentum.
+        this.expanseCamX = tx >= prior ? tx : Math.max(tx, prior - 180);
         tx = this.expanseCamX;
       }
       const ty = (minY + maxY) / 2 - 40;
