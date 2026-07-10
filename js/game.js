@@ -127,6 +127,22 @@ export const MAPS = {
 export const DEFAULT_MAP = 'battlefield';
 // Rotation/votes skip hidden maps (training is reachable only by mode)
 export const MAP_IDS = Object.keys(MAPS).filter(id => !MAPS[id].hidden);
+export const EXPANSE_BIOMES = ['battlefield', 'flatlands', 'skyline', 'ruins', 'foundry', 'garden'];
+const EXPANSE_BIOME_LENGTH = 3600;
+const EXPANSE_BIOME_BLEND = 700;
+
+// Deterministic expedition regions. Each run rotates the six PvP looks from a
+// seed-derived starting point, and the edge of a region blends into the next.
+export function expanseBiomeAt(seed, x) {
+  const region = Math.floor(x / EXPANSE_BIOME_LENGTH);
+  const offset = (seed >>> 0) % EXPANSE_BIOMES.length;
+  const index = ((region + offset) % EXPANSE_BIOMES.length + EXPANSE_BIOMES.length) % EXPANSE_BIOMES.length;
+  const next = (index + 1) % EXPANSE_BIOMES.length;
+  const local = ((x % EXPANSE_BIOME_LENGTH) + EXPANSE_BIOME_LENGTH) % EXPANSE_BIOME_LENGTH;
+  const blend = local > EXPANSE_BIOME_LENGTH - EXPANSE_BIOME_BLEND
+    ? (local - (EXPANSE_BIOME_LENGTH - EXPANSE_BIOME_BLEND)) / EXPANSE_BIOME_BLEND : 0;
+  return { id: EXPANSE_BIOMES[index], next: EXPANSE_BIOMES[next], blend, region, local };
+}
 
 // Moving platforms: move = {dx?, dy?, period, phase?} oscillates the platform
 // around its base spot on a sine wave. Position is a pure function of the sim
@@ -229,6 +245,14 @@ const ENEMY_MAX_CAP = 48;            // hard ceiling: large swarm, still practic
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
 const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger'];
 const ENEMY_TEMPERAMENTS = ['bold', 'cautious', 'vengeful', 'pack'];
+const BIOME_ENEMY_WEIGHTS = {
+  battlefield: { flyer: 1, hopper: 1 },
+  flatlands: { runner: 3, hopper: 2 },
+  skyline: { flyer: 3, slinger: 3 },
+  ruins: { grunt: 2, brute: 2 },
+  foundry: { brute: 3, slinger: 1 },
+  garden: { hopper: 3, runner: 1 },
+};
 const ENEMY_BASE_SPAWN = 2.4;        // seconds between spawns at difficulty 0
 const ENEMY_MIN_SPAWN = 0.55;        // fastest spawn cadence at high difficulty
 const ENEMY_CAP_PER_LEVEL = 3;       // additional living creeps per difficulty tier
@@ -1972,11 +1996,11 @@ export class Game {
 
   // Weighted pick of what wanders in next. Grunts stay common; tougher and
   // trickier types unlock as the difficulty tier climbs.
-  _pickEnemyKind(level) {
+  _pickEnemyKind(level, biome = null) {
     const pool = [
       ['grunt', 5, 0], ['runner', 3, 1], ['hopper', 2, 1],
       ['flyer', 2, 2], ['slinger', 2, 2], ['brute', 1, 3],
-    ].filter(([, , ml]) => level >= ml);
+    ].filter(([, , ml]) => level >= ml).map(([kind, weight, ml]) => [kind, weight + (BIOME_ENEMY_WEIGHTS[biome]?.[kind] || 0), ml]);
     let total = 0; for (const p of pool) total += p[1];
     let r = this.rng() * total;
     for (const [kind, w] of pool) { r -= w; if (r <= 0) return kind; }
@@ -1984,9 +2008,10 @@ export class Game {
   }
 
   _spawnEnemy(live, level, side = this.rng() < 0.5 ? -1 : 1, slot = 0, count = 1) {
-    const kind = this._pickEnemyKind(level);
-    const t = ENEMY_TYPES[kind];
     const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
+    const biome = expanseBiomeAt(this.seed, cx).id;
+    const kind = this._pickEnemyKind(level, biome);
+    const t = ENEMY_TYPES[kind];
     const hp = Math.round(t.hp * (1 + Math.min(1.5, level * 0.1)));   // gentle HP creep
     const cr = 1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0);
     const hh = t.h / 2, hw = t.w / 2;

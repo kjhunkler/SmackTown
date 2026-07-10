@@ -1,10 +1,13 @@
-import { Game, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta } from './js/game.js';
+import { Game, expanseBiomeAt, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta } from './js/game.js';
 
 const build = {
   stats: { power: 0, speed: 0, defense: 0, agility: 0 },
   weapon: 'unarmed', abilities: [], augments: [],
 };
 const enemyCount = 48;
+const biome = expanseBiomeAt(7, 0);
+const blendBiome = expanseBiomeAt(7, 3500);
+if (biome.id === biome.next || blendBiome.blend <= 0 || blendBiome.blend >= 1) throw new Error('Expedition biome sequence is not deterministic or blended');
 const players = Array.from({ length: 8 }, (_, i) => ({ id: String.fromCharCode(65 + i), name: `Fighter ${i + 1}`, color: '#fff', build }));
 const game = new Game(players, 7, 'expanse');
 for (let i = 0; i < enemyCount; i++) {

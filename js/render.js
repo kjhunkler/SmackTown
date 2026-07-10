@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, ENEMY_TYPES, HEART_LIFE } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, HEART_LIFE } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -374,7 +374,9 @@ export class Renderer {
     const shy = (Math.random() - 0.5) * this.shake * this.dpr;
 
     // --- background (themed per map) ---
-    const th = this.theme;
+    const biomeTheme = this.mapId === 'expanse' ? expanseBiomeAt(this.expanseSeed, this.cam.x) : null;
+    const th = biomeTheme?.blend ? blendTheme(THEMES[biomeTheme.id], THEMES[biomeTheme.next], biomeTheme.blend)
+      : biomeTheme ? THEMES[biomeTheme.id] : this.theme;
     const grd = ctx.createLinearGradient(0, 0, 0, H);
     grd.addColorStop(0, th.sky[0]);
     grd.addColorStop(0.6, th.sky[1]);
@@ -920,13 +922,17 @@ export class Renderer {
   // from the same deterministic generator the sim collides against, windowed
   // to the view so the world can run forever.
   _expanseStage(ctx, t) {
-    const th = this.theme;
     const halfW = (this.canvas.width / 2) / this.cam.zoom + 240;
     const left = this.cam.x - halfW, right = this.cam.x + halfW;
     const gy = this.stage.main.y;
+    const biome = expanseBiomeAt(this.expanseSeed, this.cam.x);
+    const from = THEMES[biome.id], to = THEMES[biome.next];
+    const th = biome.blend ? blendTheme(from, to, biome.blend) : from;
 
     // distant parallax dunes rolling by
-    ctx.fillStyle = 'rgba(120, 96, 150, .22)';
+    ctx.fillStyle = biome.id === 'foundry' ? 'rgba(255, 110, 50, .20)'
+      : biome.id === 'garden' ? 'rgba(80, 190, 110, .18)'
+        : biome.id === 'skyline' ? 'rgba(60, 120, 255, .20)' : 'rgba(120, 96, 150, .22)';
     const ox = this.cam.x * 0.4;
     ctx.beginPath();
     ctx.moveTo(left, gy);
@@ -956,6 +962,38 @@ export class Renderer {
       roundRect(ctx, p.x, p.y, p.w, 12, 6); ctx.fill();
       ctx.fillStyle = th.platTop;
       ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      if (biome.id === 'garden') {
+        ctx.strokeStyle = 'rgba(120, 235, 135, .55)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(p.x + 14, p.y + 12); ctx.quadraticCurveTo(p.x + p.w / 2, p.y + 25, p.x + p.w - 14, p.y + 12); ctx.stroke();
+      } else if (biome.id === 'skyline') {
+        ctx.fillStyle = 'rgba(0, 229, 255, .5)'; ctx.fillRect(p.x + 12, p.y + 8, p.w - 24, 2);
+      } else if (biome.id === 'foundry') {
+        ctx.fillStyle = 'rgba(255, 106, 42, .55)'; ctx.fillRect(p.x + 8, p.y + 9, p.w - 16, 2);
+      }
+    }
+
+    this._expanseBiomeWeather(ctx, biome, left, right, gy, t);
+    if (biome.local < 520) {
+      const a = Math.min(1, biome.local / 90, (520 - biome.local) / 130);
+      ctx.globalAlpha = Math.max(0, a) * .8;
+      ctx.fillStyle = '#fff'; ctx.font = 'italic 900 30px system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(MAPS[biome.id].name, this.cam.x, gy - 410);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  _expanseBiomeWeather(ctx, biome, left, right, gy, t) {
+    const color = biome.id === 'foundry' ? 'rgba(255, 120, 55, .45)'
+      : biome.id === 'skyline' ? 'rgba(120, 190, 255, .38)'
+        : biome.id === 'garden' ? 'rgba(160, 255, 120, .40)'
+          : biome.id === 'flatlands' ? 'rgba(230, 190, 120, .32)' : null;
+    if (!color) return;
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+    for (let i = 0; i < 18; i++) {
+      const x = left + ((i * 137 + this.expanseSeed * 17 + t * (biome.id === 'skyline' ? 180 : 40)) % (right - left));
+      const y = gy - 80 - ((i * 83 + t * 45) % 430);
+      if (biome.id === 'skyline') { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 8, y + 24); ctx.stroke(); }
+      else { ctx.beginPath(); ctx.arc(x, y, biome.id === 'garden' ? 2.5 : 1.7, 0, 7); ctx.fill(); }
     }
   }
 
@@ -3198,5 +3236,18 @@ function cross(ctx, x, y, s) {
   ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s);
   ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s);
   ctx.stroke();
+}
+function blendTheme(a, b, k) {
+  return {
+    ...a,
+    sky: a.sky.map((c, i) => mixHex(c, b.sky[i], k)),
+    deck: mixHex(a.deck, b.deck, k), lip: mixHex(a.lip, b.lip, k), trim: mixHex(a.trim, b.trim, k),
+    plat: mixHex(a.plat, b.plat, k), platTop: mixHex(a.platTop, b.platTop, k),
+  };
+}
+function mixHex(a, b, k) {
+  const n = v => parseInt(v.slice(1), 16), x = n(a), y = n(b);
+  const c = s => Math.round(((x >> s & 255) + ((y >> s & 255) - (x >> s & 255)) * k)).toString(16).padStart(2, '0');
+  return `#${c(16)}${c(8)}${c(0)}`;
 }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
