@@ -240,6 +240,7 @@ export const ENEMY_TYPES = {
 };
 const ENEMY_TOUCH_CD = 0.8;          // per-creep cooldown between contact bumps
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
+const ENEMY_RECYCLE_BEHIND = 1200;   // recycle stragglers ahead of the forward-only party
 const ENEMY_BASE_MAX = 16;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 48;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
@@ -498,7 +499,7 @@ export class Game {
     return {
       id: p.id, name: p.name, color: p.color, isBot: !!p.isBot, sandbag: !!p.sandbag, st,
       baseBuild: p.build, tryBuild: null,
-      x: this.stage.spawns[i % this.stage.spawns.length], y: -F_H / 2,
+      x: this.stage.infinite ? Math.max(0, this.stage.spawns[i % this.stage.spawns.length]) : this.stage.spawns[i % this.stage.spawns.length], y: -F_H / 2,
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
       pct: 0, stocks: STOCKS,
@@ -530,6 +531,7 @@ export class Game {
       parked: false,                // owner stepped out to the lobby: asleep, untouchable
       dead: false,
       lastDir: { x: 1, y: 0 },
+      forwardX: this.stage.infinite ? Math.max(0, this.stage.spawns[i % this.stage.spawns.length]) : null,
       score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: 0, elite: 0 }, // podium stats + expedition credits
     };
   }
@@ -876,6 +878,11 @@ export class Game {
     f.y += f.vy * TICK;
 
     this._collide(f);
+    if (this.stage.infinite) {
+      f.x = Math.max(f.forwardX, f.x);
+      f.forwardX = f.x;
+      if (f.vx < 0) f.vx = 0;
+    }
     this._tryLedgeGrab(f);
     this._decayInput(inp);
   }
@@ -2016,14 +2023,28 @@ export class Game {
       }
     }
 
-    // cull the dead and any creep that fell too far behind the group
+    // Recycle stragglers behind the forward-only party so the encounter keeps
+    // pressure ahead instead of wasting the active swarm off-screen to the left.
     let cx = 0;
     for (const f of live) cx += f.x;
     cx = live.length ? cx / live.length : 0;
     let kept = 0;
     for (const e of this.enemies) {
-      if (e.hp > 0 && Math.abs(e.x - cx) < ENEMY_DESPAWN) this.enemies[kept++] = e;
+      if (e.hp <= 0 || e.x > cx + ENEMY_DESPAWN) continue;
+      if (e.x < cx - ENEMY_RECYCLE_BEHIND) this._recycleEnemy(e, cx);
+      this.enemies[kept++] = e;
     }
+
+  _recycleEnemy(e, partyX) {
+    const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
+    e.x = partyX + 760 + this.rng() * 280;
+    e.y = t.fly ? this.stage.main.y - 190 - this.rng() * 150 : this.stage.main.y - e.hh;
+    e.vx = 0; e.vy = 0; e.hp = e.maxHp;
+    e.facing = -1; e.grounded = !t.fly;
+    e.touchCd = 0; e.hurt = 0; e.windup = 0; e.stagger = 0;
+    e.atkCd = (t.atkCd || 0) * (0.4 + this.rng() * 0.6);
+    e.burn = null; e.focusId = null;
+  }
     this.enemies.length = kept;
 
     this._stepHearts(live, plats);
