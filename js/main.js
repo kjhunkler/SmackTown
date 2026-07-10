@@ -17,6 +17,7 @@ import { SFX } from './sfx.js';
 import { settings } from './settings.js';
 
 const $ = s => document.querySelector(s);
+for (const el of document.querySelectorAll('.logo-version')) el.textContent = self.SMACKTOWN_VERSION || '';
 
 function smartColorConvertHat(hat, fromColor, toColor) {
   const art = sanitizeHat(hat);
