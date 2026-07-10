@@ -201,7 +201,17 @@ export function hazardsAt(mapId, tickF) {
 
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
+const TURN_ACCEL = 1.8;              // ground accel multiplier while reversing a run
 const JUMP_V = 860, JUMP2_V = 780;
+// Variable jump height: letting go of the jump control mid-rise trims the
+// remaining ascent, so a tap hops and a hold soars. The release arrives as a
+// level input flag (jr); anything that never sends it (bots, old peers) keeps
+// full-height jumps. Near the arc's top gravity eases off for a beat of hang
+// time — never in hitstun, so launch knockback keeps its exact physics.
+const JUMP_CUT = 0.45;               // fraction of the remaining rise kept on release
+const JUMP_CUT_GRACE = 0.08;         // liftoff seconds before a release can cut
+const APEX_GRAV = 0.62;              // gravity multiplier through the apex band
+const APEX_BAND = 130;               // |vy| below this counts as the apex
 const JUMP_FF_LOCK = 0.1;            // brief window after a jump before fast fall can trigger
 const SPIKE_BOUNCE = 640;            // attacker's upward spring off a landed spike
 const AIR_RISE_CD = 1.1;             // min seconds between aerial up-smash lifts
@@ -512,6 +522,7 @@ export class Game {
       x: this.stage.infinite ? Math.max(0, this.stage.spawns[i % this.stage.spawns.length]) : this.stage.spawns[i % this.stage.spawns.length], y: -F_H / 2,
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
+      jumpT: -1,                    // seconds since liftoff while a jump cut is still possible (-1 idle)
       pct: 0, stocks: STOCKS,
       hp: st.maxHp, maxHp: st.maxHp, downT: 0,   // co-op health & downed timer
       state: 'idle',                // idle|run|air|attack|charge|hitstun|ledge|roll|dead|respawn
@@ -661,6 +672,7 @@ export class Game {
     if (inp.jump) { cur.jump = true; cur.bufJ = BUFFER; }
     cur.ff ||= !!inp.ff;
     cur.drop ||= !!inp.drop;
+    cur.jr = !!inp.jr;   // level: jump control released (missing = held, keeping full jumps)
     if (inp.atk) { cur.atk = inp.atk; cur.bufA = BUFFER; } // {kind:'tap'|'up'|'down'|'side', dir}
     if (inp.roll) { cur.roll = inp.roll; cur.bufR = BUFFER; } // dodge roll: -1 | 1
     // charge is level-triggered like the stick; re-arms on release
@@ -811,7 +823,9 @@ export class Game {
       const want = inp.mx * RUN * f.st.speedMult;
       if (f.grounded) {
         if (Math.abs(inp.mx) > 0.15 && canAct && !ducking) {
-          f.vx = approach(f.vx, want, GROUND_ACCEL * TICK);
+          // reversing gets extra accel so direction changes bite instead of skate
+          const turn = f.vx !== 0 && Math.sign(want) === -Math.sign(f.vx) ? TURN_ACCEL : 1;
+          f.vx = approach(f.vx, want, GROUND_ACCEL * turn * TICK);
           f.facing = Math.sign(inp.mx) || f.facing;
           f.state = 'run';
         } else {
@@ -838,7 +852,15 @@ export class Game {
       f.state = 'air';
       f.standT = 0;
       inp.jump = false;
+      f.jumpT = 0;
       this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
+    }
+    // jump cut: the window closes once the rise ends or a hit interrupts it,
+    // so only the jump's own ascent can ever be trimmed
+    if (f.jumpT >= 0) {
+      f.jumpT += TICK;
+      if (f.grounded || f.vy >= 0 || inHitstun) f.jumpT = -1;
+      else if (f.jumpT >= JUMP_CUT_GRACE && inp.jr) { f.vy *= JUMP_CUT; f.jumpT = -1; }
     }
     // quick fall: down mid-jump cancels the rest of the ascent on the spot.
     // Holding down before jumping also cancels on the first airborne tick.
@@ -881,8 +903,12 @@ export class Game {
       // sword charge floats: the windup falls 70% slower, hanging the
       // swordsman in the air while the aim is held
       const slow = inCharge && f.st.weapon === 'sword' ? SWORD_CHG_FALL : 1;
+      // apex hang: gravity eases through the top of the arc so aerials are
+      // easier to place. Off in hitstun/crush (launch KOs keep their exact
+      // physics) and while fast-falling.
+      const apex = !inHitstun && !inCrush && !f.fastfall && Math.abs(f.vy) < APEX_BAND ? APEX_GRAV : 1;
       const cap = (f.fastfall ? FASTFALL : MAX_FALL) * slow;
-      f.vy = Math.min(cap, f.vy + GRAV * slow * TICK);
+      f.vy = Math.min(cap, f.vy + GRAV * slow * apex * TICK);
     }
     f.x += f.vx * TICK;
     f.y += f.vy * TICK;
@@ -924,6 +950,7 @@ export class Game {
 
   _collide(f) {
     const wasGrounded = f.grounded;
+    const impact = f.vy;             // pre-landing fall speed, for touchdown feedback
     f.grounded = false;
     const feet = f.y + F_H / 2;
 
@@ -971,7 +998,7 @@ export class Game {
       if (f.fastfall && Math.abs(f.vx) > WAVELAND_MIN_VX) f.slideT = WAVELAND_TIME;
       f.fastfall = false;
       if (f.state === 'air' || (f.state === 'hitstun' && !f.stunned)) f.state = 'idle';
-      this.events.push({ e: 'land', id: f.id, x: f.x, y: f.y + F_H / 2 });
+      this.events.push({ e: 'land', id: f.id, x: f.x, y: f.y + F_H / 2, v: Math.round(Math.max(0, impact)) });
     }
   }
 
@@ -2395,6 +2422,7 @@ export class Game {
           f.stunned ? 1 : 0,
           r2(f.ffLockT),
           r1(f.hp), f.maxHp, r2(f.downT),   // co-op health (indices 42,43,44)
+          r2(f.jumpT),                      // live jump-cut window (index 45)
         ];
       }),
       p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
@@ -2486,6 +2514,7 @@ export function restoreFighter(f, row) {
     if (row.length > 40) f.stunned = !!row[40];
     if (row.length > 41) f.ffLockT = +row[41] || 0;
     if (row.length > 43) { f.hp = +row[42] || 0; f.maxHp = +row[43] || f.maxHp; f.downT = +row[44] || 0; }
+    if (row.length > 45) f.jumpT = +row[45];
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.
@@ -2523,7 +2552,7 @@ export function interpolateEnemyRows(aRows, bRows, k, from = new Map(), out = []
 
 export function blankInput() {
   return {
-    mx: 0, my: 0, jump: false, ff: false, drop: false, atk: null, roll: 0,
+    mx: 0, my: 0, jump: false, jr: false, ff: false, drop: false, atk: null, roll: 0,
     ab0: false, ab1: false, bufJ: 0, bufA: 0, buf0: 0, buf1: 0, bufR: 0,
     chg: null,      // {dx,dy} while the strong-attack control is held
     chgArm: true,   // must see a release before the next charge can start

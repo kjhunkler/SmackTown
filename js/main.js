@@ -1479,7 +1479,7 @@ class Session {
     while (this.acc >= TICK) {
       this.acc -= TICK;
       this.inputSeq++;
-      const tin = { mx: inp.mx, my: inp.my, chg: inp.chg || null, ...this.pendActs };
+      const tin = { mx: inp.mx, my: inp.my, jr: !!inp.jr, chg: inp.chg || null, ...this.pendActs };
       this.pendActs = {};
       this.pred.setInput(this.myId, tin);
       this.tickLog.push({ seq: this.inputSeq, inp: tin });

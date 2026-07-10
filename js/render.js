@@ -7,6 +7,7 @@ import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from
 import { SFX } from './sfx.js';
 
 const F_W = 46, F_H = 64;
+const LAND_SQUASH_T = 0.13;   // seconds a touchdown squash takes to recover
 
 // Per-map look: background gradient, celestial motif, star behavior, stage
 // palette, and optional ambient weather. Geometry comes from MAPS in
@@ -86,6 +87,7 @@ export class Renderer {
     this.particles = [];
     this.dmgPops = [];               // floating damage numbers
     this.flash = new Map();          // fighter id -> hit-flash time left
+    this.squash = new Map();         // fighter id -> landing squash {t, a}
     this.auras = new Map();          // fighter id -> {kind, t} bubble/counter overlays
     this.rings = [];                 // expanding shock rings {x,y,r0,r1,t,life,color,w}
     this.ambient = [];               // ambient weather: embers & ash (ruins), rain (neon heights)
@@ -179,9 +181,14 @@ export class Renderer {
         case 'mend':
           this.burst(ev.x, ev.y, 14, '#3ddc84', 220);
           break;
-        case 'land':
-          this.burst(ev.x, ev.y, 4, '#8899cc', 90);
+        case 'land': {
+          // touchdown feedback scales with impact: harder falls kick up more
+          // dust and compress the body into a deeper squash
+          const v = ev.v || 600;
+          this.burst(ev.x, ev.y, v > 1200 ? 10 : v > 750 ? 6 : 4, '#8899cc', v > 1200 ? 170 : 90);
+          this.squash.set(ev.id, { t: LAND_SQUASH_T, a: clamp(v / 6000, 0.06, 0.3) });
           break;
+        }
         case 'jump':
           this.burst(ev.x, ev.y, 5, '#aabbee', 120);
           break;
@@ -429,6 +436,10 @@ export class Renderer {
     for (const [id, v] of this.flash) {
       if (v - dt <= 0) this.flash.delete(id);
       else this.flash.set(id, v - dt);
+    }
+    // tick down landing squashes
+    for (const [id, s] of this.squash) {
+      if ((s.t -= dt) <= 0) this.squash.delete(id);
     }
 
     // projectiles
@@ -2710,8 +2721,12 @@ export class Renderer {
     // guard crush: dazed wobble until the stun wears off
     if (f.state === 'crush') ctx.rotate(Math.sin(t * 22) * 0.12);
 
-    // squash & stretch by vertical speed
-    const stretch = clamp(1 + Math.abs(f.vy) / 3500, 1, 1.25);
+    // squash & stretch by vertical speed, plus a touchdown squash pulse:
+    // deepest at impact, easing back up while the feet stay planted
+    const sq = this.squash.get(f.id);
+    const squish = sq ? 1 - sq.a * (sq.t / LAND_SQUASH_T) : 1;
+    const stretch = clamp(1 + Math.abs(f.vy) / 3500, 1, 1.25) * squish;
+    if (squish < 1) ctx.translate(0, (1 - squish) * F_H / 2);
     ctx.scale(1 / Math.sqrt(stretch), stretch);
 
     const hurt = f.state === 'hitstun' || f.state === 'crush';

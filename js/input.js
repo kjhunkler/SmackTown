@@ -1,12 +1,14 @@
 // Touch controls tuned for one-thumb-per-side play:
-//   left zone  — drag = virtual stick · flick up = jump · flick down = fast-fall/drop
+//   left zone  — drag = virtual stick · flick up = jump (keep the stick held
+//                upward to jump higher) · flick down = fast-fall/drop
 //                flick sideways while ducked (stick pinned down) = dodge roll
 //   right zone — tap = quick attack aimed by the movement stick (8-way)
 //                swipe = smash attack in the swipe direction (8-way);
 //                detected the moment the drag crosses the swipe threshold —
 //                keeping the finger down charges the smash, lifting fires it
 //   two floating buttons — equipped abilities
-// Keyboard fallback (desktop testing): arrows/WASD move, space jump,
+// Keyboard fallback (desktop testing): arrows/WASD move, space jump (hold
+// for full height, tap for a short hop),
 // J = tap attack, K = smash (hold to charge, release to fire; aimed by held
 // direction at press, 8-way), L and ; = abilities. Z/X/C/V mirror J/K/L/;.
 // Hold down + press a direction = dodge roll.
@@ -54,6 +56,7 @@ export class TouchInput {
     this.mouseChg = null;            // charge aim held via right mouse button
     this.wheelT = 0;                 // last scroll-wheel ability trigger (debounce)
     this.padChg = null;              // charge aim held via gamepad (B)
+    this.padJumpHeld = false;        // gamepad jump button currently down (variable jump)
     this.padRHeld = false;           // right stick currently tilted (re-arm)
     this.padRolled = false;          // ducked sideways tilt fired (re-arm)
 
@@ -262,7 +265,8 @@ export class TouchInput {
   // same edge actions the other sources produce.
   _pollGamepad() {
     const pad = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
-    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; this.padRHeld = false; this.padRolled = false; return null; }
+    if (!pad) { this.padPrev = []; this.padFlicked = false; this.padChg = null; this.padJumpHeld = false; this.padRHeld = false; this.padRolled = false; return null; }
+    this.padJumpHeld = settings.padButtonsFor('jump').some(i => pad.buttons[i]?.pressed);
 
     let mx = pad.axes[0] || 0, my = pad.axes[1] || 0;
     if (Math.hypot(mx, my) < PAD_DEAD) { mx = 0; my = 0; }
@@ -332,6 +336,12 @@ export class TouchInput {
     }
     for (const q of this.queue) Object.assign(out, q);
     this.queue.length = 0;
+    // Variable jump: report whether the jump control has been let go. Held =
+    // full rise; released mid-rise = the sim trims the jump short. "Held"
+    // means the jump key/button is down or the stick is kept pressed upward
+    // (so a touch flick-and-hold soars while a quick flick hops).
+    out.jr = !(out.my < -0.35 || this.padJumpHeld
+      || settings.keysFor('jump').some(key => this.keys.has(key)));
     return out;
   }
 
