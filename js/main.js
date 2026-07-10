@@ -7,7 +7,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, platsAt, HEART_LIFE } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, expanseBiomeAt, platsAt, HEART_LIFE } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -1455,7 +1455,7 @@ class Session {
       projectiles: this.game.projectiles,
       enemies: this.game.enemies.map(e => ({
         eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing,
-        hurt: e.hurt > 0, kind: e.kind, windup: e.windup || 0,
+        hurt: e.hurt > 0, kind: e.kind, windup: e.windup || 0, temperament: e.temperament, elite: e.elite,
       })),
       hearts: this.game.hearts.map(h => ({ hid: h.hid, x: h.x, y: h.y, tLeft: HEART_LIFE - h.t })),
     };
@@ -1522,6 +1522,12 @@ class Session {
       const cr = earnedCredits(mine?.score);
       const el = $('#game-credits-val');
       if (el && el.textContent !== '' + cr) el.textContent = cr;
+      const biome = expanseBiomeAt(this.seed, mine?.x || 0);
+      $('#game-expedition').classList.remove('hidden');
+      $('#expedition-biome').textContent = MAPS[biome.id].name;
+      $('#expedition-progress').textContent = `${Math.max(0, Math.floor((mine?.x || 0) / 100)) * 100}m · Tier ${Math.floor((view.tick || 0) / 900) + 1}`;
+    } else {
+      $('#game-expedition').classList.add('hidden');
     }
     this.perf.add('render+ui', performance.now() - renderStart);
   }

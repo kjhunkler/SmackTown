@@ -372,7 +372,7 @@ function chargeScale(base0, base1, k) {
 // number formatting overhead.
 export function packEnemyDelta(delta) {
   const [changed = [], removed = []] = delta || [];
-  const bytes = 4 + changed.length * 27 + removed.length * 4;
+  const bytes = 4 + changed.length * 29 + removed.length * 4;
   const view = new DataView(new ArrayBuffer(bytes));
   let offset = 0;
   view.setUint16(offset, changed.length, true); offset += 2;
@@ -387,6 +387,8 @@ export function packEnemyDelta(delta) {
     view.setUint8(offset, row[6]); offset++;
     view.setUint8(offset, Math.max(0, ENEMY_KIND_IDS.indexOf(row[7]))); offset++;
     view.setFloat32(offset, row[8], true); offset += 4;
+    view.setUint8(offset, Math.max(0, ENEMY_TEMPERAMENTS.indexOf(row[10]))); offset++;
+    view.setUint8(offset, row[11] ? 1 : 0); offset++;
   }
   for (const id of removed) { view.setUint32(offset, id, true); offset += 4; }
   return view.buffer;
@@ -408,7 +410,9 @@ export function unpackEnemyDelta(buffer) {
     const hurt = view.getUint8(offset); offset++;
     const kind = ENEMY_KIND_IDS[view.getUint8(offset)] || 'grunt'; offset++;
     const windup = view.getFloat32(offset, true); offset += 4;
-    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup];
+    const temperament = ENEMY_TEMPERAMENTS[view.getUint8(offset)] || 'bold'; offset++;
+    const elite = view.getUint8(offset); offset++;
+    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, 1, temperament, elite];
   }
   const removed = new Array(removedCount);
   for (let i = 0; i < removedCount; i++) { removed[i] = view.getUint32(offset, true); offset += 4; }
@@ -1912,8 +1916,15 @@ export class Game {
       this._biomeRegion = biome.region;
       this._spawnBiomePatrol(live, level, maxEnemies, biome.id);
     }
+    const lowParty = live.length && live.every(f => f.hp / f.maxHp < 0.38);
+    if (lowParty && !this.recoveryT && this.enemies.length < maxEnemies - 2) {
+      this.recoveryT = 5;
+      this._spawnHeart(partyX, this.stage.main.y - 12);
+      this.events.push({ e: 'recovery', x: partyX, y: this.stage.main.y - 12 });
+    }
+    if (this.recoveryT > 0) this.recoveryT -= TICK;
     this.enemySpawnT -= TICK;
-    if (live.length && this.enemySpawnT <= 0 && this.enemies.length < maxEnemies) {
+    if (live.length && this.enemySpawnT <= 0 && this.recoveryT <= 0 && this.enemies.length < maxEnemies) {
       this.enemySpawnT = spawnEvery;
       const count = level > 0 && this.rng() < 0.28 ? Math.min(3, maxEnemies - this.enemies.length) : 1;
       const side = this.rng() < 0.5 ? -1 : 1;
@@ -2024,13 +2035,13 @@ export class Game {
     return 'grunt';
   }
 
-  _spawnEnemy(live, level, side = this.rng() < 0.5 ? -1 : 1, slot = 0, count = 1, forcedKind = null) {
+  _spawnEnemy(live, level, side = this.rng() < 0.5 ? -1 : 1, slot = 0, count = 1, forcedKind = null, elite = false) {
     const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
     const biome = expanseBiomeAt(this.seed, cx).id;
     const kind = forcedKind || this._pickEnemyKind(level, biome);
     const t = ENEMY_TYPES[kind];
-    const hp = Math.round(t.hp * (1 + Math.min(1.5, level * 0.1)));   // gentle HP creep
-    const cr = 1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0);
+    const hp = Math.round(t.hp * (1 + Math.min(1.5, level * 0.1)) * (elite ? 1.65 : 1));
+    const cr = 1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0) + (elite ? 3 : 0);
     const hh = t.h / 2, hw = t.w / 2;
     const formationOffset = (slot - (count - 1) / 2) * 72;
     this.enemies.push({
@@ -2043,6 +2054,7 @@ export class Game {
       windup: 0, atkCd: (t.atkCd || 0) * (0.4 + this.rng() * 0.6),   // stagger the first shot
       temperament: ENEMY_TEMPERAMENTS[Math.floor(this.rng() * ENEMY_TEMPERAMENTS.length)],
       focusId: null,
+      elite,
     });
   }
 
@@ -2055,8 +2067,10 @@ export class Game {
     const count = Math.min(Math.max(2, unlocked.length), maxEnemies - this.enemies.length);
     if (!count || !unlocked.length) return;
     const side = this.rng() < 0.5 ? -1 : 1;
-    for (let i = 0; i < count; i++) this._spawnEnemy(live, level, side, i, count, unlocked[i % unlocked.length]);
-    this.events.push({ e: 'patrol', biome, count });
+    const elite = biome !== 'battlefield' && Math.abs(this._biomeRegion) % 3 === 2;
+    for (let i = 0; i < count; i++) this._spawnEnemy(live, level, side, i, count, unlocked[i % unlocked.length], elite && i === 0);
+    const cx = live.reduce((sum, f) => sum + f.x, 0) / live.length;
+    this.events.push({ e: 'patrol', biome, name: `${MAPS[biome].name}`, count, x: cx, y: this.stage.main.y - 180 });
   }
 
   _enemyTarget(e, live) {
@@ -2320,7 +2334,7 @@ export class Game {
         ];
       }),
       p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
-      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0)]),
+      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0]),
       ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),
     };
@@ -2366,7 +2380,7 @@ export function gameFromSnapshot(players, snap, seed = 2) {
     return {
       eid: r[0], x: r[1], y: r[2], vx: 0, vy: 0, hp: r[3], maxHp: r[4] || t.hp,
       facing: r[5] || 1, kind, hw: t.w / 2, hh: t.h / 2,
-      grounded: !t.fly, touchCd: 0, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1,
+      grounded: !t.fly, touchCd: 0, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11],
     };
   });
   g.hearts = (snap.ht || []).map(r => ({
@@ -2438,7 +2452,7 @@ export function interpolateEnemyRows(aRows, bRows, k, from = new Map(), out = []
     view.eid = e2[0];
     view.x = e1[1] + (e2[1] - e1[1]) * k;
     view.y = e1[2] + (e2[2] - e1[2]) * k;
-    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0;
+    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11];
   }
   return out;
 }

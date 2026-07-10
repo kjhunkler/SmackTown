@@ -136,6 +136,12 @@ export class Renderer {
             heavy: !!ev.heavy,
           });
           break;
+        case 'patrol':
+          this.dmgPops.push({ x: ev.x || 0, y: ev.y || -180, txt: `${ev.name} PATROL`, t: 0, life: 1.5, heavy: true, color: '#ffcf6a' });
+          break;
+        case 'recovery':
+          this.dmgPops.push({ x: ev.x, y: ev.y - 70, txt: 'RECOVERY CACHE', t: 0, life: 1.3, heavy: false, color: '#3ddc84' });
+          break;
         case 'ko':
           this.burst(ev.x, ev.y, 40, '#ff5470', 700);
           this.burst(ev.x, ev.y, 20, '#ffffff', 500);
@@ -1012,6 +1018,12 @@ export class Renderer {
 
     ctx.save();
     ctx.translate(e.x, e.y + bob);
+    if (e.elite) {
+      ctx.strokeStyle = '#ffcf6a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(w, h) * .72, 0, 7); ctx.stroke();
+    }
+    const temperamentColor = { bold: '#ff6a7a', cautious: '#bfe3ff', vengeful: '#ffcf6a', pack: '#b388ff' }[e.temperament];
+    if (temperamentColor) { ctx.fillStyle = temperamentColor; ctx.beginPath(); ctx.arc(0, -h / 2 - 8, 3.5, 0, 7); ctx.fill(); }
 
     const sprite = !flash && !e.windup && !fly && e.kind !== 'brute' && e.kind !== 'slinger'
       ? this._enemySprite(e.kind, ty) : null;
