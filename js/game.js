@@ -254,6 +254,8 @@ export const ENEMY_TYPES = {
              ranged: true, shotDmg: 3, shotSpd: 360, range: 440, windup: 0.85, atkCd: 2.6 },
 };
 const ENEMY_HIT_MERCY = 0.55;        // post-hit invulnerability so a swarm can't chain-stun
+const ENEMY_SEP_PUSH = 300;          // max px/s creeps shoulder each other apart (beats any chase speed)
+const ENEMY_SEP_GAP = 0.9;           // fraction of summed half-widths creeps keep between centers
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
 const ENEMY_RECYCLE_BEHIND = 1200;   // recycle stragglers ahead of the forward-only party
 const EXPANSE_BACKTRACK = 640;        // players may approach the left screen edge without leaving the route
@@ -2017,10 +2019,14 @@ export class Game {
           else this._enemyStrike(e, t, live);
         }
       } else if (t.fly) {
-        // flyer: home straight in at altitude, ignoring gravity
+        // flyer: home straight in at altitude, ignoring gravity, holding at
+        // the edge of its strike arc instead of parking inside the target
         if (tgt) {
           const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1);
-          e.vx = approach(e.vx, Math.sign(tgt.x - e.x) * speed, t.accel * TICK);
+          const hold = Math.abs(tgt.x - e.x) < (t.reach + e.hw) * 0.85;
+          let want = hold ? 0 : Math.sign(tgt.x - e.x) * speed;
+          if (want !== 0 && this._enemyBlocked(e, t, Math.sign(want))) want = 0;
+          e.vx = approach(e.vx, want, t.accel * TICK);
           e.vy = approach(e.vy, clamp(((tgt.y - 30) - e.y) * 3, -t.speed, t.speed), t.accel * TICK);
         } else { e.vx = approach(e.vx, 0, t.accel * TICK); e.vy = approach(e.vy, 0, t.accel * TICK); }
       } else {
@@ -2028,7 +2034,13 @@ export class Game {
         e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
         const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1);
         let desired = tgt ? Math.sign(tgt.x - e.x) * speed : 0;
+        // melee creeps stop at the edge of their strike arc: the swarm forms
+        // a fightable front line rather than a pile standing inside its prey
+        if (!t.ranged && tgt && Math.abs(tgt.x - e.x) < (t.reach + e.hw) * 0.85) desired = 0;
         if (e.temperament === 'cautious' && tgt && !t.ranged && Math.abs(tgt.x - e.x) < 115) desired = -Math.sign(tgt.x - e.x) * speed * 0.55;
+        // queue discipline: never push into a packmate directly ahead — wait
+        // for the line to move instead of compressing it into a blob
+        if (desired !== 0 && this._enemyBlocked(e, t, Math.sign(desired))) desired = 0;
         if (t.ranged && tgt) {
           const d = Math.abs(tgt.x - e.x);
           if (d < t.range * 0.65) desired = Math.sign(e.x - tgt.x) * t.speed * 0.6;  // kite back
@@ -2075,6 +2087,8 @@ export class Game {
       if (e.burn) this._burnEnemy(e);
     }
 
+    this._separateEnemies();
+
     // Recycle stragglers behind the forward-only party so the encounter keeps
     // pressure ahead instead of wasting the active swarm off-screen to the left.
     // Skipped while everyone is parked — no party position to measure against.
@@ -2092,6 +2106,58 @@ export class Game {
     }
 
     this._stepHearts(live, plats);
+  }
+
+  // Soft crowd separation: creeps sharing a layer (ground vs air) shoulder
+  // past each other instead of compressing into one dense blob, so a swarm
+  // spreads into a line that can be fought edge-first. Position-based with a
+  // gentle per-tick cap — it relaxes stacks without popping anyone around.
+  // Ties break by spawn id so the host and any handoff resolve identically.
+  // Is a packed same-layer creep standing directly ahead in this direction?
+  // Used as queue discipline: the follower waits for the line to advance
+  // rather than plowing into its packmate and compressing the crowd.
+  _enemyBlocked(e, t, dir) {
+    for (const o of this.enemies) {
+      if (o === e || o.hp <= 0) continue;
+      const to = ENEMY_TYPES[o.kind] || ENEMY_TYPES.grunt;
+      if (!!to.fly !== !!t.fly) continue;
+      if (Math.abs(o.y - e.y) > e.hh + o.hh) continue;
+      const dx = o.x - e.x;
+      if (Math.sign(dx) === dir && Math.abs(dx) < e.hw + o.hw + 10) return true;
+    }
+    return false;
+  }
+
+  _separateEnemies() {
+    const es = this.enemies;
+    const step = ENEMY_SEP_PUSH * TICK;
+    for (let i = 0; i < es.length; i++) {
+      const a = es[i];
+      if (a.hp <= 0) continue;
+      const fa = !!(ENEMY_TYPES[a.kind] || ENEMY_TYPES.grunt).fly;
+      for (let j = i + 1; j < es.length; j++) {
+        const b = es[j];
+        if (b.hp <= 0) continue;
+        const fb = !!(ENEMY_TYPES[b.kind] || ENEMY_TYPES.grunt).fly;
+        if (fa !== fb) continue;                         // different layers pass freely
+        const minD = (a.hw + b.hw) * ENEMY_SEP_GAP;
+        const dx = b.x - a.x;
+        if (Math.abs(dx) >= minD || Math.abs(a.y - b.y) > a.hh + b.hh) continue;
+        const dir = dx !== 0 ? Math.sign(dx) : (a.eid < b.eid ? 1 : -1);
+        const push = Math.min(step, (minD - Math.abs(dx)) / 2);
+        a.x -= dir * push;
+        b.x += dir * push;
+        if (fa) {                                        // flyers also spread vertically
+          const dy = b.y - a.y;
+          if (Math.abs(dy) < 34) {
+            const dirY = dy !== 0 ? Math.sign(dy) : (a.eid < b.eid ? 1 : -1);
+            const pushY = Math.min(step, (34 - Math.abs(dy)) / 2);
+            a.y -= dirY * pushY;
+            b.y += dirY * pushY;
+          }
+        }
+      }
+    }
   }
 
   _recycleEnemy(e, partyX) {
