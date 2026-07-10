@@ -2153,7 +2153,8 @@ export class Game {
 
   // ---------- snapshots (host <-> clients) ----------
 
-  snapshot() {
+  snapshot(centerX = null, radius = Infinity) {
+    const inRange = entity => centerX == null || Math.abs(entity.x - centerX) <= radius;
     return {
       tk: this.tick,
       over: this.over,
@@ -2184,9 +2185,9 @@ export class Game {
           r1(f.hp), f.maxHp, r2(f.downT),   // co-op health (indices 42,43,44)
         ];
       }),
-      p: this.projectiles.map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
-      en: this.enemies.map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0)]),
-      ht: this.hearts.map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
+      p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
+      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0)]),
+      ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),
     };
   }

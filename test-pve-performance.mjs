@@ -32,11 +32,13 @@ for (let run = 0; run < 20; run++) {
   samples.push(performance.now() - start);
 }
 samples.sort((a, b) => a - b);
+const snapshotBytes = new TextEncoder().encode(JSON.stringify(game.snapshot())).byteLength;
 console.log(JSON.stringify({
   enemies: game.enemies.length,
   ticksPerRun: 600,
   medianMs: +samples[10].toFixed(2),
   p95Ms: +samples[18].toFixed(2),
   medianUsPerTick: +(samples[10] * 1000 / 600).toFixed(2),
+  fullSnapshotBytes: snapshotBytes,
   interpolation: 'PASS',
 }));

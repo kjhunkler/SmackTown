@@ -1397,10 +1397,24 @@ class Session {
       if (this.mode === 'host' && net &&
           (this.game.tick % SNAP_RATE === 0 || this.game.over)) {
         const snapshotStart = performance.now();
-        const s = this.game.snapshot();
-        s.ev = this.pendingEv.splice(0);
-        s.ack = Object.fromEntries(this.acks);
-        net.broadcast({ t: 'snap', s });
+        const full = this.game.over || this.game.tick % FULL_SNAPSHOT_TICKS === 0;
+        const ev = this.pendingEv.splice(0);
+        const ack = Object.fromEntries(this.acks);
+        if (full) {
+          const s = this.game.snapshot();
+          s.full = true;
+          s.ev = ev;
+          s.ack = ack;
+          net.broadcast({ t: 'snap', s });
+        } else {
+          for (const [pid] of net.conns) {
+            const fighter = this.game.fighters.find(f => f.id === pid);
+            const s = this.game.snapshot(fighter?.x ?? null, SNAPSHOT_INTEREST_RADIUS);
+            s.ev = ev;
+            s.ack = ack;
+            net.send(pid, { t: 'snap', s });
+          }
+        }
         this.perf.add('snapshot+send', performance.now() - snapshotStart);
       }
       // Refresh lag compensation ~1/s from measured pings: victims are
@@ -1520,6 +1534,7 @@ class Session {
       this.corr = { x: 0, y: 0 };
     }
     this.lastSnap = s;
+    if (s.full) this.lastFullSnap = s;
     this.snaps.push({ rt: now, s });
     if (this.snaps.length > 40) this.snaps.shift();
     if (s.ev?.length) {
@@ -1566,7 +1581,7 @@ class Session {
       // Host dropped mid-fight and we won the election: resurrect the sim
       // from the freshest snapshot and carry on as the authority.
       this.mode = 'host';
-      this.game = gameFromSnapshot(this.players, this.lastSnap, this.seed + 1);
+      this.game = gameFromSnapshot(this.players, this.lastFullSnap || this.lastSnap, this.seed + 1);
       this.map = this.game.map;
       renderer.setMap(this.map);
       this.pred = null;
