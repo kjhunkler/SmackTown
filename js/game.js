@@ -226,6 +226,7 @@ const ENEMY_TOUCH_CD = 0.8;          // per-creep cooldown between contact bumps
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
 const ENEMY_BASE_MAX = 16;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 48;            // hard ceiling: large swarm, still practical for browser hosts
+const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
 const ENEMY_BASE_SPAWN = 3.2;        // seconds between spawns at difficulty 0
 const DIFF_STEP = 40;                // run seconds per difficulty tier
 // Percent-keyed augments have no percent to read in co-op, so they retarget
@@ -395,6 +396,8 @@ export class Game {
     this.inputs = new Map();        // id -> latest input
     for (const f of this.fighters) this.inputs.set(f.id, blankInput());
     this._liveFighters = [];        // reusable co-op query buffer
+    this._enemyGrid = new Map();    // reusable broad-phase cells for combat queries
+    this._enemyGridTouched = [];
     this.hist = [];                 // recent positions per tick (lag compensation)
     this.lagComp = new Map();       // attacker id -> ticks to rewind their victims
   }
@@ -1334,6 +1337,7 @@ export class Game {
   }
 
   _resolveAttacks() {
+    if (this.coop) this._rebuildEnemyGrid();
     for (const f of this.fighters) {
       if (f.dead) continue;
 
@@ -1398,12 +1402,19 @@ export class Game {
         if (pr.foe) continue;                          // creeps' own shots don't hit creeps
         const att = this.fighters.find(x => x.id === pr.owner);
         if (!att) continue;
-        for (const e of this.enemies) {
-          if (e.hp <= 0 || pr.hit?.has('e' + e.eid)) continue;
-          if (Math.abs(e.x - pr.x) < e.hw + pr.r && Math.abs(e.y - pr.y) < e.hh + pr.r) {
-            this._hitEnemy(att, e, pr, deg(pr.ang ?? -40), Math.sign(pr.vx) || 1, false);
-            if (pr.thru) pr.hit?.add('e' + e.eid);
-            else { pr.ttl = 0; break; }
+        const radius = pr.r + 40;
+        const c0 = Math.floor((pr.x - radius) / ENEMY_GRID_CELL);
+        const c1 = Math.floor((pr.x + radius) / ENEMY_GRID_CELL);
+        for (let cell = c0; cell <= c1 && pr.ttl > 0; cell++) {
+          const enemies = this._enemyGrid.get(cell);
+          if (!enemies) continue;
+          for (const e of enemies) {
+            if (e.hp <= 0 || pr.hit?.has('e' + e.eid)) continue;
+            if (Math.abs(e.x - pr.x) < e.hw + pr.r && Math.abs(e.y - pr.y) < e.hh + pr.r) {
+              this._hitEnemy(att, e, pr, deg(pr.ang ?? -40), Math.sign(pr.vx) || 1, false);
+              if (pr.thru) pr.hit?.add('e' + e.eid);
+              else { pr.ttl = 0; break; }
+            }
           }
         }
       }
@@ -1471,14 +1482,20 @@ export class Game {
     }
     // co-op: the same swing also carves into any creeps it overlaps
     if (this.coop) {
-      for (const e of this.enemies) {
-        if (e.hp <= 0) continue;
-        const key = 'e' + e.eid;
-        if (hitSet.has(key)) continue;
-        if (Math.abs(e.x - cx) < hb.hw + e.hw && Math.abs(e.y - cy) < hb.hh + e.hh) {
-          hitSet.add(key);
-          const dirX = spec.both ? (Math.sign(e.x - f.x) || 1) : (a ? (a.x || f.facing) : f.facing);
-          this._hitEnemy(f, e, spec, deg(angDeg), dirX, !!spec.spike);
+      const c0 = Math.floor((cx - hb.hw - 40) / ENEMY_GRID_CELL);
+      const c1 = Math.floor((cx + hb.hw + 40) / ENEMY_GRID_CELL);
+      for (let cell = c0; cell <= c1; cell++) {
+        const enemies = this._enemyGrid.get(cell);
+        if (!enemies) continue;
+        for (const e of enemies) {
+          if (e.hp <= 0) continue;
+          const key = 'e' + e.eid;
+          if (hitSet.has(key)) continue;
+          if (Math.abs(e.x - cx) < hb.hw + e.hw && Math.abs(e.y - cy) < hb.hh + e.hh) {
+            hitSet.add(key);
+            const dirX = spec.both ? (Math.sign(e.x - f.x) || 1) : (a ? (a.x || f.facing) : f.facing);
+            this._hitEnemy(f, e, spec, deg(angDeg), dirX, !!spec.spike);
+          }
         }
       }
     }
@@ -1986,6 +2003,19 @@ export class Game {
       if (d < bd) { bd = d; best = f; }
     }
     return best;
+  }
+
+  _rebuildEnemyGrid() {
+    for (const cell of this._enemyGridTouched) cell.length = 0;
+    this._enemyGridTouched.length = 0;
+    for (const e of this.enemies) {
+      if (e.hp <= 0) continue;
+      const key = Math.floor(e.x / ENEMY_GRID_CELL);
+      let cell = this._enemyGrid.get(key);
+      if (!cell) { cell = []; this._enemyGrid.set(key, cell); }
+      if (!cell.length) this._enemyGridTouched.push(cell);
+      cell.push(e);
+    }
   }
 
   // A fighter's blow lands on a creep: chip its HP, knock it back, and pay the

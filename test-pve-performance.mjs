@@ -4,11 +4,13 @@ const build = {
   stats: { power: 0, speed: 0, defense: 0, agility: 0 },
   weapon: 'unarmed', abilities: [], augments: [],
 };
+const enemyCount = 48;
 const game = new Game([{ id: 'A', name: 'Alice', color: '#fff', build }], 7, 'expanse');
-for (let i = 0; i < 100; i++) {
+for (let i = 0; i < enemyCount; i++) {
   game.enemies.push({
-    eid: i + 1, x: i * 20, y: 0, vx: 0, vy: 0, hp: 30, maxHp: 30,
-    facing: 1, grounded: true, touchCd: 0, hurt: 0,
+    eid: i + 1, kind: 'grunt', hw: 22, hh: 26,
+    x: i * 20, y: -26, vx: 0, vy: 0, hp: 9, maxHp: 9,
+    facing: 1, grounded: true, touchCd: 0, hurt: 0, windup: 0, atkCd: 0,
   });
 }
 
