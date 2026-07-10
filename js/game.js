@@ -2191,6 +2191,27 @@ export class Game {
       ev: this.events.slice(),
     };
   }
+
+  snapshotDelta(cache, centerX, radius) {
+    const snapshot = this.snapshot(centerX, radius);
+    for (const type of ['p', 'en', 'ht']) {
+      const previous = cache[type];
+      const current = new Map();
+      const changed = [];
+      for (const row of snapshot[type]) {
+        const id = row[0];
+        const signature = row.join('|');
+        current.set(id, { row, signature });
+        if (previous.get(id)?.signature !== signature) changed.push(row);
+      }
+      const removed = [];
+      for (const id of previous.keys()) if (!current.has(id)) removed.push(id);
+      cache[type] = current;
+      snapshot['d' + type] = [changed, removed];
+      delete snapshot[type];
+    }
+    return snapshot;
+  }
 }
 
 // Rebuild a live sim from the last snapshot a peer saw — used when the host
@@ -2271,17 +2292,21 @@ export function restoreFighter(f, row) {
 // Build render-only enemy views between two authoritative snapshots. Keeping
 // this outside the simulation makes PvE motion smooth without predicting AI
 // or changing host authority, combat, snapshot cadence, or handoff state.
-export function interpolateEnemyRows(aRows, bRows, k) {
-  const from = new Map((aRows || []).map(e => [e[0], e]));
-  return (bRows || []).map(e2 => {
+export function interpolateEnemyRows(aRows, bRows, k, from = new Map(), out = []) {
+  from.clear();
+  for (const e of aRows || []) from.set(e[0], e);
+  const rows = bRows || [];
+  out.length = rows.length;
+  for (let i = 0; i < rows.length; i++) {
+    const e2 = rows[i];
     const e1 = from.get(e2[0]) || e2;
-    return {
-      eid: e2[0],
-      x: e1[1] + (e2[1] - e1[1]) * k,
-      y: e1[2] + (e2[2] - e1[2]) * k,
-      hp: e2[3], maxHp: e2[4], facing: e2[5], hurt: !!e2[6],
-    };
-  });
+    const view = out[i] || (out[i] = {});
+    view.eid = e2[0];
+    view.x = e1[1] + (e2[1] - e1[1]) * k;
+    view.y = e1[2] + (e2[2] - e1[2]) * k;
+    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0;
+  }
+  return out;
 }
 
 export function blankInput() {

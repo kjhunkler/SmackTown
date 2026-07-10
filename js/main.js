@@ -1153,6 +1153,10 @@ class Session {
     this.game = null;               // authoritative sim (solo/host)
     this.snaps = [];                // client: interpolation buffer
     this.lastSnap = null;
+    this.lastFullSnap = null;
+    this.entityRows = { p: new Map(), en: new Map(), ht: new Map() };
+    this.snapshotCaches = new Map(); // host: recipient -> last transmitted entity rows
+    this._enemyInterpolation = { from: new Map(), out: [] };
     this.pendingEv = [];
     this.acc = 0;
     this.lastT = 0;
@@ -1406,10 +1410,16 @@ class Session {
           s.ev = ev;
           s.ack = ack;
           net.broadcast({ t: 'snap', s });
+          this.snapshotCaches.clear();
         } else {
           for (const [pid] of net.conns) {
             const fighter = this.game.fighters.find(f => f.id === pid);
-            const s = this.game.snapshot(fighter?.x ?? null, SNAPSHOT_INTEREST_RADIUS);
+            let cache = this.snapshotCaches.get(pid);
+            if (!cache) {
+              cache = { p: new Map(), en: new Map(), ht: new Map() };
+              this.snapshotCaches.set(pid, cache);
+            }
+            const s = this.game.snapshotDelta(cache, fighter?.x ?? null, SNAPSHOT_INTEREST_RADIUS);
             s.ev = ev;
             s.ack = ack;
             net.send(pid, { t: 'snap', s });
@@ -1533,8 +1543,21 @@ class Session {
       this.tickLog.length = 0;
       this.corr = { x: 0, y: 0 };
     }
+    if (s.full) {
+      for (const type of ['p', 'en', 'ht']) {
+        this.entityRows[type].clear();
+        for (const row of s[type] || []) this.entityRows[type].set(row[0], row);
+      }
+      this.lastFullSnap = s;
+    } else {
+      for (const type of ['p', 'en', 'ht']) {
+        const [changed, removed] = s['d' + type] || [[], []];
+        for (const row of changed) this.entityRows[type].set(row[0], row);
+        for (const id of removed) this.entityRows[type].delete(id);
+      }
+      s = { ...s, p: [...this.entityRows.p.values()], en: [...this.entityRows.en.values()], ht: [...this.entityRows.ht.values()] };
+    }
     this.lastSnap = s;
-    if (s.full) this.lastFullSnap = s;
     this.snaps.push({ rt: now, s });
     if (this.snaps.length > 40) this.snaps.shift();
     if (s.ev?.length) {
@@ -1747,7 +1770,7 @@ class Session {
     }
     const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0 }));
     const hearts = (b.s.ht || []).map(h => ({ hid: h[0], x: h[1], y: h[2], tLeft: h[3] || 0 }));
-    const enemies = interpolateEnemyRows(a.s.en, b.s.en, k);
+    const enemies = interpolateEnemyRows(a.s.en, b.s.en, k, this._enemyInterpolation.from, this._enemyInterpolation.out);
     const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;
     // riding a moving platform: platforms draw on the interpolated (delayed)
     // timeline while our fighter is predicted ahead — shift us by the

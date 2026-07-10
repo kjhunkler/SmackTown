@@ -33,6 +33,11 @@ for (let run = 0; run < 20; run++) {
 }
 samples.sort((a, b) => a - b);
 const snapshotBytes = new TextEncoder().encode(JSON.stringify(game.snapshot())).byteLength;
+const cache = { p: new Map(), en: new Map(), ht: new Map() };
+game.snapshotDelta(cache, 0, 1800);
+const idleDelta = game.snapshotDelta(cache, 0, 1800);
+const idleDeltaBytes = new TextEncoder().encode(JSON.stringify(idleDelta)).byteLength;
+if (idleDelta.dp[0].length || idleDelta.den[0].length || idleDelta.dht[0].length) throw new Error('Idle delta retained unchanged entities');
 console.log(JSON.stringify({
   enemies: game.enemies.length,
   ticksPerRun: 600,
@@ -40,5 +45,6 @@ console.log(JSON.stringify({
   p95Ms: +samples[18].toFixed(2),
   medianUsPerTick: +(samples[10] * 1000 / 600).toFixed(2),
   fullSnapshotBytes: snapshotBytes,
+  idleDeltaBytes,
   interpolation: 'PASS',
 }));
