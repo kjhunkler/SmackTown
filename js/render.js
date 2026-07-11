@@ -1,21 +1,17 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, HEART_LIFE, EXPANSE_CAM_RETREAT } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, HEART_LIFE } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
 
 const F_W = 46, F_H = 64;
 const LAND_SQUASH_T = 0.13;   // seconds a touchdown squash takes to recover
-// Tap-combo stages get their own hitbox heat so the string reads move by
-// move: jab keeps the stock red, then amber cross, green knee, and the
-// roundhouse finisher burns hot pink.
-const COMBO_TINTS = {
-  cross:  { fill: 'rgba(255, 196, 84, .32)',  edge: 'rgba(255, 214, 140, .95)' },
-  knee:   { fill: 'rgba(104, 236, 160, .32)', edge: 'rgba(160, 255, 200, .95)' },
-  roundh: { fill: 'rgba(255, 46, 99, .40)',   edge: 'rgba(255, 120, 150, 1)' },
-};
+// Tap-combo hitboxes all flash clean white — the string reads as speed,
+// distinguished by shape and timing rather than color.
+const COMBO_WHITE = { fill: 'rgba(255, 255, 255, .32)', edge: 'rgba(255, 255, 255, .95)' };
+const COMBO_TINTS = { jab: COMBO_WHITE, cross: COMBO_WHITE, knee: COMBO_WHITE, roundh: COMBO_WHITE };
 
 // Per-map look: background gradient, celestial motif, star behavior, stage
 // palette, and optional ambient weather. Geometry comes from MAPS in
@@ -116,7 +112,6 @@ export class Renderer {
     this.stage = MAPS[this.mapId];
     this.theme = THEMES[this.mapId] || THEMES[DEFAULT_MAP];
     this.ambient = [];
-    this.expanseCamMax = null;    // fresh expedition, fresh forward-progress watermark
     this.city = this.mapId === 'ruins' ? buildCityScape('ruins')
       : this.mapId === 'skyline' ? buildCityScape('neon')
       : null;
@@ -414,15 +409,7 @@ export class Renderer {
         minY = Math.min(minY, f.y); maxY = Math.max(maxY, f.y);
       }
       const pad = 260;
-      let tx = (minX + maxX) / 2;
-      if (this.mapId === 'expanse') {
-        // The road presses forward: retreating eases the view back only a
-        // short way from the party's best progress, then the camera holds so
-        // a backtracking fighter walks toward the left screen edge instead
-        // of dragging the whole run backwards.
-        this.expanseCamMax = Math.max(this.expanseCamMax ?? tx, tx);
-        tx = Math.max(tx, this.expanseCamMax - EXPANSE_CAM_RETREAT);
-      }
+      const tx = (minX + maxX) / 2;
       const ty = (minY + maxY) / 2 - 40;
       const zx = W / (maxX - minX + pad * 2);
       const zy = H / (maxY - minY + pad * 2);

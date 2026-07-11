@@ -86,7 +86,7 @@ export const AUGMENTS = [
   { id: 'executioner', icon: '🪓', name: 'Executioner',  cost: 160,
     desc: '+20% knockback vs foes at 100% or more · Expeditions: +20% damage vs low-HP enemies' },
   { id: 'reaper',      icon: '💀', name: 'Reaper',       cost: 170,
-    desc: 'KO a foe to heal 25%' },
+    desc: 'KO a foe to heal 25% · Expeditions: 2% per creep' },
 ];
 
 export const MAX_ABILITIES = 2;

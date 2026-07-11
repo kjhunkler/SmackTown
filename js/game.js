@@ -297,8 +297,6 @@ const ENEMY_SEP_PUSH = 300;          // max px/s creeps shoulder each other apar
 const ENEMY_SEP_GAP = 0.9;           // fraction of summed half-widths creeps keep between centers
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
 const ENEMY_RECYCLE_BEHIND = 1200;   // recycle stragglers ahead of the forward-only party
-const EXPANSE_BACKTRACK = 640;        // players may approach the left screen edge without leaving the route
-export const EXPANSE_CAM_RETREAT = 260; // how far the held camera eases back before letting fighters near the edge
 const ENEMY_BASE_MAX = 14;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 36;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
@@ -636,7 +634,6 @@ export class Game {
       parked: false,                // owner stepped out to the lobby: asleep, untouchable
       dead: false,
       lastDir: { x: 1, y: 0 },
-      forwardX: this.stage.infinite ? Math.max(0, this.stage.spawns[i % this.stage.spawns.length]) : null,
       score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: 0, elite: 0 }, // podium stats + expedition credits
     };
   }
@@ -647,6 +644,12 @@ export class Game {
   addFighter(p) {
     if (this.fighters.some(f => f.id === p.id)) return null;
     const f = this._spawnFighter(p, this.fighters.length);
+    // co-op: drop the newcomer beside the expedition party, not back at the
+    // trailhead — they descend right into the action
+    if (this.coop) {
+      const live = this.fighters.filter(o => !o.dead && !o.parked);
+      if (live.length) f.x = live.reduce((s, o) => s + o.x, 0) / live.length + (this.rng() * 160 - 80);
+    }
     f.y = this.stage.respawnY;
     f.grounded = false;
     f.state = 'respawn';
@@ -850,7 +853,9 @@ export class Game {
     f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
     f.regrabT = Math.max(0, f.regrabT - TICK);
     f.standT = Math.max(0, f.standT - TICK);
-    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * TICK);
+    // mana trickles back half as fast while airborne, so the hover-mage
+    // can't sustain the aerial loop forever without touching down
+    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : 0.5) * TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
 
@@ -1011,11 +1016,6 @@ export class Game {
     f.y += f.vy * TICK;
 
     this._collide(f);
-    if (this.stage.infinite) {
-      f.forwardX = Math.max(f.forwardX, f.x);
-      const leftLimit = Math.max(0, f.forwardX - EXPANSE_BACKTRACK);
-      if (f.x < leftLimit) { f.x = leftLimit; if (f.vx < 0) f.vx = 0; }
-    }
     this._tryLedgeGrab(f);
     this._decayInput(inp);
   }
@@ -2798,7 +2798,7 @@ export class Game {
       att.score.ko++;
       att.score.cr += e.cr || 1;
       if (e.elite) att.score.elite++;
-      if (att.st.augments.includes('reaper')) att.hp = Math.min(att.maxHp, att.hp + att.maxHp * 0.12);
+      if (att.st.augments.includes('reaper')) att.hp = Math.min(att.maxHp, att.hp + att.maxHp * 0.02);
     }
     this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid, kind: e.kind, cr: e.cr || 1, att: att?.id || null });
     const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
