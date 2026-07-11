@@ -411,6 +411,7 @@ const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
 const SWORD_LUNGE_H = 0.7;           // horizontal lunge component trimmed 30%
 const SWORD_LUNGE_V = 1.3;           // upward lunge boosted 30% (up & diagonals)
 const SWORD_CHG_FALL = 0.6;          // charging midair: fall at 60% speed (40% slow fall)
+const MAGIC_CHG_FALL = 0.2;          // charging caster hovers: fall at 20% speed (80% slow fall)
 const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 // Every weapon now carries a taste of the sword's movement: the bare-fist
 // smash kit and the spear thrust ride a small lunge along their 8-way aim
@@ -973,9 +974,10 @@ export class Game {
 
     // --- gravity & integration ---
     if (!f.grounded) {
-      // sword charge floats: the windup falls 40% slower, hanging the
-      // swordsman in the air while the aim is held
-      const slow = inCharge && f.st.weapon === 'sword' ? SWORD_CHG_FALL : 1;
+      // charge floats: a winding sword falls 40% slower, a charging caster
+      // hangs at 80% slow — the levitating mage lines up the big burst
+      const slow = inCharge && f.st.weapon === 'sword' ? SWORD_CHG_FALL
+        : inCharge && f.st.weapon === 'magic' ? MAGIC_CHG_FALL : 1;
       // apex hang: gravity eases through the top of the arc so aerials are
       // easier to place. Off in hitstun/crush (launch KOs keep their exact
       // physics) and while fast-falling.
