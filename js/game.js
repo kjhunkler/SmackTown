@@ -202,6 +202,7 @@ export function hazardsAt(mapId, tickF) {
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
 const TURN_ACCEL = 1.8;              // ground accel multiplier while reversing a run
+const CHARGE_FRICTION = 0.4;         // charging holds momentum: 40% of normal ground friction
 const JUMP_V = 860, JUMP2_V = 780;
 // Variable jump height: letting go of the jump control mid-rise trims the
 // remaining ascent, so a tap hops and a hold soars. The release arrives as a
@@ -948,9 +949,12 @@ export class Game {
           f.facing = Math.sign(inp.mx) || f.facing;
           f.state = 'run';
         } else {
-          // dash attacks and wavelands slide on reduced friction
+          // dash attacks and wavelands slide on reduced friction; charging
+          // keeps more momentum too, so skating into a charged swing (or
+          // sliding to a stop while winding one up) carries you farther
           const slick = (inAttack && f.atk === 'dash') || f.slideT > 0;
-          f.vx = approach(f.vx, 0, (slick ? FRICTION * DASH_ATK_FRICTION : FRICTION) * TICK);
+          const frictionMult = slick ? DASH_ATK_FRICTION : inCharge ? CHARGE_FRICTION : 1;
+          f.vx = approach(f.vx, 0, FRICTION * frictionMult * TICK);
           if (canAct && !ducking) f.state = 'idle';
         }
       } else {

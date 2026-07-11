@@ -2765,12 +2765,18 @@ export class Renderer {
     if (f.state === 'roll') ctx.rotate(t * 16 * f.facing);
     // guard crush: dazed wobble until the stun wears off
     if (f.state === 'crush') ctx.rotate(Math.sin(t * 22) * 0.12);
+    // neutral-air spin: whirl continuously through the whole move — purely
+    // a canvas rotation, so the sim hurtbox underneath is untouched, same
+    // as every other rotate effect here
+    const spinning = f.atk === 'nspin' && f.state === 'attack';
+    if (spinning) ctx.rotate(t * 20 * (f.facing || 1));
 
     // squash & stretch by vertical speed, plus a touchdown squash pulse:
-    // deepest at impact, easing back up while the feet stay planted
+    // deepest at impact, easing back up while the feet stay planted.
+    // The spin also tucks into a tight crouch for its whole duration.
     const sq = this.squash.get(f.id);
     const squish = sq ? 1 - sq.a * (sq.t / LAND_SQUASH_T) : 1;
-    const stretch = clamp(1 + Math.abs(f.vy) / 3500, 1, 1.25) * squish;
+    const stretch = clamp(1 + Math.abs(f.vy) / 3500, 1, 1.25) * squish * (spinning ? 0.7 : 1);
     if (squish < 1) ctx.translate(0, (1 - squish) * F_H / 2);
     ctx.scale(1 / Math.sqrt(stretch), stretch);
 
@@ -2925,6 +2931,7 @@ export class Renderer {
     if (f.hb.blade) return this._blade(ctx, f, t);
     if (f.hb.spear) return this._spear(ctx, f, t);
     if (f.atk === 'quake') return this._quake(ctx, f, t);
+    if (f.atk === 'nspin') return this._nspin(ctx, f, t);
     const { dx, dy, hw, hh, active, round } = f.hb;
     const x = f.x + dx - hw, y = f.y + dy - hh;
     // spin moves show as a circle (well, ellipse) instead of a box
@@ -3029,6 +3036,41 @@ export class Renderer {
   // exactly the box the sim tests — but a dulled wood shaft is drawn
   // bridging body to head so the whole weapon (and the gap up close) reads
   // at a glance. Only the leaf-shaped head lights up as live steel.
+  // Neutral-air spin: three small strike-points whirling around the body
+  // instead of one solid blob — they read as the three distinct hits the
+  // sim actually lands (nspin re-arms its hit set 3 times), spinning in
+  // lockstep with the body's own crouch-and-whirl animation. Flat white,
+  // no per-weapon tint — this is the bare-handed neutral, every weapon.
+  _nspin(ctx, f, t) {
+    const { hw, hh, active } = f.hb;
+    const orbit = Math.min(hw, hh) * 0.6;
+    const dotR = Math.min(hw, hh) * 0.32;
+    const squash = hh / hw;
+    const spin = t * 20 * (f.facing || 1);
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const ang = spin + (i / 3) * Math.PI * 2;
+      const px = f.x + Math.cos(ang) * orbit;
+      const py = f.y + Math.sin(ang) * orbit * squash;
+      ctx.beginPath();
+      ctx.arc(px, py, dotR, 0, 7);
+      if (active) {
+        ctx.fillStyle = 'rgba(255, 255, 255, .55)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, .95)';
+        ctx.lineWidth = 2.5;
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = 'rgba(255, 255, 255, .6)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    ctx.restore();
+  }
+
   // Quake: the spear stands planted in the earth while the shockwave lives
   // only from QUAKE_GAP outward on both sides — the two drawn segments are
   // exactly what the sim tests, leaving the safe eye visible at the wielder.
