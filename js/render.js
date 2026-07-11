@@ -329,6 +329,12 @@ export class Renderer {
         this.burst(ev.x, ev.y, 16, '#c9b49a', 300);
         this.shake = Math.max(this.shake, 14);
         break;
+      case 'quake':
+        // spear ground slam: rippling earth ring + dust off the plant point
+        this.rings.push({ x: ev.x, y: ev.y, r0: 20, r1: 170, t: 0, life: 0.35, color: '#d9c9a0', w: 6 });
+        this.burst(ev.x, ev.y, 18, '#c9b49a', 340);
+        this.shake = Math.max(this.shake, 10);
+        break;
       case 'eruption':
         this.burst(ev.x, ev.y, 20, '#ff8a4f', 380);
         this.shake = Math.max(this.shake, 12);

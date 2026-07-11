@@ -1082,7 +1082,7 @@ function startSession(cfg) {
 
 // Cosmetic events the client already plays locally via prediction; the
 // host's copies are dropped for our own fighter to avoid double effects.
-const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'shockwave', 'gale', 'mend', 'duck']);
+const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'shockwave', 'gale', 'mend', 'duck', 'quake']);
 const SNAPSHOT_INTEREST_RADIUS = 1800;
 const FULL_SNAPSHOT_TICKS = 60;
 

@@ -394,6 +394,10 @@ const ATTACKS = {
   // edge; ry = half-thickness of the head). Whiffs up close, rewards
   // spacing with the biggest hit in the game.
   thrust: { dmg: 17, kb: 170, ks: 16, startup: .11, active: .08, rec: .22, rx: 150, gap: 50, ry: 8, ang: -20, spear: true },
+  // spear grounded down-thrust: instead of stabbing the earth, the spear
+  // plants and QUAKES it — a wide both-sides ground eruption that launches
+  // everything nearby up and away. The expedition's swarm-clear button.
+  quake:  { dmg: 12, kb: 300, ks: 18, startup: .16, active: .12, rec: .32, rx: 150, ry: 34, ang: -75, both: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -1281,6 +1285,7 @@ export class Game {
     // fists and spear ride a scaled-down version of the sword's lunge
     if (name === 'fsmash' || name === 'usmash' || name === 'dsmash' || name === 'dair') this._lunge(f, dx, dy, chg, FIST_LUNGE);
     if (name === 'thrust') this._lunge(f, dx, dy, chg, SPEAR_LUNGE, SPEAR_LUNGE_UP);
+    if (name === 'quake') this.events.push({ e: 'quake', id: f.id, x: f.x, y: f.y + F_H / 2 });
     // tap combo bookkeeping: every stage lunges along the live aim (harder
     // deeper into the string) and arms the window for the next tap; the
     // roundhouse resets. A dash attack opens the chain so a run-up flows
@@ -1307,7 +1312,7 @@ export class Game {
     const w = f.st.weapon;
     if (w === 'sword') return 'slash';
     if (w === 'magic') return 'mcast';
-    if (w === 'spear') return 'thrust';
+    if (w === 'spear') return dy > 0 && f.grounded ? 'quake' : 'thrust';
     if (dy < 0 && !dx) return 'usmash';
     if (dy > 0 && !dx) return f.grounded ? 'dsmash' : 'dair';
     return 'fsmash';
