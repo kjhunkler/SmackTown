@@ -263,6 +263,18 @@ export const ENEMY_TYPES = {
               boss: true, ranged: true, range: 560, shotDmg: 4, shotSpd: 430, reach: 96, windup: 0.9, atkCd: 2.8 },
 };
 
+// Expedition flavor: player hits send creeps flying at a ridiculous scale —
+// smacking a grunt should genuinely mean "Town" — but the brute and every
+// boss barely budge, so the roster keeps a "the big ones stand their ground"
+// identity instead of everything flopping the same way. Stacks on top of
+// each type's existing kbTaken. Applied only where players hit creeps
+// (_hitEnemy is the single choke point every such hit funnels through).
+const PVE_KB_BOOST = {
+  grunt: 4.5, runner: 4.5, hopper: 4.5, flyer: 4.5, slinger: 4.5,
+  brute: 1.5,
+  colossus: 1.1, tempest: 1.1, warlock: 1.1,
+};
+
 // Three escalating variations per boss type. Which tier shows up follows the
 // difficulty level at the encounter, so late runs meet the nastier cousins.
 export const BOSS_KINDS = ['colossus', 'tempest', 'warlock'];
@@ -2827,7 +2839,8 @@ export class Game {
     // fireball and friends set creeps alight: a short damage-over-time
     if (spec.dot && e.hp > 0) e.burn = { ...spec.dot, tk: spec.dot.every, by: att.id };
     const kbTaken = (ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt).kbTaken;
-    const kb = (spec.kb + spec.ks * dmg) * att.st.kbMult * kbTaken;
+    const kbBoost = PVE_KB_BOOST[e.kind] || 1;
+    const kb = (spec.kb + spec.ks * dmg) * att.st.kbMult * kbTaken * kbBoost;
     const ang = spike ? Math.PI / 2 : angRad;
     e.vx = Math.cos(ang) * kb * dirX * (spike ? 0.3 : 1);
     e.vy = Math.sin(ang) * kb;
