@@ -332,8 +332,8 @@ const COOP_EXEC_HP = 0.33;           // creep HP fraction for the execute bonus
 
 // Heart pickups: a rare drop that heals the whole nearby party a little, so
 // staying grouped pays off. They flash before fading.
-const HEART_DROP_CHANCE = 0.05;
-const HEART_HEAL = 5;
+const HEART_DROP_CHANCE = 0.10;
+const HEART_HEAL = 10;
 const HEART_AOE = 180;
 export const HEART_LIFE = 9;         // seconds a dropped heart lingers
 const HIT_PAUSE = 0.045;
