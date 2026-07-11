@@ -213,6 +213,11 @@ export class Renderer {
           this.burst(ev.x, ev.y, 12, '#ffffff', 320);
           this.shake = Math.max(this.shake, 12);
           break;
+        case 'burstboom':
+          // a magic burst detonating: violet blast ring + sparks
+          this.rings.push({ x: ev.x, y: ev.y, r0: 12, r1: ev.r || 90, t: 0, life: 0.28, color: '#c9a7ff', w: 5 });
+          this.burst(ev.x, ev.y, 12, '#b98cff', 320);
+          break;
         case 'fizzle':
           // magic cast with an empty tank: a sad little puff
           this.burst(ev.x, ev.y, 6, '#8b7bb0', 120);

@@ -410,8 +410,20 @@ const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
 const SWORD_LUNGE_H = 0.7;           // horizontal lunge component trimmed 30%
 const SWORD_LUNGE_V = 1.3;           // upward lunge boosted 30% (up & diagonals)
-const SWORD_CHG_FALL = 0.3;          // charging midair: fall at 30% speed (70% slow fall)
+const SWORD_CHG_FALL = 0.6;          // charging midair: fall at 60% speed (40% slow fall)
 const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
+// Every weapon now carries a taste of the sword's movement: the bare-fist
+// smash kit and the spear thrust ride a small lunge along their 8-way aim
+// (scaled-down sword lunge), and the spear's up-thrust climbs extra hard.
+const FIST_LUNGE = 0.45;             // smash-kit lunge, fraction of the sword's
+const SPEAR_LUNGE = 0.5;             // thrust lunge, fraction of the sword's
+const SPEAR_LUNGE_UP = 1.6;          // up-thrusts carry extra upward momentum
+// Magic movement: big casts kick. A charged release shoves the caster
+// slightly backward, and a charged DOWN-cast rocket-jumps them skyward.
+const CAST_RECOIL_MIN = 0.45;        // charge fraction where recoil starts
+const CAST_RECOIL0 = 120, CAST_RECOIL1 = 260;   // backward shove vs charge
+const CAST_ROCKET_MIN = 0.3;         // charge needed for the down-cast rocket
+const CAST_ROCKET0 = 620, CAST_ROCKET1 = 1500;  // upward rocket speed vs charge
 const MANA_MAX = 100;
 const MANA_REGEN = 26;               // per second, always trickling back
 const MANA_COST = 35;                // mana at a standard (k=1) burst; scales with power
@@ -420,6 +432,11 @@ const BURST_TTL0 = 0.55, BURST_TTL1 = 1.5;   // burst lifetime vs charge
 const BURST_DMG0 = 3.5,  BURST_DMG1 = 8;     // burst damage vs charge
 const BURST_KB0  = 420,  BURST_KB1  = 660;   // burst knockback vs charge
 const BURST_R0   = 12,   BURST_R1   = 20;    // burst radius vs charge
+// Bursts detonate when they die (impact or end of flight): an area blast
+// around the pop hits everyone but the direct victim, at reduced power.
+const BURST_AOE_R0 = 70, BURST_AOE_R1 = 130; // blast radius vs charge
+const BURST_AOE_DMG = 0.55;          // area damage fraction of the direct hit
+const BURST_AOE_KB = 0.7;            // area knockback fraction
 
 // Charge fraction k runs 0..1 for a standard release. Weapons with an
 // overcharge (magic) can keep holding past that into 1..2, where values
@@ -956,7 +973,7 @@ export class Game {
 
     // --- gravity & integration ---
     if (!f.grounded) {
-      // sword charge floats: the windup falls 70% slower, hanging the
+      // sword charge floats: the windup falls 40% slower, hanging the
       // swordsman in the air while the aim is held
       const slow = inCharge && f.st.weapon === 'sword' ? SWORD_CHG_FALL : 1;
       // apex hang: gravity eases through the top of the arc so aerials are
@@ -1230,6 +1247,9 @@ export class Game {
       f.fastfall = false;
     }
     if (name === 'slash') this._lunge(f, dx, dy, chg);
+    // fists and spear ride a scaled-down version of the sword's lunge
+    if (name === 'fsmash' || name === 'usmash' || name === 'dsmash' || name === 'dair') this._lunge(f, dx, dy, chg, FIST_LUNGE);
+    if (name === 'thrust') this._lunge(f, dx, dy, chg, SPEAR_LUNGE, SPEAR_LUNGE_UP);
     if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
   }
@@ -1262,24 +1282,30 @@ export class Game {
     return this._chargeMax(f) * this._chargeKMax(f);
   }
 
-  // Sword release: a body lunge along the 8-way aim, longer the harder it
+  // Weapon release: a body lunge along the 8-way aim, longer the harder it
   // was charged. The sideways component is trimmed while upward vectors
   // (straight up and the diagonals) get a boost — the blade climbs better
   // than it skates. Grounded down-aims can't dive through the floor, so
   // only their sideways component slides. Aerial upward lunges share the
-  // up-smash rise cooldown so chained slashes can't climb forever.
-  _lunge(f, dx, dy, k = 0) {
-    const spd = SWORD_LUNGE * (1 + SWORD_LUNGE_CHG * k);
+  // up-smash rise cooldown so chained strikes can't climb forever.
+  // `scale` shrinks the whole lunge (fists/spear take a taste of the
+  // sword's movement); `vBoost` multiplies the upward component on top
+  // (the spear's up-thrust climbs extra hard).
+  _lunge(f, dx, dy, k = 0, scale = 1, vBoost = 1) {
+    const spd = SWORD_LUNGE * scale * (1 + SWORD_LUNGE_CHG * k);
     const n = Math.hypot(dx, dy) || 1;
     const lx = (dx / n) * spd * SWORD_LUNGE_H;
-    let ly = (dy / n) * spd * (dy < 0 ? SWORD_LUNGE_V : 1);
+    let ly = (dy / n) * spd * (dy < 0 ? SWORD_LUNGE_V * vBoost : 1);
     if (f.grounded && ly > 0) ly = 0;
     if (ly < 0) {
       if (!f.grounded && f.riseT > 0) ly = 0;
       else { f.riseT = AIR_RISE_CD; f.grounded = false; f.fastfall = false; }
     }
     if (lx) { f.vx = lx; f.dashT = SWORD_DASH_T0 + (SWORD_DASH_T1 - SWORD_DASH_T0) * k; }
-    if (ly) f.vy = ly;
+    // merge, never weaken: keep whichever vertical is stronger in the
+    // lunge's direction (an up-smash rise or a fast dive stays intact)
+    if (ly < 0) f.vy = Math.min(f.vy, ly);
+    else if (ly > 0) f.vy = Math.max(f.vy, ly);
   }
 
   // Magic release: a burst that flies along the aim. Charge is range and
@@ -1287,6 +1313,7 @@ export class Game {
   // mana; too dry to pay and the cast fizzles into nothing but recovery.
   // Returns whether a burst actually came out.
   _castBurst(f, dx, dy, k) {
+    const aimedDown = dy > 0;
     if (f.grounded && dy > 0) { dy = 0; dx = dx || f.facing; } // not into the floor
     // mana tracks the burst's actual power output (its damage), not a flat
     // tax — a weak tap is cheap, a full overcharge costs twice a standard cast
@@ -1310,8 +1337,44 @@ export class Game {
       ttl: chargeScale(BURST_TTL0, BURST_TTL1, k),
       dmg, kb: chargeScale(BURST_KB0, BURST_KB1, k), ks: 9, r: chargeScale(BURST_R0, BURST_R1, k),
       ang,
+      aoeR: chargeScale(BURST_AOE_R0, BURST_AOE_R1, Math.min(2, k)),
     });
+    // big casts kick back. A charged DOWN-cast rocket-jumps the caster
+    // skyward off the blast; otherwise a charged release shoves them
+    // slightly opposite the aim.
+    if (aimedDown && k >= CAST_ROCKET_MIN) {
+      f.vy = Math.min(f.vy, -(CAST_ROCKET0 + (CAST_ROCKET1 - CAST_ROCKET0) * Math.min(1, k)));
+      f.grounded = false;
+      f.fastfall = false;
+    } else if (k >= CAST_RECOIL_MIN && nx) {
+      f.vx -= nx * (CAST_RECOIL0 + (CAST_RECOIL1 - CAST_RECOIL0) * Math.min(1, k));
+    }
     return true;
+  }
+
+  // A burst's death — impact or end of flight — detonates it: area damage
+  // around the pop for everyone except the direct victim (already paid).
+  _burstBoom(pr) {
+    const att = this.fighters.find(x => x.id === pr.owner);
+    if (!att) return;
+    const R = pr.aoeR || BURST_AOE_R0;
+    const spec = { dmg: pr.dmg * BURST_AOE_DMG, kb: pr.kb * BURST_AOE_KB, ks: pr.ks };
+    this.events.push({ e: 'burstboom', x: pr.x, y: pr.y, r: R });
+    if (!this.coop) {
+      for (const o of this.fighters) {
+        if (o.id === att.id || o.id === pr.struck || o.dead || o.invuln > 0) continue;
+        const ob = hurtBox(o);
+        if (Math.abs(o.x - pr.x) < R + F_W / 2 && Math.abs((o.y + ob.dy) - pr.y) < R + ob.hh) {
+          this._applyHit(att, o, spec, deg(-45), Math.sign(o.x - pr.x) || 1, false);
+        }
+      }
+    }
+    for (const e of this.enemies) {
+      if (e.hp <= 0 || 'e' + e.eid === pr.struck) continue;
+      if (Math.abs(e.x - pr.x) < R + e.hw && Math.abs(e.y - pr.y) < R + e.hh) {
+        this._hitEnemy(att, e, spec, deg(-45), Math.sign(e.x - pr.x) || 1, false);
+      }
+    }
   }
 
   // Wind up a strong attack: the fighter plants (or drifts, midair) with
@@ -1582,7 +1645,7 @@ export class Game {
             this._applyHit(att, o, pr, deg(pr.ang ?? -40), dirX, false, !!pr.pierce);
           }
           if (pr.thru) pr.hit.add(o.id);   // sail on through
-          else pr.ttl = 0;
+          else { pr.struck = o.id; pr.ttl = 0; }   // burst AoE skips the direct victim
         }
       }
     }
@@ -1604,7 +1667,7 @@ export class Game {
             if (Math.abs(e.x - pr.x) < e.hw + pr.r && Math.abs(e.y - pr.y) < e.hh + pr.r) {
               this._hitEnemy(att, e, pr, deg(pr.ang ?? -40), Math.sign(pr.vx) || 1, false);
               if (pr.thru) pr.hit?.add('e' + e.eid);
-              else { pr.ttl = 0; break; }
+              else { pr.struck = 'e' + e.eid; pr.ttl = 0; break; }   // burst AoE skips the direct victim
             }
           }
         }
@@ -1833,6 +1896,13 @@ export class Game {
       }
       const m = this.stage.main;
       if (pr.y > m.y && pr.x > m.x && pr.x < m.x + m.w) pr.ttl = 0;
+    }
+    // dying bursts detonate exactly once, whatever killed them
+    for (const pr of this.projectiles) {
+      if (pr.kind === 'burst' && pr.aoeR && pr.ttl <= 0 && !pr.boomed) {
+        pr.boomed = true;
+        this._burstBoom(pr);
+      }
     }
     this.projectiles = this.projectiles.filter(p => p.ttl > 0);
   }

@@ -136,7 +136,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('spear charges at the regular (bare-fist) speed', g._chargeMax(a) === mkGame()._chargeMax(mkGame().fighters[0]));
   g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
   check('spear swipe is a thrust', a.atk === 'thrust');
-  check('thrust does not lunge — it holds ground', a.vx === 0);
+  check('thrust rides a small lunge along its aim', a.vx > 100 && a.vx < 400);
 
   const box = (weapon, atk, dir) => {
     const g2 = mkGame(weapon);
