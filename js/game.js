@@ -361,6 +361,12 @@ const CRUSH_KB_TAKEN = 1.3;         // knockback penalty while crushed
 // attack archetypes: [damage, baseKb, kbScale, startup, active, recover, reach, angle]
 const ATTACKS = {
   jab:    { dmg: 4,  kb: 130, ks: 9,  startup: .05, active: .09, rec: .12, rx: 52, ry: 26, ang: -10 },
+  // tap combo stages 2-4 (see COMBO_CHAIN): the cross reaches wider, the
+  // knee pops steeply upward off a tall box, and the roundhouse is the
+  // heavy sendoff — the biggest box, the slowest wind-up, smash knockback
+  cross:  { dmg: 5,  kb: 155, ks: 10, startup: .05, active: .08, rec: .13, rx: 62, ry: 22, ang: -18 },
+  knee:   { dmg: 6,  kb: 215, ks: 13, startup: .07, active: .09, rec: .15, rx: 44, ry: 44, ang: -72 },
+  roundh: { dmg: 10, kb: 310, ks: 24, startup: .12, active: .10, rec: .28, rx: 72, ry: 36, ang: -35 },
   // dash attack: a tap thrown at run speed. Slides with your momentum and
   // launches up-forward for juggles, but carries the longest recovery of
   // any normal — whiff it and you slide past your target wide open.
@@ -518,6 +524,17 @@ const CHARGE_KB = 0.35;              // +35% knockback at full charge
 const DASH_ATK_MIN = 320;
 const DASH_ATK_FRICTION = 0.3;       // slide keeps rolling through the swing
 
+// Tap combo: taps chain jab → cross → knee → roundhouse as long as each tap
+// lands inside the window (timed from the previous swing's start). Every
+// stage lunges along the currently-held aim — harder as the chain climbs —
+// so the string chases a retreating target, and re-aiming mid-chain turns
+// the fighter around. A dash attack opens the chain too. Getting hit, or
+// letting the window lapse, drops the combo back to the jab.
+const COMBO_CHAIN = ['jab', 'cross', 'knee', 'roundh'];
+const COMBO_WINDOW = 0.6;            // seconds from swing start to chain the next tap
+const COMBO_LUNGE = [0.35, 0.45, 0.55, 0.7];  // per-stage lunge, fraction of the sword's
+const COMBO_LUNGE_V = 0.8;           // taps climb a little less than weapon lunges
+
 // Dodge roll: shove the stick sideways out of a duck to tumble along the
 // ground. Invulnerable through the front of the roll, punishable at the
 // tail, and it bites the guard meter — regen is the spam limiter.
@@ -589,6 +606,7 @@ export class Game {
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
       jumpT: -1,                    // seconds since liftoff while a jump cut is still possible (-1 idle)
+      comboN: 0, comboT: 0,         // tap combo: next stage index + chain window left
       pct: 0, stocks: STOCKS,
       hp: st.maxHp, maxHp: st.maxHp, downT: 0,   // co-op health & downed timer
       state: 'idle',                // idle|run|air|attack|charge|hitstun|ledge|roll|dead|respawn
@@ -972,6 +990,10 @@ export class Game {
     if (inHitstun && f.stateT >= f.hitstunFor) { f.state = f.grounded ? 'idle' : 'air'; f.stunned = false; }
     if (inCrush && f.stateT >= CRUSH_STUN) { f.state = f.grounded ? 'idle' : 'air'; }
 
+    // tap combo window: run out the clock, and drop the chain on a hit
+    if (inHitstun || inCrush) { f.comboT = 0; f.comboN = 0; }
+    else if (f.comboT > 0 && (f.comboT -= TICK) <= 0) { f.comboT = 0; f.comboN = 0; }
+
     // --- gravity & integration ---
     if (!f.grounded) {
       // charge floats: a winding sword falls 40% slower, a charging caster
@@ -1212,10 +1234,15 @@ export class Game {
       name = (!dx && !dy && !f.grounded) ? 'nspin' : 'jab';
       // grounded straight-down tap: angle it forward so it isn't in the floor
       if (dy > 0 && !dx && f.grounded) dx = f.facing;
+      // an armed combo chain claims the tap before the dash conversion,
+      // so mid-string lunges can't accidentally turn into dash attacks
+      if (name === 'jab' && !fromDuck && f.comboT > 0 && f.comboN > 0) {
+        name = COMBO_CHAIN[Math.min(f.comboN, COMBO_CHAIN.length - 1)];
+      }
       // tap at run speed: dash attack — the jab rides the momentum instead
       // of planting. Vertical or against-the-run aims fall through to the
       // normal jab, so aiming backward is the escape hatch to stop and poke.
-      if (name === 'jab' && !fromDuck && f.grounded && !dy
+      else if (name === 'jab' && !fromDuck && f.grounded && !dy
           && Math.abs(f.vx) >= DASH_ATK_MIN && (!dx || dx === Math.sign(f.vx))) {
         name = 'dash';
         dx = Math.sign(f.vx);
@@ -1236,8 +1263,10 @@ export class Game {
     f.lowJab = fromDuck && name === 'jab';
     f.atkHit.clear();
     f.atkSpd = Math.hypot(f.vx, f.vy);   // momentum: judge the run-up, not the plant
-    // dash attacks keep their slide; so do attacks thrown mid-waveland
-    if (f.grounded && name !== 'dash' && f.slideT <= 0) f.vx *= 0.35;
+    // dash attacks keep their slide; so do attacks thrown mid-waveland and
+    // tap-combo stages, whose lunge merges with momentum instead of planting
+    const comboTap = !swipe && !fromDuck && COMBO_CHAIN.includes(name);
+    if (f.grounded && name !== 'dash' && !comboTap && f.slideT <= 0) f.vx *= 0.35;
     // upward smash in the air boosts you like an air jump — and costs none.
     // The lift itself is on a short cooldown so chained up-smashes can't be
     // spammed to fly forever; the swing still comes out either way.
@@ -1252,6 +1281,22 @@ export class Game {
     // fists and spear ride a scaled-down version of the sword's lunge
     if (name === 'fsmash' || name === 'usmash' || name === 'dsmash' || name === 'dair') this._lunge(f, dx, dy, chg, FIST_LUNGE);
     if (name === 'thrust') this._lunge(f, dx, dy, chg, SPEAR_LUNGE, SPEAR_LUNGE_UP);
+    // tap combo bookkeeping: every stage lunges along the live aim (harder
+    // deeper into the string) and arms the window for the next tap; the
+    // roundhouse resets. A dash attack opens the chain so a run-up flows
+    // straight into cross → knee → roundhouse.
+    const stage = swipe ? -1 : COMBO_CHAIN.indexOf(name);
+    if (stage >= 0) {
+      if (!f.lowJab) this._lunge(f, dx || f.facing, dy, 0, COMBO_LUNGE[stage], COMBO_LUNGE_V);
+      f.comboN = stage + 1 < COMBO_CHAIN.length ? stage + 1 : 0;
+      f.comboT = f.comboN ? COMBO_WINDOW : 0;
+    } else if (name === 'dash') {
+      f.comboN = 1;
+      f.comboT = COMBO_WINDOW;
+    } else if (!swipe) {
+      f.comboN = 0;
+      f.comboT = 0;
+    }
     if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
   }
@@ -1303,9 +1348,14 @@ export class Game {
       if (!f.grounded && f.riseT > 0) ly = 0;
       else { f.riseT = AIR_RISE_CD; f.grounded = false; f.fastfall = false; }
     }
-    if (lx) { f.vx = lx; f.dashT = SWORD_DASH_T0 + (SWORD_DASH_T1 - SWORD_DASH_T0) * k; }
-    // merge, never weaken: keep whichever vertical is stronger in the
-    // lunge's direction (an up-smash rise or a fast dive stays intact)
+    // merge, never weaken: a lunge in the direction you're already moving
+    // keeps the faster speed (a run or waveland glide sails through the
+    // swing); against your momentum it turns you around at lunge speed
+    if (lx) {
+      f.vx = Math.sign(lx) === Math.sign(f.vx) ? Math.sign(lx) * Math.max(Math.abs(f.vx), Math.abs(lx)) : lx;
+      f.dashT = SWORD_DASH_T0 + (SWORD_DASH_T1 - SWORD_DASH_T0) * k;
+    }
+    // same rule vertically (an up-smash rise or a fast dive stays intact)
     if (ly < 0) f.vy = Math.min(f.vy, ly);
     else if (ly > 0) f.vy = Math.max(f.vy, ly);
   }
@@ -2870,6 +2920,7 @@ export class Game {
           r2(f.ffLockT),
           r1(f.hp), f.maxHp, r2(f.downT),   // co-op health (indices 42,43,44)
           r2(f.jumpT),                      // live jump-cut window (index 45)
+          f.comboN, r2(f.comboT),           // tap combo chain state (indices 46,47)
         ];
       }),
       p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
@@ -2963,6 +3014,7 @@ export function restoreFighter(f, row) {
     if (row.length > 41) f.ffLockT = +row[41] || 0;
     if (row.length > 43) { f.hp = +row[42] || 0; f.maxHp = +row[43] || f.maxHp; f.downT = +row[44] || 0; }
     if (row.length > 45) f.jumpT = +row[45];
+    if (row.length > 47) { f.comboN = row[46] | 0; f.comboT = +row[47] || 0; }
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.

@@ -8,6 +8,14 @@ import { SFX } from './sfx.js';
 
 const F_W = 46, F_H = 64;
 const LAND_SQUASH_T = 0.13;   // seconds a touchdown squash takes to recover
+// Tap-combo stages get their own hitbox heat so the string reads move by
+// move: jab keeps the stock red, then amber cross, green knee, and the
+// roundhouse finisher burns hot pink.
+const COMBO_TINTS = {
+  cross:  { fill: 'rgba(255, 196, 84, .32)',  edge: 'rgba(255, 214, 140, .95)' },
+  knee:   { fill: 'rgba(104, 236, 160, .32)', edge: 'rgba(160, 255, 200, .95)' },
+  roundh: { fill: 'rgba(255, 46, 99, .40)',   edge: 'rgba(255, 120, 150, 1)' },
+};
 
 // Per-map look: background gradient, celestial motif, star behavior, stage
 // palette, and optional ambient weather. Geometry comes from MAPS in
@@ -2928,8 +2936,9 @@ export class Renderer {
       : roundRect(ctx, x, y, hw * 2, hh * 2, 9);
     ctx.save();
     if (active) {
-      ctx.fillStyle = 'rgba(255, 82, 82, .30)';
-      ctx.strokeStyle = 'rgba(255, 150, 130, .95)';
+      const tint = COMBO_TINTS[f.atk];
+      ctx.fillStyle = tint ? tint.fill : 'rgba(255, 82, 82, .30)';
+      ctx.strokeStyle = tint ? tint.edge : 'rgba(255, 150, 130, .95)';
       ctx.lineWidth = 3;
       shape();
       ctx.fill();

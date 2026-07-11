@@ -116,7 +116,7 @@ const players = [
   b.grounded = true; b.vx = 0;
   g._startAttack(b, { kind: 'tap', dx: 1, dy: 0 });
   check('standstill tap stays a jab', b.atk === 'jab');
-  check('jab still plants (speed cut)', b.vx === 0);
+  check('jab steps forward with a small lunge', b.vx > 100 && b.vx < 300);
   c.grounded = true; c.vx = 380; c.facing = 1;
   g._startAttack(c, { kind: 'tap', dx: -1, dy: 0 });
   check('backward tap opts out of the dash', c.atk === 'jab');
@@ -259,10 +259,10 @@ const players = [
   const v0 = a.vx;
   g._startAttack(a, { kind: 'tap', dx: 0, dy: 0 });
   check('waveland attack keeps its glide', a.vx === v0);
-  // and a plain grounded attack still plants
-  c.grounded = true; c.vx = 250;
+  // combo taps no longer plant: momentum sails through the swing
+  c.grounded = true; c.vx = 250; c.facing = 1;
   g._startAttack(c, { kind: 'tap', dx: 0, dy: 0 });
-  check('normal grounded attack still plants', Math.abs(c.vx - 250 * 0.35) < 0.01);
+  check('grounded tap glides through the swing', c.vx === 250);
 }
 
 // --- 12. parked fighters: asleep, untouchable, wake to the lowest stocks ---
