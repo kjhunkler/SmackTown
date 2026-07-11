@@ -356,6 +356,10 @@ const GUARD_REDUCK = 25;             // min guard needed to start a duck
 const CRUSH_STUN = 1.0;              // crumple duration at guard zero
 const CRUSH_KB_TAKEN = 1.3;         // knockback penalty while crushed
 
+// The quake's dead-zone radius: shared with the renderer so the drawn ring
+// matches exactly what the sim tests.
+export const QUAKE_GAP = 55;
+
 // attack archetypes: [damage, baseKb, kbScale, startup, active, recover, reach, angle]
 const ATTACKS = {
   jab:    { dmg: 4,  kb: 130, ks: 9,  startup: .05, active: .09, rec: .12, rx: 52, ry: 26, ang: -10 },
@@ -395,9 +399,11 @@ const ATTACKS = {
   // spacing with the biggest hit in the game.
   thrust: { dmg: 17, kb: 170, ks: 16, startup: .11, active: .08, rec: .22, rx: 150, gap: 50, ry: 8, ang: -20, spear: true },
   // spear grounded down-thrust: instead of stabbing the earth, the spear
-  // plants and QUAKES it — a wide both-sides ground eruption that launches
-  // everything nearby up and away. The expedition's swarm-clear button.
-  quake:  { dmg: 12, kb: 300, ks: 18, startup: .16, active: .12, rec: .32, rx: 150, ry: 34, ang: -75, both: true },
+  // plants and QUAKES it — a both-sides ground eruption that launches
+  // everything at spear's length up and away. Its weakness is the ring:
+  // the wave only lives from `gap` outward, so anything hugging the
+  // wielder stands safely inside the eye of the quake.
+  quake:  { dmg: 8, kb: 240, ks: 16, startup: .20, active: .12, rec: .36, rx: 150, gap: QUAKE_GAP, ry: 34, ang: -75, both: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -1820,6 +1826,8 @@ export class Game {
       if (this.coop) continue;   // co-op: teammates can't hurt each other (enemies are a separate faction)
       const pos = this._rewound(o, f.id);
       const ob = hurtBox(o);
+      // ringed both-sides attacks (quake) have an eye: point-blank is safe
+      if (spec.both && spec.gap && Math.abs(pos.x - f.x) < spec.gap) continue;
       if (Math.abs(pos.x - cx) < hb.hw + F_W / 2 && Math.abs(pos.y + ob.dy - cy) < hb.hh + ob.hh) {
         hitSet.add(o.id);
         if (o.counterT > 0) {
@@ -1854,6 +1862,8 @@ export class Game {
           if (e.hp <= 0) continue;
           const key = 'e' + e.eid;
           if (hitSet.has(key)) continue;
+          // ringed both-sides attacks (quake) have an eye: point-blank is safe
+          if (spec.both && spec.gap && Math.abs(e.x - f.x) < spec.gap) continue;
           if (Math.abs(e.x - cx) < hb.hw + e.hw && Math.abs(e.y - cy) < hb.hh + e.hh) {
             hitSet.add(key);
             const dirX = spec.both ? (Math.sign(e.x - f.x) || 1) : (a ? (a.x || f.facing) : f.facing);

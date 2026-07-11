@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, HEART_LIFE } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, HEART_LIFE, QUAKE_GAP } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -2924,6 +2924,7 @@ export class Renderer {
   _hitbox(ctx, f, t) {
     if (f.hb.blade) return this._blade(ctx, f, t);
     if (f.hb.spear) return this._spear(ctx, f, t);
+    if (f.atk === 'quake') return this._quake(ctx, f, t);
     const { dx, dy, hw, hh, active, round } = f.hb;
     const x = f.x + dx - hw, y = f.y + dy - hh;
     // spin moves show as a circle (well, ellipse) instead of a box
@@ -3028,6 +3029,53 @@ export class Renderer {
   // exactly the box the sim tests — but a dulled wood shaft is drawn
   // bridging body to head so the whole weapon (and the gap up close) reads
   // at a glance. Only the leaf-shaped head lights up as live steel.
+  // Quake: the spear stands planted in the earth while the shockwave lives
+  // only from QUAKE_GAP outward on both sides — the two drawn segments are
+  // exactly what the sim tests, leaving the safe eye visible at the wielder.
+  _quake(ctx, f, t) {
+    const { dy, hw, hh, active } = f.hb;
+    const cy = f.y + dy;
+    ctx.save();
+    // planted spear: shaft standing out of the ground, leaf head buried
+    ctx.translate(f.x + f.facing * 10, f.y);
+    ctx.strokeStyle = active ? 'rgba(150,110,70,.95)' : 'rgba(150,110,70,.6)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, -F_H * 0.55); ctx.lineTo(0, F_H / 2 - 4); ctx.stroke();
+    ctx.fillStyle = active ? 'rgba(244,250,255,.95)' : 'rgba(215,236,255,.7)';
+    ctx.beginPath();
+    ctx.moveTo(0, F_H / 2 + 10);
+    ctx.lineTo(-6, F_H / 2 - 8);
+    ctx.lineTo(6, F_H / 2 - 8);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // the two live wave segments, gap..reach each side
+    ctx.save();
+    const chg = f.hb.chg || 0;
+    const pulse = chg ? (0.5 + 0.5 * Math.sin(t * (2 + 9 * chg) * 2 * Math.PI)) * chg : 0;
+    for (const s of [-1, 1]) {
+      const x0 = f.x + s * QUAKE_GAP, x1 = f.x + s * hw;
+      const shape = () => { ctx.beginPath(); ctx.rect(Math.min(x0, x1), cy - hh, Math.abs(x1 - x0), hh * 2); };
+      if (active) {
+        ctx.fillStyle = 'rgba(255, 82, 82, .30)';
+        ctx.strokeStyle = 'rgba(255, 150, 130, .95)';
+        ctx.lineWidth = 3;
+        shape(); ctx.fill(); ctx.stroke();
+      } else {
+        if (pulse > 0.02) {
+          ctx.fillStyle = `rgba(255, 160, 90, ${(0.32 * pulse).toFixed(3)})`;
+          shape(); ctx.fill();
+        }
+        ctx.strokeStyle = `rgba(255, ${214 - Math.round(90 * pulse)}, 102, ${(0.55 + 0.45 * pulse).toFixed(3)})`;
+        ctx.lineWidth = 2 + 2.5 * chg;
+        ctx.setLineDash([7, 6]);
+        ctx.lineDashOffset = -t * 60;
+        shape(); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    ctx.restore();
+  }
+
   _spear(ctx, f, t) {
     const { dx, dy, hw, hh, active } = f.hb;
     const n = Math.hypot(dx, dy) || 1;
