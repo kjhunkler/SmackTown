@@ -60,7 +60,7 @@ export const DEFAULT_WEAPON = 'unarmed';
 
 export const AUGMENTS = [
   { id: 'vampiric',    icon: '🩸', name: 'Vampiric',     cost: 170,
-    desc: 'Heal 12% of the damage you deal' },
+    desc: 'Heal 12% of the damage you deal · Expeditions: 4%' },
   { id: 'thorns',      icon: '🌵', name: 'Thorns',       cost: 160,
     desc: 'Melee attackers take 4% recoil damage' },
   { id: 'feather',     icon: '🪶', name: 'Featherweight',cost: 140,

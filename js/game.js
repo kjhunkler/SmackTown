@@ -1404,6 +1404,32 @@ export class Game {
     return true;
   }
 
+  // Fire shells (fireball, volley bolts) detonate when they die: a flame
+  // splash that chips, shoves, and sets the afterburn on everyone near the
+  // pop except the direct victim, who already took the full hit + burn.
+  _fireBoom(pr) {
+    const att = this.fighters.find(x => x.id === pr.owner);
+    if (!att) return;
+    const R = pr.fireR;
+    const spec = { dmg: pr.dmg * 0.5, kb: pr.kb * 0.6, ks: pr.ks, dot: pr.dot };
+    this.events.push({ e: 'burstboom', x: pr.x, y: pr.y, r: R, fire: 1 });
+    if (!this.coop) {
+      for (const o of this.fighters) {
+        if (o.id === att.id || o.id === pr.struck || o.dead || o.invuln > 0) continue;
+        const ob = hurtBox(o);
+        if (Math.abs(o.x - pr.x) < R + F_W / 2 && Math.abs((o.y + ob.dy) - pr.y) < R + ob.hh) {
+          this._applyHit(att, o, spec, deg(-40), Math.sign(o.x - pr.x) || 1, false);
+        }
+      }
+    }
+    for (const e of this.enemies) {
+      if (e.hp <= 0 || 'e' + e.eid === pr.struck) continue;
+      if (Math.abs(e.x - pr.x) < R + e.hw && Math.abs(e.y - pr.y) < R + e.hh) {
+        this._hitEnemy(att, e, spec, deg(-40), Math.sign(e.x - pr.x) || 1, false);
+      }
+    }
+  }
+
   // A burst's death — impact or end of flight — detonates it: area damage
   // around the pop for everyone except the direct victim (already paid).
   _burstBoom(pr) {
@@ -1457,6 +1483,18 @@ export class Game {
     this._startAttack(f, { kind: 'swipe', dx: aim.dx, dy: aim.dy }, false, k);
   }
 
+  // 8-way ability aim from the live stick, normalized; facing when neutral.
+  // Grounded down-aims flatten to the facing so shots don't fire into the floor.
+  _abilityAim(f) {
+    const inp = this.inputs.get(f.id);
+    let ax = Math.abs(inp?.mx || 0) > 0.3 ? Math.sign(inp.mx) : 0;
+    let ay = Math.abs(inp?.my || 0) > 0.3 ? Math.sign(inp.my) : 0;
+    if (!ax && !ay) ax = f.facing;
+    if (f.grounded && ay > 0) { ay = 0; ax = ax || f.facing; }
+    const n = Math.hypot(ax, ay) || 1;
+    return [ax / n, ay / n];
+  }
+
   _useAbility(f, slot) {
     const id = f.st.abilities[slot];
     if (!id || f.cds[slot] > 0) return;
@@ -1465,15 +1503,20 @@ export class Game {
     const dir = f.lastDir;
     let evUp = false;
     switch (id) {
-      case 'fireball':
+      case 'fireball': {
+        // aimed 8-way by the held stick (facing when neutral); the shell
+        // detonates when it dies — flame splash + afterburn around the pop
+        const [nx, ny] = this._abilityAim(f);
         this.projectiles.push({
           eid: nextEid++, kind: 'fireball', owner: f.id,
-          x: f.x + f.facing * 40, y: f.y - 8,
-          vx: f.facing * 620, vy: 0, ttl: 1.4,
+          x: f.x + nx * 40, y: f.y - 8 + ny * 20,
+          vx: nx * 620, vy: ny * 620, ttl: 1.4,
           dmg: 6, kb: 170, ks: 13, r: 14,
           dot: { n: 3, every: 0.5, dmg: 2 },   // afterburn: +6% over 1.5s
+          fireR: 90,
         });
         break;
+      }
       case 'dashstrike': {
         // hold up while casting to angle the lunge diagonally skyward
         const up = (this.inputs.get(f.id)?.my ?? 0) < -0.4;
@@ -1518,16 +1561,24 @@ export class Game {
           thru: true, hit: new Set(),   // cuts through targets, out and back
         });
         break;
-      case 'volley':
-        for (const vy of [-150, 0, 150]) {
+      case 'volley': {
+        // a fan of three burning bolts around the held aim, each popping in
+        // a small flame splash when it dies
+        const [nx, ny] = this._abilityAim(f);
+        const base = Math.atan2(ny, nx);
+        for (const off of [-0.26, 0, 0.26]) {
+          const ang = base + off;
           this.projectiles.push({
             eid: nextEid++, kind: 'bolt', owner: f.id,
-            x: f.x + f.facing * 40, y: f.y - 8,
-            vx: f.facing * 580, vy, ttl: 1.1,
+            x: f.x + Math.cos(ang) * 40, y: f.y - 8 + Math.sin(ang) * 20,
+            vx: Math.cos(ang) * 580, vy: Math.sin(ang) * 580, ttl: 1.1,
             dmg: 5, kb: 140, ks: 10, r: 11,
+            dot: { n: 2, every: 0.5, dmg: 2 },   // volley bolts burn now too
+            fireR: 60,
           });
         }
         break;
+      }
       case 'gale':
         // radial windbox: little damage, lots of shove; works midair
         this.events.push({ e: 'gale', id: f.id, x: f.x, y: f.y });
@@ -1949,12 +2000,11 @@ export class Game {
       const m = this.stage.main;
       if (pr.y > m.y && pr.x > m.x && pr.x < m.x + m.w) pr.ttl = 0;
     }
-    // dying bursts detonate exactly once, whatever killed them
+    // dying shells detonate exactly once, whatever killed them
     for (const pr of this.projectiles) {
-      if (pr.kind === 'burst' && pr.aoeR && pr.ttl <= 0 && !pr.boomed) {
-        pr.boomed = true;
-        this._burstBoom(pr);
-      }
+      if (pr.ttl > 0 || pr.boomed) continue;
+      if (pr.kind === 'burst' && pr.aoeR) { pr.boomed = true; this._burstBoom(pr); }
+      else if (pr.fireR) { pr.boomed = true; this._fireBoom(pr); }
     }
     this.projectiles = this.projectiles.filter(p => p.ttl > 0);
   }
@@ -2768,7 +2818,7 @@ export class Game {
     e.vy = Math.sin(ang) * kb;
     if (e.vy < 0) e.grounded = false;
     // vampiric bites heal the striker — the only sustain out on the road
-    if (att.st.augments.includes('vampiric')) att.hp = Math.min(att.maxHp, att.hp + dmg * 0.12);
+    if (att.st.augments.includes('vampiric')) att.hp = Math.min(att.maxHp, att.hp + dmg * 0.04);
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({ e: 'hit', x: e.x, y: e.y, dmg: Math.round(dmg), heavy: kb > 700, vic: 'e' + e.eid, att: att.id });
     if (e.hp <= 0) this._enemyDied(e, att);

@@ -387,7 +387,7 @@ class Sfx {
       case 'stomp':   this.play('hitheavy'); break;
       case 'eruption': this.play('hitheavy'); break;
       case 'bossdown': this.play('secondwind'); break;
-      case 'burstboom': this.play('hitheavy'); break;
+      case 'burstboom': this.play(ev.fire ? 'burn' : 'hitheavy'); break;
       case 'spikebounce': this.play('jump'); break;
       case 'land':    this.play('land'); break;
       case 'roll':    this.play('roll'); break;
