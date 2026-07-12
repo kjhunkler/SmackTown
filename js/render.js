@@ -171,9 +171,6 @@ export class Renderer {
         case 'counter':
           this.burst(ev.x, ev.y, 14, '#38b6ff', 300);
           break;
-        case 'secondwind':
-          this.burst(ev.x, ev.y, 16, '#3ddc84', 260);
-          break;
         case 'gale':
           this.burst(ev.x, ev.y, 24, '#bfe3ff', 560);
           // show the actual windbox: an expanding gust ring out to its range
@@ -297,6 +294,12 @@ export class Renderer {
       case 'volley':    this.burst(ev.x, ev.y, 12, '#ffd23e', 260); break;
       case 'hook':      this.burst(ev.x, ev.y, 8, '#c9d4e8', 200); break;
       case 'trap':      this.burst(ev.x, ev.y, 8, '#9aa3c7', 160); break;
+      case 'anchor':    this.burst(ev.x, ev.y, 8, '#3ddc84', 160); break;   // the planted projectile sells the beacon
+      case 'anchortp':
+        // warp-in: a bright pop plus an expanding ring at the arrival point
+        this.burst(ev.x, ev.y, 18, '#3ddc84', 320);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 74, t: 0, life: 0.32, color: '#3ddc84', w: 5 });
+        break;
       case 'mend':      break;   // the 'mend' event already sparkles green
       case 'shockwave': this.burst(ev.x, ev.y, 8, '#ffb02e', 180); break; // cast; slam booms later
       case 'gale':      break;   // the 'gale' event draws the gust rings
@@ -532,6 +535,21 @@ export class Renderer {
           ctx.fill();
         }
         ctx.globalAlpha = 1;
+      } else if (p.kind === 'anchor') {
+        // planted teleport beacon: a slow-spinning rune ring over a
+        // pulsing core, marking the exact spot a warp lands on
+        const pulse = 0.7 + Math.sin(t * 4 + p.eid) * 0.3;
+        ctx.save();
+        ctx.rotate(t * 1.4 + p.eid);
+        ctx.strokeStyle = 'rgba(61,220,132,.8)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath(); ctx.arc(0, 0, 16, 0, 7); ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = `rgba(61,220,132,${(0.5 + pulse * 0.4).toFixed(2)})`;
+        ctx.beginPath(); ctx.arc(0, 0, 6 * pulse, 0, 7); ctx.fill();
+        ctx.fillStyle = '#eaffef';
+        ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, 7); ctx.fill();
       } else if (p.kind === 'foeshot') {
         // creep spitball: a sickly violet orb with a little trailing wisp
         const throb = 1 + Math.sin(t * 24 + p.eid) * 0.18;

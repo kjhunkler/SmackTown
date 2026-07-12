@@ -39,6 +39,8 @@ export const ABILITIES = [
     desc: 'Hurl a hook that reels a foe in — harder the further it flew' },
   { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 6.0,
     desc: 'Plant spikes that launch and stun whoever steps in' },
+  { id: 'anchor',    icon: '⚓', name: 'Second Wind',  cost: 200, cd: 6.0,
+    desc: 'Drop a teleport anchor — hit the button again while it\'s down to warp back to it' },
 ];
 
 // Weapons: what the strong-attack control swings. Every fighter carries
@@ -71,8 +73,6 @@ export const AUGMENTS = [
     desc: '-15% knockback taken, but -5% run speed' },
   { id: 'berserker',   icon: '😤', name: 'Berserker',    cost: 170,
     desc: '+20% damage while your own percent is 80+ · Expeditions: while your HP is low' },
-  { id: 'secondwind',  icon: '💫', name: 'Second Wind',  cost: 200,
-    desc: 'Once per stock: heal 30% when you pass 100%' },
   { id: 'glasscannon', icon: '💎', name: 'Glass Cannon', cost: 170,
     desc: '+18% damage & knockback dealt, +18% knockback taken' },
   { id: 'quickhands',  icon: '⏱️', name: 'Quick Hands',  cost: 180,

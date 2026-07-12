@@ -533,13 +533,23 @@ export function setupAbilityButtons(abilityIds) {
   btns.forEach((btn, i) => {
     const id = abilityIds[i];
     btn.classList.toggle('hidden', !id);
+    btn.classList.remove('cooling', 'ab-live');
     if (id) {
       const def = ABILITIES.find(a => a.id === id);
+      btn.dataset.ability = id;
+      btn.dataset.icon = def?.icon || '?';
       btn.querySelector('.ab-icon').textContent = def?.icon || '?';
       btn.dataset.cd = def?.cd || 3;
     }
   });
 }
+
+// Abilities whose "cooldown" isn't dead time: the teleport anchor sits armed
+// on the field for that whole window, so its button doubles as the activate
+// control instead of just counting down. The cooldown ring still runs (it's
+// the anchor's remaining life), but the button reads as live, not disabled.
+const LIVE_THROUGH_COOLDOWN = new Set(['anchor']);
+const ACTIVATE_ICON = '🌀';
 
 export function updateAbilityButtons(cds) {
   [$('#ability-btn-0'), $('#ability-btn-1')].forEach((btn, i) => {
@@ -548,7 +558,10 @@ export function updateAbilityButtons(cds) {
     const left = cds?.[i] || 0;
     const frac = Math.max(0, Math.min(1, left / total));
     btn.querySelector('.cd-ring').style.strokeDashoffset = String(113 * frac);
-    btn.classList.toggle('cooling', left > 0.05);
+    const live = left > 0.05 && LIVE_THROUGH_COOLDOWN.has(btn.dataset.ability);
+    btn.querySelector('.ab-icon').textContent = live ? ACTIVATE_ICON : btn.dataset.icon;
+    btn.classList.toggle('cooling', left > 0.05 && !live);
+    btn.classList.toggle('ab-live', live);
   });
 }
 

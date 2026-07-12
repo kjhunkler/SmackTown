@@ -1,7 +1,8 @@
 // Headless smoke test: ability kit behavior. Spike traps lock victims in a
 // long stun, uppercut rockets foes skyward, dash strike can angle upward,
-// fireballs leave an afterburn DoT, and the grapple hook reels harder the
-// further it flies. Run: node test-abilities.mjs
+// fireballs leave an afterburn DoT, the grapple hook reels harder the
+// further it flies, and the teleport anchor drops a beacon that doubles as
+// its own activate button for the whole cooldown. Run: node test-abilities.mjs
 import { Game, blankInput } from './js/game.js';
 
 let n = 0, fails = 0;
@@ -103,6 +104,50 @@ const mkGame = (abilities, extra = []) => new Game([
   const near = pullAt(120), far = pullAt(450);   // both on the flatlands ground
   check('a point-blank tag still reels the victim in', near !== null && near > 0);
   check('a max-range snag hauls far harder', far !== null && far > near * 1.5);
+}
+
+// --- 6. teleport anchor: drop a beacon, warp back to it, one at a time ---
+{
+  const g = mkGame(['anchor']);
+  const a = g.fighters[0];
+  a.x = 40; a.y = -100; a.facing = 1;
+  g._useAbility(a, 0);
+  const beacon = g.projectiles.find(p => p.kind === 'anchor');
+  check('the button drops a beacon at your feet', beacon && beacon.x === 40 && beacon.y === -100);
+  check('the beacon is armed for exactly the cooldown', beacon.ttl === 6 && a.cds[0] === 6);
+
+  // wander off, then activate: the button warps you straight back
+  a.x = 500; a.y = -400; a.vx = 300; a.vy = -50;
+  g._useAbility(a, 0);
+  check('activating warps back to the drop point', a.x === 40 && a.y === -100);
+  check('velocity is cleared on arrival', a.vx === 0 && a.vy === 0);
+  check('arrival grants a brief mercy window', a.invuln > 0);
+  check('the beacon is consumed', !g.projectiles.some(p => p.kind === 'anchor' && p.ttl > 0));
+
+  // still on cooldown, no beacon left: the button is a no-op, not a new drop
+  const stillX = a.x, cdBefore = a.cds[0];
+  g._useAbility(a, 0);
+  check('a spent anchor mid-cooldown does nothing', a.x === stillX && a.cds[0] === cdBefore);
+  check('...and does not sneak out a fresh beacon', !g.projectiles.some(p => p.kind === 'anchor' && p.ttl > 0));
+
+  // mashing the button right after a drop teleports (no-op position) instead
+  // of stacking a second beacon
+  const g2 = mkGame(['anchor']);
+  const b = g2.fighters[0];
+  b.x = 0; b.y = -50;
+  g2._useAbility(b, 0);
+  g2._useAbility(b, 0);
+  check('back-to-back presses never leave two live beacons',
+    g2.projectiles.filter(p => p.kind === 'anchor' && p.ttl > 0).length === 0);
+
+  // once the cooldown fully elapses, a fresh drop is available again
+  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
+  for (let i = 0; i < 6 / (1 / 60) + 5; i++) g.step();
+  check('cooldown runs out', a.cds[0] === 0);
+  a.x = 900;
+  g._useAbility(a, 0);
+  check('a new beacon can be dropped once the cooldown clears',
+    g.projectiles.some(p => p.kind === 'anchor' && p.x === 900));
 }
 
 console.log(`\n${n - fails}/${n} passed`);

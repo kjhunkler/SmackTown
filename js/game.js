@@ -627,9 +627,11 @@ const ABILITY_DEFS = {
   mend:      { cd: 7.0 },
   hook:      { cd: 4.5 },
   trap:      { cd: 6.0 },
+  anchor:    { cd: 6.0 },
 };
 const COUNTER_WINDOW = 0.6;          // parry stance duration (s)
 const BUBBLE_INVULN = 1.5;           // bubble shield duration (s)
+const ANCHOR_TP_INVULN = 0.35;       // brief invuln on landing at the anchor
 
 let nextEid = 1;
 
@@ -687,7 +689,6 @@ export class Game {
       guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
       mana: MANA_MAX,               // magic weapon fuel, always recharging
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
-      usedSecondWind: false,
       lastHitBy: null,              // KO attribution (reaper heal)
       dropT: 0,                     // drop-through timer
       ffLockT: 0,                   // brief post-jump window before fast fall can trigger
@@ -751,7 +752,7 @@ export class Game {
       f.pct = 0;
       f.hp = f.maxHp; f.downT = 0;
       f.guard = GUARD_MAX; f.standT = 0;
-      f.usedSecondWind = false;
+      this.projectiles = this.projectiles.filter(p => !(p.kind === 'anchor' && p.owner === f.id));
       f.x = this.stage.spawns[this.fighters.indexOf(f) % this.stage.spawns.length];
       f.y = this.stage.respawnY;
       f.vx = 0; f.vy = 0;
@@ -1603,7 +1604,12 @@ export class Game {
 
   _useAbility(f, slot) {
     const id = f.st.abilities[slot];
-    if (!id || f.cds[slot] > 0) return;
+    if (!id) return;
+    // the anchor button stays live through its whole cooldown — pressing it
+    // while cooling activates the teleport instead of being blocked like
+    // every other ability, so it gets its own gate ahead of the cd check
+    if (id === 'anchor') { this._useAnchor(f, slot); return; }
+    if (f.cds[slot] > 0) return;
     const def = ABILITY_DEFS[id];
     f.cds[slot] = def.cd * (f.st.cdMult || 1);
     const dir = f.lastDir;
@@ -1714,6 +1720,37 @@ export class Game {
         break;
     }
     this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y, dir: f.facing, up: evUp });
+  }
+
+  // Teleport anchor: press once to drop a beacon at your feet, armed for
+  // the whole cooldown; press the same button again anytime in that window
+  // to warp straight back to it instead of waiting the timer out. One
+  // anchor per fighter — a live one blocks a fresh drop, so the button
+  // can't do anything but activate until it's used or expires. cds[slot]
+  // and the beacon's ttl are set from the same value and tick down in
+  // lockstep, so "on cooldown" and "anchor is live" are the same window.
+  _useAnchor(f, slot) {
+    const anchor = this.projectiles.find(p => p.kind === 'anchor' && p.owner === f.id && p.ttl > 0);
+    if (anchor) {
+      anchor.ttl = 0;
+      f.x = anchor.x;
+      f.y = anchor.y;
+      f.vx = 0;
+      f.vy = 0;
+      f.grounded = false;
+      f.fastfall = false;
+      f.invuln = Math.max(f.invuln, ANCHOR_TP_INVULN);
+      this.events.push({ e: 'ability', id: f.id, ability: 'anchortp', x: f.x, y: f.y, dir: f.facing });
+      return;
+    }
+    if (f.cds[slot] > 0) return;
+    const cd = ABILITY_DEFS.anchor.cd * (f.st.cdMult || 1);
+    f.cds[slot] = cd;
+    this.projectiles.push({
+      eid: nextEid++, kind: 'anchor', owner: f.id,
+      x: f.x, y: f.y, vx: 0, vy: 0, ttl: cd,
+    });
+    this.events.push({ e: 'ability', id: f.id, ability: 'anchor', x: f.x, y: f.y, dir: f.facing });
   }
 
   _shockwave(f) {
@@ -1832,6 +1869,7 @@ export class Game {
 
     // projectiles vs fighters
     for (const pr of this.projectiles) {
+      if (pr.kind === 'anchor') continue;   // a beacon, not a weapon — no hitbox
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
         if (this.coop) continue;   // co-op: no friendly fire between teammates
@@ -1861,7 +1899,7 @@ export class Game {
     // friendly projectiles vs creeps (co-op)
     if (this.coop) {
       for (const pr of this.projectiles) {
-        if (pr.foe) continue;                          // creeps' own shots don't hit creeps
+        if (pr.foe || pr.kind === 'anchor') continue;   // creeps' own shots, and beacons, don't hit creeps
         const att = this.fighters.find(x => x.id === pr.owner);
         if (!att) continue;
         const radius = pr.r + 80;   // pad covers the widest body (bosses)
@@ -2038,11 +2076,6 @@ export class Game {
     if (att.st.augments.includes('vampiric')) {
       att.pct = Math.max(0, att.pct - dmg * 0.12);
       this.events.push({ e: 'augment', aug: 'vampiric', id: att.id, x: att.x, y: att.y, vic: vic.id });
-    }
-    if (vic.st.augments.includes('secondwind') && !vic.usedSecondWind && vic.pct >= 100) {
-      vic.usedSecondWind = true;
-      vic.pct = Math.max(0, vic.pct - 30);
-      this.events.push({ e: 'secondwind', x: vic.x, y: vic.y });
     }
     // thorns recoil (melee only — projectiles have no body contact)
     if (vic.st.augments.includes('thorns') && !spec.r) {
@@ -2249,7 +2282,7 @@ export class Game {
           f.vx = 0; f.vy = 0;
           f.pct = 0;
           f.guard = GUARD_MAX; f.standT = 0;
-          f.usedSecondWind = false;
+          this.projectiles = this.projectiles.filter(p => !(p.kind === 'anchor' && p.owner === f.id));
           f.state = 'respawn';
           f.stateT = 0;
           f.invuln = RESPAWN_INVULN;
@@ -2350,7 +2383,7 @@ export class Game {
     f.hp = f.maxHp;
     f.pct = 0;
     f.guard = GUARD_MAX; f.standT = 0;
-    f.usedSecondWind = false;
+    this.projectiles = this.projectiles.filter(p => !(p.kind === 'anchor' && p.owner === f.id));
     f.state = 'respawn';
     f.stateT = 0;
     f.invuln = RESPAWN_INVULN;

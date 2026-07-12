@@ -297,6 +297,13 @@ class Sfx {
         this._tone({ type: 'square', f0: 320, f1: 210, dur: 0.08, vol: 0.12 });
         this._tone({ type: 'square', f0: 520, t0: 0.07, dur: 0.05, vol: 0.09 });
         break;
+      case 'ab:anchor':                              // planting the beacon
+        this._tone({ type: 'triangle', f0: 420, f1: 260, dur: 0.1, vol: 0.12 });
+        this._tone({ type: 'sine', f0: 880, t0: 0.08, dur: 0.06, vol: 0.08 });
+        break;
+      case 'ab:anchortp':                            // warping back to it
+        this._tone({ type: 'sine', f0: 660, f1: 1320, dur: 0.25, vol: 0.15 });
+        break;
       case 'ability':                               // generic zap fallback
         this._tone({ type: 'sawtooth', f0: 700, f1: 180, dur: 0.12, vol: 0.14 });
         break;
@@ -395,7 +402,6 @@ class Sfx {
       case 'roll':    this.play('roll'); break;
       case 'duck':    this.play('duck'); break;
       case 'counter': this.play('counter'); break;
-      case 'secondwind': this.play('secondwind'); break;
       case 'augment': this.play(
         ev.aug === 'thorns' ? 'block'
         : ev.aug === 'acrobat' ? 'jump'
@@ -413,7 +419,8 @@ class Sfx {
 
   _has(name) {
     return ['ab:fireball', 'ab:blink', 'ab:mend', 'ab:shockwave', 'ab:gale',
-      'ab:bubble', 'ab:boomerang', 'ab:volley', 'ab:hook', 'ab:trap'].includes(name);
+      'ab:bubble', 'ab:boomerang', 'ab:volley', 'ab:hook', 'ab:trap',
+      'ab:anchor', 'ab:anchortp'].includes(name);
   }
 
   // ---------- theme song sequencer ----------

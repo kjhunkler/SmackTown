@@ -1028,6 +1028,16 @@ input[type=text]:focus { border-color: var(--accent); }
   stroke-dasharray: 113; stroke-dashoffset: 0;
 }
 .ability-btn.cooling { opacity: .55; }
+/* teleport anchor: stays fully lit and clickable through its whole
+   "cooldown" (the anchor is armed the entire time) — a green glow marks it
+   as ready to activate instead of the usual dimmed countdown */
+.ability-btn.ab-live {
+  border-color: #3ddc84;
+  box-shadow: 0 0 0 2px rgba(61,220,132,.55), 0 0 14px rgba(61,220,132,.65);
+  animation: abLivePulse 1.1s ease-in-out infinite;
+}
+.ability-btn.ab-live .cd-ring { stroke: #3ddc84; }
+@keyframes abLivePulse { 50% { box-shadow: 0 0 0 2px rgba(61,220,132,.85), 0 0 22px rgba(61,220,132,.9); } }
 #ability-btn-0 { right: 92px; bottom: calc(22px + var(--safe-bottom)); }
 #ability-btn-1 { right: 16px; bottom: calc(80px + var(--safe-bottom)); }
 
