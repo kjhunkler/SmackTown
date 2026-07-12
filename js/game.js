@@ -359,7 +359,12 @@ const BUFFER = 0.15;                 // edge-input buffer window (s)
 // At zero the guard crushes: a crumple stun that takes bonus knockback.
 // Down-aimed attacks (dair/dsmash/spikes/aimed-down) pierce the duck.
 const DUCK_H = 24;                   // ducked hurtbox height (stands 64)
-const DUCK_DMG_TAKEN = 0.5;          // chip damage multiplier while ducking
+// Chip damage scales with the guard you have left when the hit lands: a
+// fresh duck (full guard) blunts a hit far harder than one worn down near
+// breaking, which barely protects at all — see the guard-proportional mix
+// in _applyHit. Knockback reduction stays flat regardless of guard.
+const DUCK_DMG_MIN = 0.35;           // chip multiplier at full guard (strongest mitigation)
+const DUCK_DMG_MAX = 0.9;            // chip multiplier at zero guard (weakest mitigation)
 const DUCK_KB_TAKEN = 0.3;           // knockback multiplier while ducking
 const DUCK_STANDUP = 0.07;           // delay before attacking after release
 const GUARD_MAX = 100;
@@ -2032,10 +2037,14 @@ export class Game {
     vic.lastHitBy = att.id;                     // KO attribution (reaper heal)
 
     // ducked block: chip damage and a horizontal shove instead of a launch.
-    // The guard eats the hit's full raw damage and crushes at zero.
+    // The guard eats the hit's full raw damage and crushes at zero. How
+    // much of that raw damage gets through is proportional to the guard
+    // you're carrying INTO the hit — full guard mitigates hardest, a guard
+    // worn down near zero barely helps (you're one hit from crushing anyway).
     if (vic.state === 'duck' && !pierce) {
       const raw = dmg;
-      dmg *= DUCK_DMG_TAKEN;
+      const guardFrac = clamp(vic.guard / GUARD_MAX, 0, 1);
+      dmg *= DUCK_DMG_MAX - (DUCK_DMG_MAX - DUCK_DMG_MIN) * guardFrac;
       vic.pct = Math.min(999, vic.pct + dmg);
       att.score.dmg += dmg;
       vic.score.taken += dmg;

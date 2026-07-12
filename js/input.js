@@ -6,6 +6,7 @@
 //                swipe = smash attack in the swipe direction (8-way);
 //                detected the moment the drag crosses the swipe threshold —
 //                keeping the finger down charges the smash, lifting fires it
+//                (a left/right swipe while ducked is a dodge roll instead)
 //   two floating buttons — equipped abilities
 // Keyboard fallback (desktop testing): arrows/WASD move, space jump (hold
 // for full height, tap for a short hop),
@@ -107,7 +108,11 @@ export class TouchInput {
       // the keys), so mouse clicks are ALWAYS attacks, on either half.
       const role = e.pointerType === 'mouse' ? 'swipe' : which;
       zone.setPointerCapture(e.pointerId);
-      const rec = { id: e.pointerId, role, ox: e.clientX, oy: e.clientY, lastX: e.clientX, lastY: e.clientY, lastT: e.timeStamp, t0: e.timeStamp, flicked: false, moved: 0 };
+      const rec = {
+        id: e.pointerId, role, ox: e.clientX, oy: e.clientY, lastX: e.clientX, lastY: e.clientY,
+        lastT: e.timeStamp, t0: e.timeStamp, flicked: false, moved: 0, rolled: false,
+        touch: e.pointerType !== 'mouse',   // mobile-only: mouse swipes never become rolls
+      };
       if (role === 'stick') {
         this.stick = rec;
         this.stickBase.classList.remove('hidden');
@@ -130,10 +135,19 @@ export class TouchInput {
       rec.lastX = e.clientX; rec.lastY = e.clientY; rec.lastT = e.timeStamp;
 
       // smash detected mid-gesture: lock the aim and charge until the
-      // finger lifts — no need to wait for pointerup to start the attack
-      if (rec.role === 'swipe' && !rec.chgAim && rec.moved >= SWIPE_MIN) {
-        rec.chgAim = octant(e.clientX - rec.ox, e.clientY - rec.oy);
-        this.state.chg = rec.chgAim;
+      // finger lifts — no need to wait for pointerup to start the attack.
+      // Mobile only: a pure left/right swipe while the movement stick is
+      // pinned down (ducked) fires a dodge roll instead, immediately —
+      // mirrors the movement stick's own sideways-flick roll.
+      if (rec.role === 'swipe' && !rec.chgAim && !rec.rolled && rec.moved >= SWIPE_MIN) {
+        const oct = octant(e.clientX - rec.ox, e.clientY - rec.oy);
+        if (this._isDuckRoll(oct, rec)) {
+          rec.rolled = true;
+          this.queue.push({ roll: oct.dx });
+        } else {
+          rec.chgAim = oct;
+          this.state.chg = oct;
+        }
       }
 
       if (rec.role === 'stick') {
@@ -176,7 +190,9 @@ export class TouchInput {
         const dx = e.clientX - rec.ox, dy = e.clientY - rec.oy;
         const dist = Math.hypot(dx, dy);
         const dur = e.timeStamp - rec.t0;
-        if (rec.chgAim) {
+        if (rec.rolled) {
+          // already fired as a dodge roll mid-gesture — nothing left to do
+        } else if (rec.chgAim) {
           // finger lifted: release the charged smash in the locked direction
           this.state.chg = null;
           this.queue.push({ atk: { kind: 'swipe', ...rec.chgAim } });
@@ -185,12 +201,23 @@ export class TouchInput {
           this.queue.push({ atk: { kind: 'tap', ...octant(this.state.mx, this.state.my, 0.35) } });
         } else if (dist >= SWIPE_MIN) {
           // swipe finished before any move event crossed the threshold
-          this.queue.push({ atk: { kind: 'swipe', ...octant(dx, dy) } });
+          const oct = octant(dx, dy);
+          if (this._isDuckRoll(oct, rec)) this.queue.push({ roll: oct.dx });
+          else this.queue.push({ atk: { kind: 'swipe', ...oct } });
         }
       }
     };
     zone.addEventListener('pointerup', end);
     zone.addEventListener('pointercancel', end);
+  }
+
+  // Mobile only: a pure left/right attack swipe while the movement stick is
+  // pinned down (ducked) reads as a dodge roll instead of a smash — the
+  // stick's own my axis is the only local signal of "probably ducking" we
+  // have here (same heuristic the keyboard/gamepad roll shortcuts use), so
+  // a diagonal swipe or a mouse-driven one never gets redirected.
+  _isDuckRoll(oct, rec) {
+    return rec.touch && oct.dy === 0 && !!oct.dx && this.state.my > 0.6;
   }
 
   _key(e, down) {

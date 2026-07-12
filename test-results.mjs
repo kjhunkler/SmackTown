@@ -307,5 +307,25 @@ const players = [
   check('winner holds 4 KOs', a.score.ko === 4 && b.score.fall === 4);
 }
 
+// --- 14. duck damage reduction scales with guard remaining ---
+{
+  const dmgAt = guard => {
+    const g = new Game(players, 7, 'arena');
+    const [a, b] = g.fighters;
+    b.state = 'duck';
+    b.guard = guard;
+    g._applyHit(a, b, { dmg: 20, kb: 100, ks: 5 }, 0, 1);
+    return { pct: b.pct, guardLeft: b.guard, state: b.state };
+  };
+  const full = dmgAt(100), empty = dmgAt(0), half = dmgAt(50), safe = dmgAt(60);
+  check('full guard mitigates hardest (20 * 0.35 = 7)', Math.abs(full.pct - 7) < 0.01);
+  check('empty guard barely mitigates (20 * 0.9 = 18)', Math.abs(empty.pct - 18) < 0.01);
+  check('half guard sits at the midpoint (20 * 0.625 = 12.5)', Math.abs(half.pct - 12.5) < 0.01);
+  check('mitigation strictly improves with more guard', full.pct < half.pct && half.pct < empty.pct);
+  check('the guard meter always eats the RAW hit, independent of the mitigation curve',
+    Math.abs(full.guardLeft - 80) < 0.01 && Math.abs(safe.guardLeft - 40) < 0.01);
+  check('guard hitting zero still crushes, same as before', empty.state === 'crush' && empty.guardLeft === 0);
+}
+
 console.log(fails ? `\n${fails}/${n} FAILED` : `\nAll ${n} checks passed.`);
 process.exit(fails ? 1 : 0);
