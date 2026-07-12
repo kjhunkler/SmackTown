@@ -374,18 +374,20 @@ const CRUSH_KB_TAKEN = 1.3;         // knockback penalty while crushed
 export const QUAKE_GAP = 55;
 
 // attack archetypes: [damage, baseKb, kbScale, startup, active, recover, reach, angle]
+// 'tap: true' marks the bare tap kit (jab combo, dash attack, air spin) —
+// the Brawler augment keys off it.
 const ATTACKS = {
-  jab:    { dmg: 4,  kb: 130, ks: 9,  startup: .05, active: .09, rec: .12, rx: 52, ry: 26, ang: -10 },
+  jab:    { dmg: 4,  kb: 130, ks: 9,  startup: .05, active: .09, rec: .12, rx: 52, ry: 26, ang: -10, tap: true },
   // tap combo stages 2-4 (see COMBO_CHAIN): the cross reaches wider, the
   // knee pops steeply upward off a tall box, and the roundhouse is the
   // heavy sendoff — the biggest box, the slowest wind-up, smash knockback
-  cross:  { dmg: 5,  kb: 155, ks: 10, startup: .05, active: .08, rec: .13, rx: 62, ry: 22, ang: -18 },
-  knee:   { dmg: 6,  kb: 215, ks: 13, startup: .07, active: .09, rec: .15, rx: 44, ry: 44, ang: -72 },
-  roundh: { dmg: 10, kb: 310, ks: 24, startup: .12, active: .10, rec: .28, rx: 72, ry: 36, ang: -35 },
+  cross:  { dmg: 5,  kb: 155, ks: 10, startup: .05, active: .08, rec: .13, rx: 62, ry: 22, ang: -18, tap: true },
+  knee:   { dmg: 6,  kb: 215, ks: 13, startup: .07, active: .09, rec: .15, rx: 44, ry: 44, ang: -72, tap: true },
+  roundh: { dmg: 10, kb: 310, ks: 24, startup: .12, active: .10, rec: .28, rx: 72, ry: 36, ang: -35, tap: true },
   // dash attack: a tap thrown at run speed. Slides with your momentum and
   // launches up-forward for juggles, but carries the longest recovery of
   // any normal — whiff it and you slide past your target wide open.
-  dash:   { dmg: 8,  kb: 200, ks: 15, startup: .07, active: .12, rec: .30, rx: 56, ry: 30, ang: -50 },
+  dash:   { dmg: 8,  kb: 200, ks: 15, startup: .07, active: .12, rec: .30, rx: 56, ry: 30, ang: -50, tap: true },
   fsmash: { dmg: 13, kb: 240, ks: 22, startup: .16, active: .10, rec: .26, rx: 68, ry: 34, ang: -35 },
   usmash: { dmg: 11, kb: 230, ks: 21, startup: .14, active: .11, rec: .24, rx: 46, ry: 60, ang: -85, up: true },
   dsmash: { dmg: 10, kb: 210, ks: 19, startup: .13, active: .10, rec: .24, rx: 76, ry: 26, ang: -160, both: true },
@@ -394,7 +396,7 @@ const ATTACKS = {
   // circle around the body several times. 'rehit' re-arms the hit set every
   // interval; the last window swaps in 'fin' for a launching finisher.
   nspin:  { dmg: 2.5, kb: 120, ks: 5, startup: .06, active: .42, rec: .16, rx: 46, ry: 42, ang: -80, both: true,
-            rehit: .14, fin: { kb: 210, ks: 16, ang: -40 } },
+            tap: true, rehit: .14, fin: { kb: 210, ks: 16, ang: -40 } },
   // sword strong attack: one blade arc, aimed 8-way by the swipe, released
   // with a lunge along that aim. The hit is a true blade: a long, thin box
   // run out along the aim (rx = blade length, ry = half-thickness) — reach
@@ -417,6 +419,14 @@ const ATTACKS = {
   // the wave only lives from `gap` outward, so anything hugging the
   // wielder stands safely inside the eye of the quake.
   quake:  { dmg: 8, kb: 240, ks: 16, startup: .20, active: .12, rec: .36, rx: 150, gap: QUAKE_GAP, ry: 34, ang: -75, both: true },
+  // boomerang strong attack: the throw pose. Like a cast, no melee box ever
+  // goes active — the hit is the returning rang spawned at release.
+  rang:   { dmg: 0, kb: 0, ks: 0, startup: .07, active: .02, rec: .24, rx: 30, ry: 24, ang: 0, cast: true },
+  // shield strong attack: a battering-ram lunge. The short startup and long
+  // active window let the box ride the body through the whole charge-in;
+  // 'bounce' caroms the wielder back off anything it connects with. Huge
+  // launch power, modest damage — a slab of steel, not a blade.
+  bash:   { dmg: 9, kb: 360, ks: 24, startup: .05, active: .22, rec: .30, rx: 46, ry: 42, ang: -35, bounce: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -432,6 +442,8 @@ const WEAPON_DEFS = {
   // stronger release — see _chargeCap / _castBurst.
   magic:   { chargeMax: 1.3, overcharge: 2 },
   spear:   { chargeMax: 1.2 },       // regular wind-up, same as bare fists
+  boomerang: { chargeMax: 0.9 },     // brisk wind-up; charge buys range and bite
+  shield:  { chargeMax: 1.2 },       // regular wind-up; the shield guards while held
 };
 const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
@@ -455,6 +467,26 @@ const CAST_ROCKET0 = 620, CAST_ROCKET1 = 1500;  // upward rocket speed vs charge
 const MANA_MAX = 100;
 const MANA_REGEN = 26;               // per second, always trickling back
 const MANA_COST = 35;                // mana at a standard (k=1) burst; scales with power
+// Boomerang weapon: the release hurls a returning blade along the 8-way aim.
+// Charge is range and bite. Only one rang can be out per fighter — catching
+// it on the way back (or letting it come home) re-arms the next throw.
+const RANG_SPD0 = 520, RANG_SPD1 = 920;    // launch speed vs charge
+const RANG_TTL0 = 1.05, RANG_TTL1 = 1.6;   // flight time vs charge
+const RANG_DMG0 = 5,   RANG_DMG1 = 10;     // damage vs charge
+const RANG_KB0  = 280, RANG_KB1  = 430;    // knockback vs charge
+const RANG_RET = 1400;               // return pull back along the launch axis
+const RANG_CATCH_X = 34, RANG_CATCH_Y = 44;  // catch window around the thrower
+// Shield weapon: the bash is a body ram — a hard lunge whose impact blasts
+// the victim away and bounces the wielder back off the hit. While the
+// charge is held the shield is raised, blunting incoming damage.
+const SHIELD_LUNGE = 1.2;            // bash lunge, fraction of the sword's (a real ram)
+const BASH_BOUNCE_X = 520;           // rebound speed off a connected bash
+const BASH_BOUNCE_Y = 300;           // with a little hop so it reads as a carom
+const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
+// Grapple hook: the reel-in scales with flight distance — see the hook case
+// in _useAbility. A snag at full stretch pulls with real violence.
+const HOOK_KB0 = 380, HOOK_KB1 = 950;
+const HOOK_RANGE = 700;              // flight distance for the full-strength pull
 const BURST_SPD0 = 520,  BURST_SPD1 = 1150;  // burst speed vs charge
 const BURST_TTL0 = 0.55, BURST_TTL1 = 1.5;   // burst lifetime vs charge
 const BURST_DMG0 = 3.5,  BURST_DMG1 = 8;     // burst damage vs charge
@@ -581,7 +613,6 @@ const ABILITY_DEFS = {
   uppercut:  { cd: 4.0 },
   counter:   { cd: 5.0 },
   blink:     { cd: 4.0 },
-  boomerang: { cd: 4.0 },
   volley:    { cd: 5.0 },
   gale:      { cd: 5.0 },
   bubble:    { cd: 6.0 },
@@ -1284,6 +1315,8 @@ export class Game {
       // way you're facing, whatever the weapon
       if (!dx && !dy) dx = f.facing;
       name = this._weaponAttack(f, dx, dy);
+      // a grounded down-bash rams forward instead of into the floor
+      if (name === 'bash' && f.grounded && dy > 0) { dy = 0; dx = dx || f.facing; }
     }
 
     if (dx) f.facing = dx;
@@ -1313,6 +1346,8 @@ export class Game {
     // fists and spear ride a scaled-down version of the sword's lunge
     if (name === 'fsmash' || name === 'usmash' || name === 'dsmash' || name === 'dair') this._lunge(f, dx, dy, chg, FIST_LUNGE);
     if (name === 'thrust') this._lunge(f, dx, dy, chg, SPEAR_LUNGE, SPEAR_LUNGE_UP);
+    // the bash IS a lunge: the shield rams ahead harder than any blade
+    if (name === 'bash') this._lunge(f, dx, dy, chg, SHIELD_LUNGE);
     if (name === 'quake') this.events.push({ e: 'quake', id: f.id, x: f.x, y: f.y + F_H / 2 });
     // tap combo bookkeeping: every stage lunges along the live aim (harder
     // deeper into the string) and arms the window for the next tap; the
@@ -1331,6 +1366,7 @@ export class Game {
       f.comboT = 0;
     }
     if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
+    if (name === 'rang' && !this._throwRang(f, dx, dy, chg)) return;  // rang still out: no throw
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
   }
 
@@ -1341,6 +1377,8 @@ export class Game {
     if (w === 'sword') return 'slash';
     if (w === 'magic') return 'mcast';
     if (w === 'spear') return dy > 0 && f.grounded ? 'quake' : 'thrust';
+    if (w === 'boomerang') return 'rang';
+    if (w === 'shield') return 'bash';
     if (dy < 0 && !dx) return 'usmash';
     if (dy > 0 && !dx) return f.grounded ? 'dsmash' : 'dair';
     return 'fsmash';
@@ -1434,6 +1472,32 @@ export class Game {
     } else if (k >= CAST_RECOIL_MIN && nx) {
       f.vx -= nx * (CAST_RECOIL0 + (CAST_RECOIL1 - CAST_RECOIL0) * Math.min(1, k));
     }
+    return true;
+  }
+
+  // Boomerang release: hurl the returning blade along the aim. Charge is
+  // range and bite — speed, flight time, damage and knockback all grow with
+  // it. Only one rang per fighter can be out; with it still in flight the
+  // release fizzles into nothing but recovery. Returns whether it flew.
+  _throwRang(f, dx, dy, k) {
+    if (this.projectiles.some(p => p.kind === 'boomerang' && p.owner === f.id)) {
+      this.events.push({ e: 'fizzle', id: f.id, x: f.x, y: f.y });
+      return false;
+    }
+    if (f.grounded && dy > 0) { dy = 0; dx = dx || f.facing; } // not into the floor
+    const n = Math.hypot(dx, dy) || 1;
+    const nx = dx / n, ny = dy / n;
+    const spd = RANG_SPD0 + (RANG_SPD1 - RANG_SPD0) * k;
+    this.projectiles.push({
+      eid: nextEid++, kind: 'boomerang', owner: f.id,
+      x: f.x + nx * 40, y: f.y - 8 + ny * 20,
+      vx: nx * spd, vy: ny * spd,
+      ttl: RANG_TTL0 + (RANG_TTL1 - RANG_TTL0) * k,
+      dmg: RANG_DMG0 + (RANG_DMG1 - RANG_DMG0) * k,
+      kb: RANG_KB0 + (RANG_KB1 - RANG_KB0) * k, ks: 16, r: 15,
+      ret: RANG_RET, lnx: nx, lny: ny,   // constant pull back along the launch axis
+      thru: true, hit: new Set(),        // cuts through targets, out and back
+    });
     return true;
   }
 
@@ -1584,16 +1648,6 @@ export class Game {
         f.vy = Math.min(f.vy, 0);
         break;
       }
-      case 'boomerang':
-        this.projectiles.push({
-          eid: nextEid++, kind: 'boomerang', owner: f.id,
-          x: f.x + f.facing * 40, y: f.y - 8,
-          vx: f.facing * 560, vy: 0, ttl: 1.5,
-          ret: -f.facing * 1400,   // constant pull back toward the throw point
-          dmg: 5, kb: 280, ks: 16, r: 15,
-          thru: true, hit: new Set(),   // cuts through targets, out and back
-        });
-        break;
       case 'volley': {
         // a fan of three burning bolts around the held aim, each popping in
         // a small flame splash when it dies
@@ -1628,12 +1682,15 @@ export class Game {
         this.events.push({ e: 'mend', id: f.id, x: f.x, y: f.y });
         break;
       case 'hook':
-        // chain claw: reels the first foe it tags in toward you
+        // chain claw: reels the first foe it tags in toward you. The pull
+        // scales with the hook's flight distance — a point-blank tag barely
+        // tugs, a max-range snag hauls them all the way in (see HOOK_KB0/1)
         this.projectiles.push({
           eid: nextEid++, kind: 'hook', owner: f.id,
           x: f.x + f.facing * 40, y: f.y - 8,
+          x0: f.x + f.facing * 40, y0: f.y - 8,
           vx: f.facing * 820, vy: 0, ttl: 1.05,
-          dmg: 6, kb: 600, ks: 3, r: 15, pull: true, ang: -20,
+          dmg: 6, kb: HOOK_KB0, ks: 3, r: 15, pull: true, ang: -20,
         });
         break;
       case 'trap':
@@ -1778,7 +1835,13 @@ export class Game {
           if (att) {
             // hooks yank the victim toward the thrower; traps launch straight up
             const dirX = pr.pull ? (Math.sign(att.x - pos.x) || 1) : (Math.sign(pr.vx) || 1);
-            this._applyHit(att, o, pr, deg(pr.ang ?? -40), dirX, false, !!pr.pierce);
+            let spec = pr;
+            if (pr.pull && pr.x0 != null) {
+              // grapple pull grows with how far the hook flew before tagging
+              const dist = Math.hypot(pr.x - pr.x0, pr.y - pr.y0);
+              spec = { ...pr, kb: HOOK_KB0 + (HOOK_KB1 - HOOK_KB0) * Math.min(1, dist / HOOK_RANGE) };
+            }
+            this._applyHit(att, o, spec, deg(pr.ang ?? -40), dirX, false, !!pr.pierce);
           }
           if (pr.thru) pr.hit.add(o.id);   // sail on through
           else { pr.struck = o.id; pr.ttl = 0; }   // burst AoE skips the direct victim
@@ -1824,11 +1887,12 @@ export class Game {
               this.events.push({ e: 'counter', x: o.x, y: o.y });
             } else {
               const dir = Math.sign(pr.vx) || 1;
+              const dmg = this._shielded(o, pr.dmg);
               o.vx += dir * 200; o.vy = Math.min(o.vy, -200); o.grounded = false;
               o.state = 'hitstun'; o.stateT = 0; o.hitstunFor = 0.26;
               o.atk = null; o.atkDir = null; o.melee = null; o.chg = 0;
-              this.events.push({ e: 'hit', x: o.x, y: o.y, dmg: Math.round(pr.dmg), heavy: false, vic: o.id, att: pr.owner });
-              this._damageHp(o, pr.dmg, pr.owner);
+              this.events.push({ e: 'hit', x: o.x, y: o.y, dmg: Math.round(dmg), heavy: false, vic: o.id, att: pr.owner });
+              this._damageHp(o, dmg, pr.owner);
               if (this.coop) o.invuln = Math.max(o.invuln, ENEMY_HIT_MERCY);
               pr.ttl = 0;
             }
@@ -1898,6 +1962,11 @@ export class Game {
 
   _applyHit(att, vic, spec, angRad, dirX, spike = false, pierce = false) {
     let dmg = spec.dmg * att.st.dmgMult;
+    // brawler: the bare tap kit (jab string, dash attack, air spin) bites harder
+    if (att.st.augments.includes('brawler') && spec.tap) {
+      dmg *= 1.25;
+      this.events.push({ e: 'augment', aug: 'brawler', id: att.id, x: att.x, y: att.y });
+    }
     if (att.st.augments.includes('berserker') && att.pct >= 80) {
       dmg *= 1.2;
       this.events.push({ e: 'augment', aug: 'berserker', id: att.id, x: att.x, y: att.y });
@@ -1912,6 +1981,7 @@ export class Game {
       this.events.push({ e: 'augment', aug: 'momentum', id: att.id, x: att.x, y: att.y });
     }
     dmg *= vic.st.dmgTaken;                     // defense stat shaves incoming damage
+    dmg = this._shielded(vic, dmg);             // raised shield blunts the hit
     vic.lastHitBy = att.id;                     // KO attribution (reaper heal)
 
     // ducked block: chip damage and a horizontal shove instead of a launch.
@@ -1940,6 +2010,7 @@ export class Game {
         heavy: false, vic: vic.id, att: att.id,
       });
       this._damageHp(vic, dmg, att.id);
+      if (spec.bounce) this._bashBounce(att, dirX);   // the ram rebounds even off a block
       return;
     }
 
@@ -2007,6 +2078,8 @@ export class Game {
       att.jumps = att.st.maxJumps;
       this.events.push({ e: 'spikebounce', id: att.id, x: att.x, y: att.y + F_H / 2 });
     }
+    // shield bash: the impact caroms the wielder back the way they came
+    if (spec.bounce) this._bashBounce(att, dirX);
 
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({
@@ -2016,18 +2089,49 @@ export class Game {
     this._damageHp(vic, dmg, att.id);
   }
 
+  // Incoming damage through a raised shield: winding up a bash keeps the
+  // slab up front, blunting whatever lands while the charge is held.
+  _shielded(vic, dmg) {
+    if (vic.state !== 'charge' || vic.atk !== 'bash') return dmg;
+    this.events.push({ e: 'block', x: vic.x, y: vic.y - 12, vic: vic.id });
+    return dmg * SHIELD_CHG_DMG_TAKEN;
+  }
+
+  // Shield bash rebound: the wielder caroms back off whatever they rammed —
+  // the lunge ends at the impact, sprung away with a little hop.
+  _bashBounce(att, dirX) {
+    att.vx = -dirX * BASH_BOUNCE_X;
+    att.vy = Math.min(att.vy, -BASH_BOUNCE_Y);
+    att.grounded = false;
+    att.fastfall = false;
+    att.dashT = 0;
+    this.events.push({ e: 'spikebounce', id: att.id, x: att.x, y: att.y + F_H / 2 });
+  }
+
   _stepProjectiles() {
     for (const pr of this.projectiles) {
       if (pr.ret) {
-        const was = Math.sign(pr.vx);
-        pr.vx += pr.ret * TICK;    // boomerang: decelerate, then return
+        // boomerang: decelerate along the launch axis, then swing back home
+        const was = pr.vx * pr.lnx + pr.vy * pr.lny;
+        pr.vx -= pr.ret * pr.lnx * TICK;
+        pr.vy -= pr.ret * pr.lny * TICK;
         // piercing rangs re-arm at the turnaround: out and back both connect
-        if (pr.thru && was && Math.sign(pr.vx) !== was) pr.hit.clear();
+        if (pr.thru && was > 0 && pr.vx * pr.lnx + pr.vy * pr.lny <= 0) pr.hit.clear();
       }
       if (pr.grav) pr.vy = Math.min(pr.vy + pr.grav * TICK, 1150);  // traps drop until they settle
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
+      // a returning rang that reaches its thrower is caught — gone from the
+      // air, and the hand is free to wind up the next throw early
+      if (pr.ret && pr.ttl > 0 && pr.vx * pr.lnx + pr.vy * pr.lny < 0) {
+        const own = this.fighters.find(x => x.id === pr.owner);
+        if (own && !own.dead
+            && Math.abs(own.x - pr.x) < RANG_CATCH_X && Math.abs(own.y - 8 - pr.y) < RANG_CATCH_Y) {
+          pr.ttl = 0;
+          this.events.push({ e: 'catch', id: own.id, x: pr.x, y: pr.y });
+        }
+      }
       if (pr.grav) this._settleTrap(pr);
       else if (pr.plat != null) {
         // settled on a platform: ride it (traps on the crane girder sweep too)
@@ -2617,7 +2721,7 @@ export class Game {
       if (f.invuln > 0) continue;
       const ob = hurtBox(f);
       if (Math.abs(f.x - sx) < half + F_W / 2 && Math.abs((f.y + ob.dy) - e.y) < e.hh + 26 + ob.hh) {
-        const dmg = t.dmg * dmgMult;
+        const dmg = this._shielded(f, t.dmg * dmgMult);
         const dir = Math.sign(f.x - e.x) || e.facing;
         f.vx += dir * t.touchKb;
         f.vy = Math.min(f.vy, -150);
@@ -2639,6 +2743,7 @@ export class Game {
   // Every boss blow funnels through here: heavy shove, hitstun, and the same
   // post-hit mercy window regular creeps grant.
   _bossHit(e, t, f, dmg, kb, pop) {
+    dmg = this._shielded(f, dmg);
     const dir = Math.sign(f.x - e.x) || e.facing;
     f.vx += dir * kb;
     f.vy = Math.min(f.vy, pop);
@@ -2830,6 +2935,11 @@ export class Game {
   _hitEnemy(att, e, spec, angRad, dirX, spike) {
     let dmg = spec.dmg * att.st.dmgMult;
     if (spec.r && att.st.augments.includes('sniper')) dmg *= 1.2;
+    // brawler: the bare tap kit bites harder out on the road too
+    if (att.st.augments.includes('brawler') && spec.tap) {
+      dmg *= 1.25;
+      this.events.push({ e: 'augment', aug: 'brawler', id: att.id, x: att.x, y: att.y });
+    }
     // berserker: raging while badly hurt (co-op stand-in for high-percent fury)
     if (att.st.augments.includes('berserker') && att.hp <= att.maxHp * COOP_BERSERK_HP) {
       dmg *= 1.2;
@@ -2859,6 +2969,8 @@ export class Game {
     if (att.st.augments.includes('vampiric')) att.hp = Math.min(att.maxHp, att.hp + dmg * 0.04);
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({ e: 'hit', x: e.x, y: e.y, dmg: Math.round(dmg), heavy: kb > 700, vic: 'e' + e.eid, att: att.id });
+    // shield bash: ramming a creep bounces the wielder back off it too
+    if (spec.bounce) this._bashBounce(att, dirX);
     if (e.hp <= 0) this._enemyDied(e, att);
   }
 

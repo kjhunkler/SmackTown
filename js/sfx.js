@@ -375,6 +375,7 @@ class Sfx {
         : ev.atk === 'slash' ? 'slash'
         : ev.atk === 'mcast' ? 'cast'
         : ev.atk === 'thrust' ? 'thrust'
+        : ev.atk === 'rang' ? 'ab:boomerang'
         : 'swing', ev.chg || 0); break;
       case 'charge':  this.startCharge(ev.id); break;
       case 'fizzle':  this.stopCharge(ev.id); this.play('fizzle'); break;

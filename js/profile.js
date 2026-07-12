@@ -27,8 +27,6 @@ export const ABILITIES = [
     desc: 'Brief parry — negate a hit and strike back' },
   { id: 'blink',     icon: '✨', name: 'Blink',       cost: 260, cd: 4.0,
     desc: 'Teleport a short distance in any direction' },
-  { id: 'boomerang', icon: '🪃', name: 'Boomerang',   cost: 230, cd: 4.0,
-    desc: 'Bladed rang that cuts through foes — out and back' },
   { id: 'volley',    icon: '🎇', name: 'Fire Volley', cost: 250, cd: 5.0,
     desc: 'Loose a fan of three fire bolts' },
   { id: 'gale',      icon: '💨', name: 'Gale Burst',  cost: 220, cd: 5.0,
@@ -38,7 +36,7 @@ export const ABILITIES = [
   { id: 'mend',      icon: '💚', name: 'Mend',        cost: 260, cd: 7.0,
     desc: 'Patch yourself up — instantly heal 15%' },
   { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 240, cd: 4.5,
-    desc: 'Hurl a hook that reels a foe in to you' },
+    desc: 'Hurl a hook that reels a foe in — harder the further it flew' },
   { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 6.0,
     desc: 'Plant spikes that launch and stun whoever steps in' },
 ];
@@ -55,6 +53,10 @@ export const WEAPONS = [
     desc: 'Fire bursts that fling foes far — low damage, drains mana, and charge = range' },
   { id: 'spear',   icon: '🔱', name: 'Spear', cost: 0,
     desc: 'Long stationary thrust with a dead zone up close — huge damage at real range' },
+  { id: 'boomerang', icon: '🪃', name: 'Boomerang', cost: 0,
+    desc: 'Returning blade that cuts out and back — charge for range and bite, one in the air at a time' },
+  { id: 'shield',  icon: '🛡️', name: 'Shield', cost: 0,
+    desc: 'Battering-ram lunge that blasts foes back and rebounds you off the impact — blunts hits while charging' },
 ];
 export const DEFAULT_WEAPON = 'unarmed';
 
@@ -81,6 +83,8 @@ export const AUGMENTS = [
     desc: 'Your projectiles deal +20% damage' },
   { id: 'momentum',    icon: '🏃', name: 'Momentum',     cost: 150,
     desc: 'Melee hits deal +15% while you move fast' },
+  { id: 'brawler',     icon: '🥋', name: 'Brawler',      cost: 160,
+    desc: 'Your tap attacks — jabs, the combo string, dash attacks — hit 25% harder' },
   { id: 'bulwark',     icon: '🧱', name: 'Bulwark',      cost: 150,
     desc: 'Your duck guard wears down 40% slower' },
   { id: 'executioner', icon: '🪓', name: 'Executioner',  cost: 160,

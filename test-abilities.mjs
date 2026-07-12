@@ -1,7 +1,7 @@
 // Headless smoke test: ability kit behavior. Spike traps lock victims in a
 // long stun, uppercut rockets foes skyward, dash strike can angle upward,
-// fireballs leave an afterburn DoT, and boomerangs cut through everyone in
-// their path with real knockback. Run: node test-abilities.mjs
+// fireballs leave an afterburn DoT, and the grapple hook reels harder the
+// further it flies. Run: node test-abilities.mjs
 import { Game, blankInput } from './js/game.js';
 
 let n = 0, fails = 0;
@@ -89,41 +89,20 @@ const mkGame = (abilities, extra = []) => new Game([
   check('burn announces its ticks', g.events.length === 0 || true);   // events drain each step
 }
 
-// --- 5. boomerang: cuts through targets, hits harder ---
+// --- 5. grapple hook: the pull grows with the hook's flight distance ---
 {
-  const g = mkGame(['boomerang'], [
-    { id: 'C', name: 'Cara', color: '#00f', build: build() },
-  ]);
-  const [a, b, c] = g.fighters;
-  a.x = 0; a.facing = 1; b.x = 100; b.y = a.y; c.x = 170; c.y = a.y;
-  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput()); g.inputs.set('C', blankInput());
-  g._useAbility(a, 0);
-  const pr = g.projectiles[0];
-  check('rang knocks back harder', pr.kb === 280 && pr.ks === 16);
-  check('rang is a piercing blade', pr.thru === true);
-  let hitB = false, hitC = false, aliveThrough = false;
-  for (let i = 0; i < 90; i++) {
-    g.step();
-    if (b.state === 'hitstun') hitB = true;
-    if (c.state === 'hitstun') hitC = true;
-    if (hitB && hitC && g.projectiles.includes(pr) && pr.ttl > 0) aliveThrough = true;
-  }
-  check('one throw cuts through both victims', hitB && hitC);
-  check('the rang survives its kills', aliveThrough);
-
-  // the turnaround wipes the hit set so the trip home can hit them again
-  const g2 = mkGame(['boomerang']);
-  const a2 = g2.fighters[0];
-  a2.x = 0; a2.facing = 1;
-  g2._useAbility(a2, 0);
-  const pr2 = g2.projectiles[0];
-  pr2.hit.add('B');
-  let rearmed = false;
-  for (let i = 0; i < 90 && !rearmed; i++) {
-    g2._stepProjectiles();
-    if (pr2.vx < 0) rearmed = pr2.hit.size === 0;
-  }
-  check('turnaround re-arms the blade for the trip home', rearmed);
+  const pullAt = dist => {
+    const g = mkGame(['hook']);
+    const [a, b] = g.fighters;
+    a.x = 0; a.facing = 1; b.x = dist; b.y = a.y;
+    g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
+    g._useAbility(a, 0);
+    for (let i = 0; i < 80 && b.state !== 'hitstun'; i++) g.step();
+    return b.state === 'hitstun' ? -b.vx : null;   // reeled back toward the thrower
+  };
+  const near = pullAt(120), far = pullAt(450);   // both on the flatlands ground
+  check('a point-blank tag still reels the victim in', near !== null && near > 0);
+  check('a max-range snag hauls far harder', far !== null && far > near * 1.5);
 }
 
 console.log(`\n${n - fails}/${n} passed`);

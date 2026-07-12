@@ -1,7 +1,8 @@
 // Headless smoke test: the weapons system. Strong attacks route through the
 // equipped weapon — bare fists keep the smash kit, swords lunge-slash with a
 // fast charge, magic casts mana-fueled knockback bursts whose range scales
-// with charge. Run: node test-weapons.mjs
+// with charge, boomerangs throw a returning blade, and the shield rams with
+// a rebound. Run: node test-weapons.mjs
 import { Game, gameFromSnapshot, blankInput } from './js/game.js';
 import { sanitizeBuild, buildCost, derivedStats } from './js/profile.js';
 
@@ -340,7 +341,110 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('snapshot restores mana', Math.abs(g2.fighters[0].mana - 42.2) < 0.01);
 }
 
-// --- 9. weapons flow through a full stepped fight without exploding ---
+// --- 9. boomerang weapon: aimed returning blade, one in the air at a time ---
+{
+  const g = mkGame('boomerang');
+  const [a, b] = g.fighters;
+  a.x = 0; a.facing = 1; b.x = 120; b.y = a.y;
+  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
+  g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
+  check('boomerang swipe is the throw', a.atk === 'rang');
+  const pr = g.projectiles[0];
+  check('the rang leaves the hand as a piercing blade',
+    pr && pr.kind === 'boomerang' && pr.thru === true && pr.vx > 0);
+
+  // a second release while it's out fizzles: nothing new leaves the hand
+  a.state = 'air'; a.atk = null; a.stateT = 0;
+  g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
+  check('only one rang can be out at a time', g.projectiles.length === 1);
+
+  // it cuts the victim on the way out, turns around, and is caught at home
+  let hit = false, turned = false, caught = false;
+  for (let i = 0; i < 120 && !caught; i++) {
+    g.step();
+    if (b.state === 'hitstun') hit = true;
+    if (pr.vx < 0) turned = true;
+    if (g.events.some(ev => ev.e === 'catch')) caught = true;
+  }
+  check('the outbound rang connects', hit);
+  check('the rang turns around and is caught back home', turned && caught);
+  check('the caught rang is gone from the air', !g.projectiles.includes(pr));
+
+  // charge buys range and bite
+  const at = k => {
+    const g2 = mkGame('boomerang');
+    g2._startAttack(g2.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, k);
+    return g2.projectiles[0];
+  };
+  const soft = at(0), hard = at(1);
+  check('a charged throw flies faster and bites harder',
+    hard.vx > soft.vx && hard.dmg > soft.dmg && hard.kb > soft.kb && hard.ttl > soft.ttl);
+
+  // an aimed throw returns along its own axis: thrown up, it comes back down
+  const g3 = mkGame('boomerang');
+  const c = g3.fighters[0];
+  c.grounded = false; c.y = -300; c.vy = 0;
+  g3._startAttack(c, { kind: 'swipe', dx: 0, dy: -1 });
+  const up = g3.projectiles[0];
+  check('an up-throw flies up', up.vy < 0);
+  for (let i = 0; i < 40; i++) g3._stepProjectiles();
+  check('...then swings back down toward the hand', up.vy > 0);
+}
+
+// --- 10. shield: ram lunge, big launch, rebound, guard while charging ---
+{
+  const g = mkGame('shield');
+  const [a, b] = g.fighters;
+  a.x = 0; a.facing = 1; b.x = 90; b.y = a.y;
+  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
+  g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
+  check('shield swipe is the bash', a.atk === 'bash');
+  check('the bash lunges harder than an uncharged slash', a.vx > 500);
+  let hit = false;
+  for (let i = 0; i < 30 && !hit; i++) { g.step(); if (b.state === 'hitstun') hit = true; }
+  check('the ram connects', hit);
+  check('the victim gets blasted away hard', b.vx > 400);
+  check('the wielder rebounds back off the impact', a.vx < 0 && !a.grounded);
+
+  // grounded down-bash rams forward instead of diving into the floor
+  const g2 = mkGame('shield');
+  const c = g2.fighters[0];
+  g2._startAttack(c, { kind: 'swipe', dx: 0, dy: 1 });
+  check('grounded down-bash flattens to a forward ram', c.atkDir.y === 0 && c.atkDir.x === c.facing);
+
+  // winding up the bash keeps the shield raised: incoming damage is halved
+  const pctAfter = charging => {
+    const g3 = mkGame('shield', 'unarmed');
+    const [v, w] = g3.fighters;
+    if (charging) g3._startCharge(v, { dx: 1, dy: 0 });
+    g3._applyHit(w, v, { dmg: 10, kb: 200, ks: 10 }, 0, -1);
+    return v.pct;
+  };
+  check('a raised shield blunts damage', Math.abs(pctAfter(true) - 5) < 1e-9);
+  check('...and takes it in full when down', Math.abs(pctAfter(false) - 10) < 1e-9);
+}
+
+// --- 11. brawler augment: the tap kit hits 25% harder, weapons don't ---
+{
+  const mk = () => new Game([
+    { id: 'A', name: 'Alice', color: '#f00', build: { ...build(), augments: ['brawler'] } },
+    { id: 'B', name: 'Bob', color: '#0f0', build: build() },
+  ], 7, 'flatlands');
+  const g = mk();
+  const [a, b] = g.fighters;
+  a.x = 0; a.facing = 1; b.x = 60; b.y = a.y;
+  a.state = 'attack'; a.atk = 'jab'; a.stateT = 0.06; a.atkDir = { x: 1, y: 0 };
+  g._resolveAttacks();
+  check('brawler jab deals 25% extra (4 -> 5)', Math.abs(b.pct - 5) < 1e-9);
+  const g2 = mk();
+  const [c, d] = g2.fighters;
+  c.x = 0; c.facing = 1; d.x = 60; d.y = c.y;
+  c.state = 'attack'; c.atk = 'fsmash'; c.stateT = 0.17; c.atkDir = { x: 1, y: 0 };
+  g2._resolveAttacks();
+  check('brawler leaves weapon strikes alone', Math.abs(d.pct - 13) < 1e-9);
+}
+
+// --- 12. weapons flow through a full stepped fight without exploding ---
 {
   const g = mkGame('sword', 'magic');
   const ia = blankInput(), ib = blankInput();
@@ -352,6 +456,17 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   }
   const ok = g.fighters.every(f => Number.isFinite(f.x) && Number.isFinite(f.y) && Number.isFinite(f.mana));
   check('600 mixed-weapon ticks stay finite', ok);
+
+  const g4 = mkGame('boomerang', 'shield');
+  const ic = blankInput(), id = blankInput();
+  g4.inputs.set('A', ic); g4.inputs.set('B', id);
+  for (let i = 0; i < 600; i++) {
+    if (i % 40 === 0) ic.atk = { kind: 'swipe', dx: 1, dy: 0 };
+    if (i % 55 === 0) id.atk = { kind: 'swipe', dx: -1, dy: 0 };
+    g4.step();
+  }
+  const ok2 = g4.fighters.every(f => Number.isFinite(f.x) && Number.isFinite(f.y));
+  check('600 rang/shield ticks stay finite', ok2);
 }
 
 console.log(`\n${n - fails}/${n} passed`);

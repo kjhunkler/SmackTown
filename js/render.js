@@ -2863,6 +2863,35 @@ export class Renderer {
       ctx.restore();
     }
 
+    // worn rang: a cross of sky-blue blades on the back at rest; it
+    // disappears while the throw pose is out (the projectile takes over)
+    if (f.weapon === 'boomerang' && f.atk !== 'rang') {
+      ctx.save();
+      ctx.scale(f.facing || 1, 1);
+      ctx.translate(-bw / 2 + 7, bTop + 12);
+      ctx.rotate(-0.5);
+      ctx.fillStyle = '#8fd3ff';
+      roundRect(ctx, -10, -3.5, 20, 7, 3.5); ctx.fill();
+      roundRect(ctx, -3.5, -10, 7, 20, 3.5); ctx.fill();
+      ctx.fillStyle = '#eaf7ff';
+      ctx.beginPath(); ctx.arc(0, 0, 3, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+
+    // worn shield: a buckler slung on the back arm at rest
+    if (f.weapon === 'shield' && f.atk !== 'bash') {
+      ctx.save();
+      ctx.scale(f.facing || 1, 1);
+      ctx.translate(-bw / 2 + 3, bTop + bh / 2);
+      ctx.fillStyle = '#9aa3c7';
+      ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 16, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.35)';
+      ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.fillStyle = '#eaf7ff';
+      ctx.beginPath(); ctx.ellipse(0, 0, 2.6, 6, 0, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+
     // worn spear: a shaft angled across the back shoulder at rest; it
     // disappears while the thrust itself is out
     if (f.weapon === 'spear' && f.atk !== 'thrust') {
@@ -2914,6 +2943,21 @@ export class Renderer {
       if (attacking) { // gritted mouth
         ctx.fillRect(ex - 6, ey + 10, 12, 3);
       }
+    }
+
+    // raised shield: while a bash charges or rams, the slab rides the
+    // leading edge — the thing the sim's mitigation and hitbox are selling
+    if (f.weapon === 'shield' && f.atk === 'bash') {
+      ctx.save();
+      ctx.scale(f.facing || 1, 1);
+      ctx.translate(bw / 2 + 6, bTop + bh / 2);
+      ctx.fillStyle = '#9aa3c7';
+      roundRect(ctx, -7, -27, 14, 54, 6); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.35)';
+      ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = '#eaf7ff';                      // boss
+      ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, 7); ctx.fill();
+      ctx.restore();
     }
 
     // pixel hat: rides the head through squash/stretch and rolls, and
