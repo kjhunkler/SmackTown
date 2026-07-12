@@ -297,7 +297,7 @@ export const BOSS_VARIANTS = {
   ],
 };
 // Per-type attack telegraphs (seconds of windup per attack index).
-const BOSS_ATTACKS = {
+export const BOSS_ATTACKS = {
   colossus: [0.85, 1.15, 0.9],   // 0 slam · 1 stomp · 2 charge
   tempest:  [0.7, 0.95, 0.9],    // 0 talon · 1 dive · 2 volley
   warlock:  [0.9, 1.25, 0.95],   // 0 bolt burst · 1 eruption · 2 nova
@@ -478,7 +478,7 @@ function chargeScale(base0, base1, k) {
 // number formatting overhead.
 export function packEnemyDelta(delta) {
   const [changed = [], removed = []] = delta || [];
-  const bytes = 4 + changed.length * 36 + removed.length * 4;
+  const bytes = 4 + changed.length * 45 + removed.length * 4;
   const view = new DataView(new ArrayBuffer(bytes));
   let offset = 0;
   view.setUint16(offset, changed.length, true); offset += 2;
@@ -498,6 +498,9 @@ export function packEnemyDelta(delta) {
     view.setUint8(offset, row[11] ? 1 : 0); offset++;
     view.setFloat32(offset, row[12] || 0, true); offset += 4;
     view.setUint8(offset, row[13] || 0); offset++;
+    view.setUint8(offset, row[14] || 0); offset++;
+    view.setFloat32(offset, row[15] || 0, true); offset += 4;
+    view.setFloat32(offset, row[16] || 0, true); offset += 4;
   }
   for (const id of removed) { view.setUint32(offset, id, true); offset += 4; }
   return view.buffer;
@@ -526,7 +529,10 @@ export function unpackEnemyDelta(buffer) {
     const elite = view.getUint8(offset); offset++;
     const stagger = r2(view.getFloat32(offset, true)); offset += 4;
     const variant = view.getUint8(offset); offset++;
-    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, cr, temperament, elite, stagger, variant];
+    const atkKind = view.getUint8(offset); offset++;
+    const aimX = r1(view.getFloat32(offset, true)); offset += 4;
+    const aimY = r1(view.getFloat32(offset, true)); offset += 4;
+    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, cr, temperament, elite, stagger, variant, atkKind, aimX, aimY];
   }
   const removed = new Array(removedCount);
   for (let i = 0; i < removedCount; i++) { removed[i] = view.getUint32(offset, true); offset += 4; }
@@ -3006,7 +3012,7 @@ export class Game {
         ];
       }),
       p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
-      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0]),
+      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0, e.atkKind || 0, r1(e.aimX || 0), r1(e.aimY || 0)]),
       ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),
     };
@@ -3053,7 +3059,7 @@ export function gameFromSnapshot(players, snap, seed = 2) {
       eid: r[0], x: r[1], y: r[2], vx: 0, vy: 0, hp: r[3], maxHp: r[4] || t.hp,
       facing: r[5] || 1, kind, hw: t.w / 2, hh: t.h / 2,
       grounded: !t.fly, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11], stagger: r[12] || 0, variant: r[13] || 0,
-      rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
+      rushT: 0, rushHit: null, atkKind: r[14] || 0, aimX: r[15] || 0, aimY: r[16] || 0,
     };
   });
   g.hearts = (snap.ht || []).map(r => ({
@@ -3127,7 +3133,7 @@ export function interpolateEnemyRows(aRows, bRows, k, from = new Map(), out = []
     view.eid = e2[0];
     view.x = e1[1] + (e2[1] - e1[1]) * k;
     view.y = e1[2] + (e2[2] - e1[2]) * k;
-    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11]; view.stagger = e2[12] || 0; view.variant = e2[13] || 0;
+    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11]; view.stagger = e2[12] || 0; view.variant = e2[13] || 0; view.atkKind = e2[14] || 0; view.aimX = e2[15] || 0; view.aimY = e2[16] || 0;
   }
   return out;
 }

@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, HEART_LIFE, QUAKE_GAP } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE, QUAKE_GAP } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -558,6 +558,7 @@ export class Renderer {
     for (const e of view.enemies || []) {
       const ty = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
       if (e.x + ty.w / 2 < left || e.x - ty.w / 2 > right || e.y + ty.h / 2 < top || e.y - ty.h / 2 > bottom) continue;
+      if (ty.boss && e.windup > 0) this._bossTelegraph(ctx, e, ty, t);
       this._enemy(ctx, e, t);
     }
     for (const h of view.hearts || []) {
@@ -1171,6 +1172,60 @@ export class Renderer {
     ctx.restore();
 
     if (e.hp < e.maxHp || ty.boss) this._enemyHealth(ctx, e, w, h);
+  }
+
+  _bossTelegraph(ctx, e, ty, t) {
+    const a = e.atkKind | 0;
+    const max = BOSS_ATTACKS[e.kind]?.[a] || ty.windup || 1;
+    const k = 1 - Math.min(1, e.windup / max);
+    const pulse = 0.55 + 0.25 * Math.sin(t * 16);
+    const gy = this.stage.main.y;
+    const labels = {
+      colossus: ['SLAM — MOVE BEHIND', 'STOMP — JUMP', 'CHARGE — CLEAR THE LANE'],
+      tempest: ['TALON — MOVE BEHIND', 'DIVE — LEAVE THE LINE', 'VOLLEY — DODGE'],
+      warlock: ['BOLT BURST — DODGE', 'ERUPTION — LEAVE THE ZONE', 'NOVA — BACK AWAY'],
+    };
+    const danger = `rgba(255,45,72,${(0.16 + 0.16 * k + pulse * 0.08).toFixed(2)})`;
+    const edge = k > 0.72 ? '#ffffff' : '#ffcf3f';
+    ctx.save();
+    ctx.fillStyle = danger;
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = 4 + k * 3;
+    ctx.setLineDash([16, 10]);
+    ctx.lineDashOffset = -t * 70;
+
+    if ((e.kind === 'colossus' && a === 0) || (e.kind === 'tempest' && a === 0)) {
+      const reach = ty.reach || 100;
+      const x = e.facing > 0 ? e.x + ty.w / 2 : e.x - ty.w / 2 - reach;
+      ctx.beginPath(); ctx.rect(x, e.y - ty.h / 2 - 26, reach, ty.h + 52); ctx.fill(); ctx.stroke();
+    } else if (e.kind === 'colossus' && a === 1) {
+      ctx.beginPath(); ctx.rect(e.x - 330, gy - 32, 660, 64); ctx.fill(); ctx.stroke();
+      for (let x = e.x - 280; x <= e.x + 280; x += 80) { ctx.beginPath(); ctx.moveTo(x - 12, gy - 8); ctx.lineTo(x, gy - 26); ctx.lineTo(x + 12, gy - 8); ctx.stroke(); }
+    } else if (e.kind === 'colossus' && a === 2) {
+      const x = e.facing > 0 ? e.x : e.x - 560;
+      ctx.beginPath(); ctx.rect(x, gy - ty.h - 24, 560, ty.h + 24); ctx.fill(); ctx.stroke();
+    } else if (e.kind === 'tempest' && a === 1) {
+      const dx = (e.aimX || e.x) - e.x, dy = (e.aimY || e.y) - e.y;
+      const n = Math.hypot(dx, dy) || 1, nx = -dy / n * 54, ny = dx / n * 54;
+      ctx.beginPath(); ctx.moveTo(e.x + nx, e.y + ny); ctx.lineTo((e.aimX || e.x) + nx, (e.aimY || e.y) + ny); ctx.lineTo((e.aimX || e.x) - nx, (e.aimY || e.y) - ny); ctx.lineTo(e.x - nx, e.y - ny); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(e.aimX || e.x, e.aimY || e.y, 54, 0, Math.PI * 2); ctx.stroke();
+    } else if ((e.kind === 'tempest' && a === 2) || (e.kind === 'warlock' && a === 0)) {
+      const aim = Math.atan2((e.aimY || e.y) - e.y, (e.aimX || e.x + e.facing) - e.x);
+      const spread = e.kind === 'tempest' ? 0.3 : 0.12, range = 600;
+      ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.arc(e.x, e.y, range, aim - spread, aim + spread); ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (e.kind === 'warlock' && a === 1) {
+      ctx.beginPath(); ctx.ellipse(e.aimX || e.x, gy - 4, 150, 38, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(e.x, e.y, 230, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+    ctx.font = '900 18px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(20,8,14,.9)';
+    const label = `${labels[e.kind]?.[a] || 'ATTACK'}  ${e.windup.toFixed(1)}s`;
+    ctx.strokeText(label, e.x, e.y - ty.h / 2 - 34);
+    ctx.fillStyle = k > 0.72 ? '#ffffff' : '#ffdf68'; ctx.fillText(label, e.x, e.y - ty.h / 2 - 34);
+    ctx.restore();
   }
 
   _enemyHealth(ctx, e, w, h) {
