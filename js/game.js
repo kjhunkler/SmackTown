@@ -424,9 +424,9 @@ const ATTACKS = {
   rang:   { dmg: 0, kb: 0, ks: 0, startup: .07, active: .02, rec: .24, rx: 30, ry: 24, ang: 0, cast: true },
   // shield strong attack: a battering-ram lunge. The short startup and long
   // active window let the box ride the body through the whole charge-in;
-  // 'bounce' caroms the wielder back off anything it connects with. Huge
-  // launch power, modest damage — a slab of steel, not a blade.
-  bash:   { dmg: 9, kb: 360, ks: 24, startup: .05, active: .22, rec: .30, rx: 46, ry: 42, ang: -35, bounce: true },
+  // 'bounce' caroms the wielder back off anything it connects with. A solid
+  // launcher with light damage — a slab of steel, not a blade.
+  bash:   { dmg: 7, kb: 310, ks: 21, startup: .05, active: .22, rec: .30, rx: 46, ry: 42, ang: -35, bounce: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -1481,7 +1481,7 @@ export class Game {
   // release fizzles into nothing but recovery. Returns whether it flew.
   _throwRang(f, dx, dy, k) {
     if (this.projectiles.some(p => p.kind === 'boomerang' && p.owner === f.id)) {
-      this.events.push({ e: 'fizzle', id: f.id, x: f.x, y: f.y });
+      this.events.push({ e: 'fizzle', why: 'rang', id: f.id, x: f.x, y: f.y });
       return false;
     }
     if (f.grounded && dy > 0) { dy = 0; dx = dx || f.facing; } // not into the floor

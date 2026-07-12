@@ -225,11 +225,14 @@ export class Renderer {
           break;
         }
         case 'fizzle':
-          // magic cast with an empty tank: a sad little puff
+          // a release with nothing to give — a dry mana tank, or a rang
+          // still out on its flight: a sad little puff and the reason why
           this.burst(ev.x, ev.y, 6, '#8b7bb0', 120);
           this.dmgPops.push({
             x: ev.x, y: ev.y - F_H / 2 - 16,
-            txt: 'NO MANA', t: 0, life: 0.6, heavy: false, color: '#b388ff',
+            txt: ev.why === 'rang' ? 'NOT BACK YET' : 'NO MANA',
+            t: 0, life: 0.6, heavy: false,
+            color: ev.why === 'rang' ? '#8fd3ff' : '#b388ff',
           });
           break;
         case 'burn':

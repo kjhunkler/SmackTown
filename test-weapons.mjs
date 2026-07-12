@@ -403,7 +403,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   let hit = false;
   for (let i = 0; i < 30 && !hit; i++) { g.step(); if (b.state === 'hitstun') hit = true; }
   check('the ram connects', hit);
-  check('the victim gets blasted away hard', b.vx > 400);
+  check('the victim gets blasted away hard', b.vx > 300);
   check('the wielder rebounds back off the impact', a.vx < 0 && !a.grounded);
 
   // grounded down-bash rams forward instead of diving into the floor
