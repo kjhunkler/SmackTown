@@ -420,8 +420,9 @@ const ATTACKS = {
   // wielder stands safely inside the eye of the quake.
   quake:  { dmg: 8, kb: 240, ks: 16, startup: .20, active: .12, rec: .36, rx: 150, gap: QUAKE_GAP, ry: 34, ang: -75, both: true },
   // boomerang strong attack: the throw pose. Like a cast, no melee box ever
-  // goes active — the hit is the returning rang spawned at release.
-  rang:   { dmg: 0, kb: 0, ks: 0, startup: .07, active: .02, rec: .24, rx: 30, ry: 24, ang: 0, cast: true },
+  // goes active — the hit is the returning rang spawned at release. Snappy
+  // recovery: the thrower is back in control while the blade works.
+  rang:   { dmg: 0, kb: 0, ks: 0, startup: .07, active: .02, rec: .16, rx: 30, ry: 24, ang: 0, cast: true },
   // shield strong attack: a battering-ram lunge. The short startup and long
   // active window let the box ride the body through the whole charge-in;
   // 'bounce' caroms the wielder back off anything it connects with. A solid
@@ -470,10 +471,13 @@ const MANA_COST = 35;                // mana at a standard (k=1) burst; scales w
 // Boomerang weapon: the release hurls a returning blade along the 8-way aim.
 // Charge is range and bite. Only one rang can be out per fighter — catching
 // it on the way back (or letting it come home) re-arms the next throw.
+// Tuned hot on purpose: the rang is the only weapon whose kit gives zero
+// recovery mobility (no lunge, no climb, no rocket jump), so the blade
+// itself carries the compensation.
 const RANG_SPD0 = 520, RANG_SPD1 = 920;    // launch speed vs charge
 const RANG_TTL0 = 1.05, RANG_TTL1 = 1.6;   // flight time vs charge
-const RANG_DMG0 = 5,   RANG_DMG1 = 10;     // damage vs charge
-const RANG_KB0  = 280, RANG_KB1  = 430;    // knockback vs charge
+const RANG_DMG0 = 7,   RANG_DMG1 = 13;     // damage vs charge
+const RANG_KB0  = 340, RANG_KB1  = 520;    // knockback vs charge
 const RANG_RET = 1400;               // return pull back along the launch axis
 const RANG_CATCH_X = 34, RANG_CATCH_Y = 44;  // catch window around the thrower
 // Shield weapon: the bash is a body ram — a hard lunge whose impact blasts
@@ -1499,7 +1503,7 @@ export class Game {
       vx: nx * spd, vy: ny * spd,
       ttl: RANG_TTL0 + (RANG_TTL1 - RANG_TTL0) * k,
       dmg: RANG_DMG0 + (RANG_DMG1 - RANG_DMG0) * k,
-      kb: RANG_KB0 + (RANG_KB1 - RANG_KB0) * k, ks: 16, r: 15,
+      kb: RANG_KB0 + (RANG_KB1 - RANG_KB0) * k, ks: 18, r: 15,
       ret: RANG_RET, lnx: nx, lny: ny,   // constant pull back along the launch axis
       thru: true, hit: new Set(),        // cuts through targets, out and back
     });
