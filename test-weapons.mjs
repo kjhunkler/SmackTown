@@ -27,8 +27,8 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('sanitize keeps a real weapon', b.weapon === 'sword');
   check('sanitize defaults junk weapons to unarmed', sanitizeBuild({ ...build(), weapon: 'bazooka' }).weapon === 'unarmed');
   check('old builds without a weapon are unarmed', sanitizeBuild({ stats: {}, abilities: [], augments: [] }).weapon === 'unarmed');
-  check('weapons cost credits', buildCost(build('magic')) === 250 && buildCost(build()) === 0);
-  check('spear costs credits too', buildCost(build('spear')) === 250);
+  check('weapons are free', buildCost(build('magic')) === 0 && buildCost(build()) === 0);
+  check('spear is free too', buildCost(build('spear')) === 0);
   check('derived stats carry the weapon', derivedStats(build('magic')).weapon === 'magic');
 }
 

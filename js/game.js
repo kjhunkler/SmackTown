@@ -1568,7 +1568,7 @@ export class Game {
       case 'uppercut':
         f.vy = -980;
         f.grounded = false;
-        f.melee = { name: 'upper', dmg: 11, kb: 540, ks: 30, rx: 48, ry: 68, ang: -88, until: this.tick + 18, hit: new Set() };
+        f.melee = { name: 'upper', dmg: 14.3, kb: 702, ks: 30, rx: 48, ry: 68, ang: -88, until: this.tick + 18, hit: new Set() };
         break;
       case 'counter':
         f.counterT = COUNTER_WINDOW;
@@ -2113,7 +2113,7 @@ export class Game {
         if (credit) credit.score.ko++; else f.score.sd++;
         // reaper: whoever landed the last hit drinks deep on the KO
         if (credit && !credit.dead && credit.st.augments.includes('reaper')) {
-          credit.pct = Math.max(0, credit.pct - 25);
+          credit.pct = Math.max(0, credit.pct - 50);
           this.events.push({ e: 'augment', aug: 'reaper', id: credit.id, x: credit.x, y: credit.y });
         }
         f.lastHitBy = null;

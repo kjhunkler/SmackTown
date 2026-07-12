@@ -44,16 +44,16 @@ export const ABILITIES = [
 ];
 
 // Weapons: what the strong-attack control swings. Every fighter carries
-// exactly one; bare fists are the free default and a real choice, not a
-// downgrade — the paid weapons trade the classic smash kit for a gimmick.
+// exactly one; all weapons are free — each trades the classic smash kit
+// for a different gimmick, so the pick is pure style, not budget.
 export const WEAPONS = [
   { id: 'unarmed', icon: '👊', name: 'Bare Fists', cost: 0,
     desc: 'The classic smash kit — big damage AND big launches, no strings' },
-  { id: 'sword',   icon: '🗡️', name: 'Sword', cost: 250,
+  { id: 'sword',   icon: '🗡️', name: 'Sword', cost: 0,
     desc: 'Lunging slashes in any direction — huge damage, light launch, charges in a blink' },
-  { id: 'magic',   icon: '🔮', name: 'Magic', cost: 250,
+  { id: 'magic',   icon: '🔮', name: 'Magic', cost: 0,
     desc: 'Fire bursts that fling foes far — low damage, drains mana, and charge = range' },
-  { id: 'spear',   icon: '🔱', name: 'Spear', cost: 250,
+  { id: 'spear',   icon: '🔱', name: 'Spear', cost: 0,
     desc: 'Long stationary thrust with a dead zone up close — huge damage at real range' },
 ];
 export const DEFAULT_WEAPON = 'unarmed';
@@ -86,7 +86,7 @@ export const AUGMENTS = [
   { id: 'executioner', icon: '🪓', name: 'Executioner',  cost: 160,
     desc: '+20% knockback vs foes at 100% or more · Expeditions: +20% damage vs low-HP enemies' },
   { id: 'reaper',      icon: '💀', name: 'Reaper',       cost: 170,
-    desc: 'KO a foe to heal 25% · Expeditions: 2% per creep' },
+    desc: 'KO a foe to heal 50% · Expeditions: 2% per creep' },
 ];
 
 export const MAX_ABILITIES = 2;
