@@ -496,6 +496,16 @@ const SHIELD_LUNGE = 1.2;            // bash lunge, fraction of the sword's (a r
 const SHIELD_LUNGE_UP = 1.3;         // up-bashes climb extra hard — a real recovery tool
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
+// A landed (unblocked) bash turns its victim into a body-slam hazard for
+// the rest of their flight: whoever they collide with while this window is
+// live takes a hit too. Piggybacks entirely on the existing ability-melee
+// window (f.melee) — a centered, both-sided box that follows the victim's
+// body every tick — so it's free wiring into hitbox rendering, snapshotting,
+// duck-piercing, and (in expeditions) creep collision; no new entity, no
+// wire-format changes.
+const SLAM_TICKS = 30;               // ~0.5s of hazard while flying (at 60Hz)
+const SLAM_DMG = 8, SLAM_KB = 300, SLAM_KS = 20;
+const SLAM_RX = 56, SLAM_RY = 56;    // body-sized box, a little generous
 // Grapple hook: the reel-in scales with flight distance — see the hook case
 // in _useAbility. A snag at full stretch pulls with real violence.
 const HOOK_KB0 = 380, HOOK_KB1 = 950;
@@ -2119,6 +2129,11 @@ export class Game {
     vic.atkSpd = 0;
     vic.chg = 0;
     vic.chgAim = null;
+    // clear a stale duck-jab offset from an interrupted swing — otherwise a
+    // fighter hit mid low-jab, then later handed a fresh f.melee window
+    // (e.g. becoming a slam hazard below), would render/hit from the wrong
+    // offset until their next real duck-jab attempt overwrote it
+    vic.lowJab = false;
 
     // a landed spike springs the attacker back up with their jumps refreshed,
     // turning a deep off-stage dunk into a recoverable play
@@ -2130,8 +2145,19 @@ export class Game {
       this.events.push({ e: 'spikebounce', id: att.id, x: att.x, y: att.y + F_H / 2 });
     }
     // shield bash: the victim is blasted out of their spot, the wielder
-    // takes it (their position was read before the launch moved anything)
-    if (spec.bounce) this._bashImpact(att, vic.x, vic.y, dirX);
+    // takes it (their position was read before the launch moved anything),
+    // and the victim becomes a body-slam hazard for the rest of their
+    // flight — anyone they collide with takes a hit too. The basher is
+    // pre-seeded into the hit set so they can't be immediately re-hit by
+    // the body that's now occupying their old spot.
+    if (spec.bounce) {
+      this._bashImpact(att, vic.x, vic.y, dirX);
+      vic.melee = {
+        name: 'slam', dmg: SLAM_DMG, kb: SLAM_KB, ks: SLAM_KS,
+        rx: SLAM_RX, ry: SLAM_RY, ang: 0, both: true,
+        until: this.tick + SLAM_TICKS, hit: new Set([att.id]),
+      };
+    }
 
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({

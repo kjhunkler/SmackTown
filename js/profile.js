@@ -58,7 +58,7 @@ export const WEAPONS = [
   { id: 'boomerang', icon: '🪃', name: 'Boomerang', cost: 0,
     desc: 'Returning blade that cuts out and back — charge for range and bite, one in the air at a time' },
   { id: 'shield',  icon: '🛡️', name: 'Shield', cost: 0,
-    desc: 'Battering-ram lunge that blasts foes out of their spot and puts you in it — blunts hits while charging' },
+    desc: 'Battering-ram lunge that blasts foes out of their spot and puts you in it — the victim becomes a live hazard mid-flight, damaging anyone else they crash into. Blunts hits while charging' },
 ];
 export const DEFAULT_WEAPON = 'unarmed';
 

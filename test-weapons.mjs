@@ -448,6 +448,54 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('...and takes it in full when down', Math.abs(pctAfter(false) - 10) < 1e-9);
 }
 
+// --- 10b. shield: a bash victim becomes a body-slam hazard mid-flight ---
+{
+  const g = new Game([
+    { id: 'A', name: 'Alice', color: '#f00', build: build('shield') },
+    { id: 'B', name: 'Bob', color: '#0f0', build: build() },
+    { id: 'C', name: 'Cara', color: '#00f', build: build() },
+  ], 7, 'flatlands');
+  const [a, b, c] = g.fighters;
+  a.x = 0; a.facing = 1; b.x = 90; b.y = a.y; c.x = 5000;   // C out of the way for now
+  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput()); g.inputs.set('C', blankInput());
+  g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
+  let hit = false;
+  for (let i = 0; i < 30 && !hit; i++) { g.step(); if (b.state === 'hitstun') hit = true; }
+  check('the ram connects', hit);
+  check('the victim is carrying a slam hazard', b.melee && b.melee.name === 'slam');
+  check('the original wielder is pre-excluded from their own victim\'s slam',
+    b.melee.hit.has('A'));
+  check('the wielder is standing right where the victim was, but is not hit', a.state !== 'hitstun');
+
+  // drop a bystander exactly where the flying victim now is: an overlap is
+  // guaranteed regardless of the bash's exact launch trajectory. Clear the
+  // fresh spawn's respawn-invuln so it isn't that shielding the hit instead.
+  c.x = b.x; c.y = b.y; c.state = 'idle'; c.invuln = 0;
+  g._resolveAttacks();
+  check('a bystander in the flight path takes a hit too', c.state === 'hitstun');
+  check('the slammed victim is credited as the hitter, not the original basher',
+    c.lastHitBy === 'B');
+  check('the bystander is launched, not just chip-damaged', c.pct > 0);
+
+  // the hazard window closes: once it expires, the same overlap is harmless
+  const g2 = new Game([
+    { id: 'A', name: 'Alice', color: '#f00', build: build('shield') },
+    { id: 'B', name: 'Bob', color: '#0f0', build: build() },
+    { id: 'C', name: 'Cara', color: '#00f', build: build() },
+  ], 7, 'flatlands');
+  const [a2, b2, c2] = g2.fighters;
+  a2.x = 0; a2.facing = 1; b2.x = 90; b2.y = a2.y; c2.x = 5000;
+  g2.inputs.set('A', blankInput()); g2.inputs.set('B', blankInput()); g2.inputs.set('C', blankInput());
+  g2._startAttack(a2, { kind: 'swipe', dx: 1, dy: 0 });
+  let hit2 = false;
+  for (let i = 0; i < 30 && !hit2; i++) { g2.step(); if (b2.state === 'hitstun') hit2 = true; }
+  for (let i = 0; i < 40; i++) g2.step();   // run the ~0.5s hazard window all the way out
+  check('the slam expires on its own', !b2.melee);
+  c2.x = b2.x; c2.y = b2.y; c2.state = 'idle'; c2.invuln = 0;
+  g2._resolveAttacks();
+  check('an expired slam no longer hits anyone standing in the same spot', c2.state !== 'hitstun');
+}
+
 // --- 11. brawler augment: the tap kit hits 25% harder, weapons don't ---
 {
   const mk = () => new Game([
