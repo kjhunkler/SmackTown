@@ -477,11 +477,14 @@ const RANG_KB0  = 280, RANG_KB1  = 430;    // knockback vs charge
 const RANG_RET = 1400;               // return pull back along the launch axis
 const RANG_CATCH_X = 34, RANG_CATCH_Y = 44;  // catch window around the thrower
 // Shield weapon: the bash is a body ram — a hard lunge whose impact blasts
-// the victim away and bounces the wielder back off the hit. While the
-// charge is held the shield is raised, blunting incoming damage.
+// the victim out of their spot and parks the wielder IN it (a position
+// switch, not a rebound: an enemy camping the ledge gets swapped out, never
+// used as a wall to bounce the wielder back off the stage). A blocked ram
+// can't trade places — the blocker stays put — so it stops with a nudge
+// back instead. While the charge is held the shield is raised, blunting
+// incoming damage.
 const SHIELD_LUNGE = 1.2;            // bash lunge, fraction of the sword's (a real ram)
-const BASH_BOUNCE_X = 520;           // rebound speed off a connected bash
-const BASH_BOUNCE_Y = 300;           // with a little hop so it reads as a carom
+const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
 // Grapple hook: the reel-in scales with flight distance — see the hook case
 // in _useAbility. A snag at full stretch pulls with real violence.
@@ -2010,7 +2013,7 @@ export class Game {
         heavy: false, vic: vic.id, att: att.id,
       });
       this._damageHp(vic, dmg, att.id);
-      if (spec.bounce) this._bashBounce(att, dirX);   // the ram rebounds even off a block
+      if (spec.bounce) this._bashImpact(att, vic.x, vic.y, dirX, true);   // blocked: stop, no swap
       return;
     }
 
@@ -2078,8 +2081,9 @@ export class Game {
       att.jumps = att.st.maxJumps;
       this.events.push({ e: 'spikebounce', id: att.id, x: att.x, y: att.y + F_H / 2 });
     }
-    // shield bash: the impact caroms the wielder back the way they came
-    if (spec.bounce) this._bashBounce(att, dirX);
+    // shield bash: the victim is blasted out of their spot, the wielder
+    // takes it (their position was read before the launch moved anything)
+    if (spec.bounce) this._bashImpact(att, vic.x, vic.y, dirX);
 
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({
@@ -2097,14 +2101,20 @@ export class Game {
     return dmg * SHIELD_CHG_DMG_TAKEN;
   }
 
-  // Shield bash rebound: the wielder caroms back off whatever they rammed —
-  // the lunge ends at the impact, sprung away with a little hop.
-  _bashBounce(att, dirX) {
-    att.vx = -dirX * BASH_BOUNCE_X;
-    att.vy = Math.min(att.vy, -BASH_BOUNCE_Y);
-    att.grounded = false;
-    att.fastfall = false;
+  // Shield bash impact: the ram ends where the victim stood. They're blasted
+  // out of the spot and the wielder inherits it — a position switch, so the
+  // lunge never carries through the target and never rebounds the wielder
+  // back the way they came. A blocked ram gets no swap (the blocker holds
+  // their ground): it just stops with a small shove back.
+  _bashImpact(att, vicX, vicY, dirX, blocked = false) {
     att.dashT = 0;
+    if (blocked) {
+      att.vx = -dirX * BASH_BLOCK_PUSH;
+      return;
+    }
+    att.x = vicX;
+    att.y = vicY;
+    att.vx = 0;
     this.events.push({ e: 'spikebounce', id: att.id, x: att.x, y: att.y + F_H / 2 });
   }
 
@@ -2969,8 +2979,17 @@ export class Game {
     if (att.st.augments.includes('vampiric')) att.hp = Math.min(att.maxHp, att.hp + dmg * 0.04);
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);
     this.events.push({ e: 'hit', x: e.x, y: e.y, dmg: Math.round(dmg), heavy: kb > 700, vic: 'e' + e.eid, att: att.id });
-    // shield bash: ramming a creep bounces the wielder back off it too
-    if (spec.bounce) this._bashBounce(att, dirX);
+    // shield bash: light creeps get blasted aside and the wielder takes
+    // their ground; the big ones (brute, bosses) barely budge, so the ram
+    // just stops against them instead of parking the wielder inside a boss
+    if (spec.bounce) {
+      att.dashT = 0;
+      att.vx = 0;
+      if ((PVE_KB_BOOST[e.kind] || 1) > 2) {
+        att.x = e.x;
+        this.events.push({ e: 'spikebounce', id: att.id, x: att.x, y: att.y + F_H / 2 });
+      }
+    }
     if (e.hp <= 0) this._enemyDied(e, att);
   }
 

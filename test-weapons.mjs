@@ -400,11 +400,22 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
   check('shield swipe is the bash', a.atk === 'bash');
   check('the bash lunges harder than an uncharged slash', a.vx > 500);
+  const spotX = b.x;
   let hit = false;
   for (let i = 0; i < 30 && !hit; i++) { g.step(); if (b.state === 'hitstun') hit = true; }
   check('the ram connects', hit);
   check('the victim gets blasted away hard', b.vx > 300);
-  check('the wielder rebounds back off the impact', a.vx < 0 && !a.grounded);
+  check('the wielder takes the victim\'s spot (no pass-through, no rebound)',
+    Math.abs(a.x - spotX) < 5 && a.vx === 0);
+
+  // a blocked ram can't trade places: the wielder stops with a nudge back
+  const gB = mkGame('shield', 'unarmed');
+  const [e1, e2] = gB.fighters;
+  e1.x = 0; e1.facing = 1; e2.x = 60; e2.y = e1.y;
+  e2.state = 'duck';
+  const e1x = e1.x;
+  gB._applyHit(e1, e2, { dmg: 7, kb: 310, ks: 21, bounce: true }, 0, 1);
+  check('a blocked ram stops short with a shove back', e1.x === e1x && e1.vx < 0);
 
   // grounded down-bash rams forward instead of diving into the floor
   const g2 = mkGame('shield');
