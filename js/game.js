@@ -426,7 +426,7 @@ const ATTACKS = {
   // active window let the box ride the body through the whole charge-in;
   // 'bounce' caroms the wielder back off anything it connects with. A solid
   // launcher with light damage — a slab of steel, not a blade.
-  bash:   { dmg: 7, kb: 310, ks: 21, startup: .05, active: .22, rec: .30, rx: 46, ry: 42, ang: -35, bounce: true },
+  bash:   { dmg: 7, kb: 380, ks: 24, startup: .05, active: .22, rec: .30, rx: 46, ry: 42, ang: -35, bounce: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -484,6 +484,7 @@ const RANG_CATCH_X = 34, RANG_CATCH_Y = 44;  // catch window around the thrower
 // back instead. While the charge is held the shield is raised, blunting
 // incoming damage.
 const SHIELD_LUNGE = 1.2;            // bash lunge, fraction of the sword's (a real ram)
+const SHIELD_LUNGE_UP = 1.3;         // up-bashes climb extra hard — a real recovery tool
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
 // Grapple hook: the reel-in scales with flight distance — see the hook case
@@ -1349,8 +1350,9 @@ export class Game {
     // fists and spear ride a scaled-down version of the sword's lunge
     if (name === 'fsmash' || name === 'usmash' || name === 'dsmash' || name === 'dair') this._lunge(f, dx, dy, chg, FIST_LUNGE);
     if (name === 'thrust') this._lunge(f, dx, dy, chg, SPEAR_LUNGE, SPEAR_LUNGE_UP);
-    // the bash IS a lunge: the shield rams ahead harder than any blade
-    if (name === 'bash') this._lunge(f, dx, dy, chg, SHIELD_LUNGE);
+    // the bash IS a lunge: the shield rams ahead harder than any blade,
+    // and up-aimed rams climb extra hard (shield users fly shieldfirst)
+    if (name === 'bash') this._lunge(f, dx, dy, chg, SHIELD_LUNGE, SHIELD_LUNGE_UP);
     if (name === 'quake') this.events.push({ e: 'quake', id: f.id, x: f.x, y: f.y + F_H / 2 });
     // tap combo bookkeeping: every stage lunges along the live aim (harder
     // deeper into the string) and arms the window for the next tap; the

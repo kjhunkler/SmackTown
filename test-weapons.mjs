@@ -408,6 +408,19 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('the wielder takes the victim\'s spot (no pass-through, no rebound)',
     Math.abs(a.x - spotX) < 5 && a.vx === 0);
 
+  // up-bash: a climbing ram that outclimbs even the sword's up-lunge
+  const gU = mkGame('shield');
+  const u = gU.fighters[0];
+  u.grounded = false; u.y = -200; u.vy = 0;
+  gU._startAttack(u, { kind: 'swipe', dx: 0, dy: -1 });
+  const gS = mkGame('sword');
+  const s = gS.fighters[0];
+  s.grounded = false; s.y = -200; s.vy = 0;
+  gS._startAttack(s, { kind: 'swipe', dx: 0, dy: -1 });
+  check('aerial up-bash climbs hard', u.vy < -900);
+  check('...harder than the sword\'s up-lunge', u.vy < s.vy);
+  check('up-bash arms the rise cooldown (no infinite climbing)', u.riseT > 0);
+
   // a blocked ram can't trade places: the wielder stops with a nudge back
   const gB = mkGame('shield', 'unarmed');
   const [e1, e2] = gB.fighters;
