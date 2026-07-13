@@ -121,9 +121,9 @@ function rr(ctx, x, y, w, h, r) {
 export function renderBuilder(work) {
   // work: {color, build, budget?, pve?, unlocked?} — mutated in place as the
   // user shops. In a co-op expedition the budget is the credits earned this
-  // run (spent on stats only — gear is free but gated behind loot-box
-  // unlocks listed in work.unlocked).
-  const spent = buildCost(work.build, work.pve);
+  // run, and gear must first be unlocked from a loot box (work.unlocked)
+  // before CR can buy it.
+  const spent = buildCost(work.build);
   const budget = work.budget ?? TOTAL_CREDITS;
   const left = budget - spent;
   $('#builder-credits').textContent = left;
@@ -181,17 +181,16 @@ function lootGated(work, id) {
 // Affordability is judged against the credits the swap itself frees up.
 function renderWeaponShop(box, work, left) {
   box.innerHTML = '';
-  const curCost = work.pve ? 0 : WEAPONS.find(w => w.id === work.build.weapon)?.cost || 0;
+  const curCost = WEAPONS.find(w => w.id === work.build.weapon)?.cost || 0;
   for (const w of WEAPONS) {
     const has = work.build.weapon === w.id;
     const gated = lootGated(work, w.id);
-    const cost = work.pve ? 0 : w.cost;
-    const affordable = !gated && (has || left + curCost >= cost);
+    const affordable = !gated && (has || left + curCost >= w.cost);
     const el = document.createElement('div');
     el.className = 'shop-item' + (gated ? ' gated' : has ? ' owned' : affordable ? '' : ' locked');
     el.innerHTML = `
       <div class="si-icon">${gated ? '🔒' : w.icon}</div>
-      <div class="si-cost">${gated ? '🎁 loot box' : has ? '✓ equipped' : cost ? cost + ' cr' : 'free'}</div>
+      <div class="si-cost">${gated ? '🎁 loot box' : has ? '✓ equipped' : w.cost ? w.cost + ' cr' : 'free'}</div>
       <div class="si-name">${w.name}</div>
       <div class="si-desc">${w.desc}</div>`;
     el.addEventListener('click', () => {
@@ -274,13 +273,12 @@ function renderShop(box, defs, owned, maxOwned, left, work) {
   for (const item of defs) {
     const has = owned.includes(item.id);
     const gated = lootGated(work, item.id);
-    const cost = work.pve ? 0 : item.cost;
-    const affordable = !gated && (has || (left >= cost && owned.length < maxOwned));
+    const affordable = !gated && (has || (left >= item.cost && owned.length < maxOwned));
     const el = document.createElement('div');
     el.className = 'shop-item' + (gated ? ' gated' : has ? ' owned' : affordable ? '' : ' locked');
     el.innerHTML = `
       <div class="si-icon">${gated ? '🔒' : item.icon}</div>
-      <div class="si-cost">${gated ? '🎁 loot box' : has ? '✓ owned' : cost ? cost + ' cr' : 'free'}</div>
+      <div class="si-cost">${gated ? '🎁 loot box' : has ? '✓ owned' : item.cost + ' cr'}</div>
       <div class="si-name">${item.name}</div>
       <div class="si-desc">${item.desc}</div>`;
     el.addEventListener('click', () => {

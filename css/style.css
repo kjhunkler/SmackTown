@@ -1058,7 +1058,6 @@ input[type=text]:focus { border-color: var(--accent); }
   align-items: center;
   gap: 7px;
 }
-#loot-hud.done { display: none; }   /* every item unlocked — nothing left to earn */
 #loot-bar {
   width: 92px;
   height: 9px;
@@ -1178,7 +1177,21 @@ input[type=text]:focus { border-color: var(--accent); }
   background: linear-gradient(160deg, rgba(30, 34, 64, .98), rgba(14, 16, 34, .98));
   border: 2px solid;
   overflow: hidden;
+  cursor: pointer;
+  transition: transform .25s ease, opacity .25s ease, filter .25s ease;
   animation: loot-card-in .5s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+/* the pick: winner pops, the two passed-over cards gray out */
+.loot-card.chosen {
+  transform: scale(1.08);
+  box-shadow: 0 0 30px rgba(255, 207, 106, .8);
+  cursor: default;
+}
+.loot-card.passed {
+  opacity: .3;
+  filter: grayscale(.9);
+  transform: scale(.92);
+  cursor: default;
 }
 @keyframes loot-card-in {
   0% { transform: rotateY(90deg) scale(.7); opacity: 0; }
@@ -1201,6 +1214,8 @@ input[type=text]:focus { border-color: var(--accent); }
 .lc-weapon  { border-color: #ff8a5c; box-shadow: 0 0 18px rgba(255, 138, 92, .4); }
 .lc-ability { border-color: #38b6ff; box-shadow: 0 0 18px rgba(56, 182, 255, .4); }
 .lc-augment { border-color: #3ddc84; box-shadow: 0 0 18px rgba(61, 220, 132, .4); }
+.lc-bonus   { border-color: #ffcf6a; box-shadow: 0 0 18px rgba(255, 207, 106, .5); }
+.lc-bonus .lc-new { background: #ffb02e; color: #201500; }
 .lc-new {
   position: absolute;
   top: 9px;

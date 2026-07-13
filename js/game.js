@@ -306,6 +306,8 @@ const BOSS_REGION_EVERY = 3;         // a boss bars the road every Nth biome reg
 const BOSS_SPAWN_SLOW = 5.0;         // trickle spawn cadence floor while a boss lives
 const BOSS_HEARTS = 10;              // defeat fireworks: hearts flung in all directions
 const ENEMY_HIT_MERCY = 0.55;        // post-hit invulnerability so a swarm can't chain-stun
+const LOOT_HEAL_FRACTION = 0.5;      // "Patch Up" loot card: heal half of max HP
+export const LOOT_CR_BONUS = 40;     // "Windfall" loot card: CR straight into the wallet
 const ENEMY_SEP_PUSH = 300;          // max px/s creeps shoulder each other apart (beats any chase speed)
 const ENEMY_SEP_GAP = 0.9;           // fraction of summed half-widths creeps keep between centers
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
@@ -791,8 +793,7 @@ export class Game {
     // downsizes refund. A swap the wallet can't cover is refused outright.
     // (Prediction mirrors pass enforce=false: the host already settled it.)
     if (this.coop && enforce) {
-      // Expedition pricing: gear is loot-box loot, only stats bill the wallet.
-      const delta = buildCost(build, true) - buildCost(f.baseBuild || emptyBuild(), true);
+      const delta = buildCost(build) - buildCost(f.baseBuild || emptyBuild());
       if (delta > (f.score.cr || 0)) return null;
       f.score.cr = (f.score.cr || 0) - delta;
     }
@@ -839,6 +840,16 @@ export class Game {
       if (others.length) f.stocks = Math.min(f.stocks, Math.min(...others.map(o => o.stocks)));
     }
     f.parked = !!on;
+  }
+
+  // One-time loot-card bonuses — like setParked, a host-authoritative nudge
+  // from outside the input stream. Expedition-only.
+  applyLootBonus(id, kind) {
+    if (!this.coop) return;
+    const f = this.fighters.find(x => x.id === id);
+    if (!f || f.dead) return;
+    if (kind === 'heal') f.hp = Math.min(f.maxHp, f.hp + Math.ceil(f.maxHp * LOOT_HEAL_FRACTION));
+    else if (kind === 'cr') f.score.cr = (f.score.cr || 0) + LOOT_CR_BONUS;
   }
 
   setInput(id, inp) {
@@ -2373,10 +2384,9 @@ export class Game {
   }
 
   // Greedily re-purchase a lost kit from a wallet: stat levels first (round-
-  // robin across the four stats so partial funds spread evenly). Gear rides
-  // along free — in expeditions it's loot-box loot, not a wallet purchase, so
-  // death can't repossess it. Unaffordable stat levels are skipped, not
-  // queued — whatever CR remains stays in the wallet.
+  // robin across the four stats so partial funds spread evenly), then the
+  // weapon, then abilities and augments in owned order. Unaffordable pieces
+  // are skipped, not queued — whatever CR remains stays in the wallet.
   _rebuyBuild(old, wallet) {
     const build = emptyBuild();
     let cr = wallet;
@@ -2385,9 +2395,16 @@ export class Game {
         if ((old.stats?.[s.id] || 0) >= lvl && cr >= s.cost) { build.stats[s.id]++; cr -= s.cost; }
       }
     }
-    if (WEAPONS.some(x => x.id === old.weapon)) build.weapon = old.weapon;
-    build.abilities = (old.abilities || []).filter(id => ABILITIES.some(x => x.id === id)).slice(0, 2);
-    build.augments = (old.augments || []).filter(id => AUGMENTS.some(x => x.id === id)).slice(0, 2);
+    const w = WEAPONS.find(x => x.id === old.weapon);
+    if (w && w.cost <= cr) { build.weapon = w.id; cr -= w.cost; }
+    for (const id of old.abilities || []) {
+      const a = ABILITIES.find(x => x.id === id);
+      if (a && a.cost <= cr && build.abilities.length < 2) { build.abilities.push(id); cr -= a.cost; }
+    }
+    for (const id of old.augments || []) {
+      const a = AUGMENTS.find(x => x.id === id);
+      if (a && a.cost <= cr && build.augments.length < 2) { build.augments.push(id); cr -= a.cost; }
+    }
     return { build, cr };
   }
 
