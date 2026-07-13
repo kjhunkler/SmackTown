@@ -203,9 +203,12 @@ export function emptyBuild() {
   };
 }
 
-export function buildCost(build) {
+// gearFree: expedition pricing — weapons, abilities and augments are earned
+// through loot boxes instead of the wallet, so only stat levels cost credits.
+export function buildCost(build, gearFree = false) {
   let total = 0;
   for (const s of STATS) total += (build.stats[s.id] || 0) * s.cost;
+  if (gearFree) return total;
   total += WEAPONS.find(w => w.id === build.weapon)?.cost || 0;
   for (const id of build.abilities) {
     const a = ABILITIES.find(x => x.id === id);

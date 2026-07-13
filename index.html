@@ -210,7 +210,25 @@
   <div id="game-toast" class="hidden"></div>
   <div id="game-credits" class="hidden">💰 <span id="game-credits-val">0</span> cr</div>
   <div id="game-expedition" class="hidden"><b id="expedition-biome">The Long Road</b><span id="expedition-progress"></span></div>
+  <div id="loot-hud" class="hidden">
+    <button id="loot-box-btn" aria-label="Open a loot box">🎁<b id="loot-count" class="hidden">0</b></button>
+    <div id="loot-bar"><div id="loot-fill"></div></div>
+  </div>
   <button id="game-quit" class="btn tiny ghost">✕</button>
+  <button id="game-edit" class="btn tiny ghost hidden" aria-label="Edit your fighter">✏️</button>
+  <div id="loot-overlay" class="hidden">
+    <div class="loot-stage">
+      <h3 id="loot-title">Loot Box!</h3>
+      <button id="loot-chest" aria-label="Open the box">🎁</button>
+      <p id="loot-hint">Tap the box!</p>
+      <div id="loot-cards"></div>
+      <div id="loot-actions" class="hidden">
+        <button id="loot-again" class="btn ghost hidden">🎁 Open Another</button>
+        <button id="loot-equip" class="btn ghost">✏️ Equip Now</button>
+        <button id="loot-done" class="btn primary">Keep Fighting</button>
+      </div>
+    </div>
+  </div>
   <div id="game-help" class="hidden">
     <div class="help-card">
       <h3>How to fight</h3>

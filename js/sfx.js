@@ -317,6 +317,17 @@ class Sfx {
         this._tone({ type: 'sine', f0: 1175, t0: 0.09, dur: 0.18, vol: 0.13 });
         break;
 
+      // --- loot boxes ---
+      case 'loot':          // a box lands in the stack: bright two-note ping
+        this._tone({ type: 'triangle', f0: 784, dur: 0.09, vol: 0.15 });
+        this._tone({ type: 'triangle', f0: 1175, t0: 0.09, dur: 0.16, vol: 0.15 });
+        break;
+      case 'lootopen':      // the box bursts: sparkle sweep over a rising run
+        for (const [i, f] of [523, 659, 784, 1047, 1319].entries())
+          this._tone({ type: 'triangle', f0: f, t0: i * 0.06, dur: 0.12, vol: 0.14 });
+        this._noise({ type: 'highpass', f0: 2500, f1: 5000, dur: 0.35, vol: 0.10 });
+        break;
+
       case 'gameover':
         for (const [i, f] of [523, 659, 784, 1047].entries())
           this._tone({ type: 'triangle', f0: f, t0: i * 0.13, dur: i === 3 ? 0.5 : 0.14, vol: 0.16 });

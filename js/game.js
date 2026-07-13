@@ -791,7 +791,8 @@ export class Game {
     // downsizes refund. A swap the wallet can't cover is refused outright.
     // (Prediction mirrors pass enforce=false: the host already settled it.)
     if (this.coop && enforce) {
-      const delta = buildCost(build) - buildCost(f.baseBuild || emptyBuild());
+      // Expedition pricing: gear is loot-box loot, only stats bill the wallet.
+      const delta = buildCost(build, true) - buildCost(f.baseBuild || emptyBuild(), true);
       if (delta > (f.score.cr || 0)) return null;
       f.score.cr = (f.score.cr || 0) - delta;
     }
@@ -2372,9 +2373,10 @@ export class Game {
   }
 
   // Greedily re-purchase a lost kit from a wallet: stat levels first (round-
-  // robin across the four stats so partial funds spread evenly), then the
-  // weapon, then abilities and augments in owned order. Unaffordable pieces
-  // are skipped, not queued — whatever CR remains stays in the wallet.
+  // robin across the four stats so partial funds spread evenly). Gear rides
+  // along free — in expeditions it's loot-box loot, not a wallet purchase, so
+  // death can't repossess it. Unaffordable stat levels are skipped, not
+  // queued — whatever CR remains stays in the wallet.
   _rebuyBuild(old, wallet) {
     const build = emptyBuild();
     let cr = wallet;
@@ -2383,16 +2385,9 @@ export class Game {
         if ((old.stats?.[s.id] || 0) >= lvl && cr >= s.cost) { build.stats[s.id]++; cr -= s.cost; }
       }
     }
-    const w = WEAPONS.find(x => x.id === old.weapon);
-    if (w && w.cost <= cr) { build.weapon = w.id; cr -= w.cost; }
-    for (const id of old.abilities || []) {
-      const a = ABILITIES.find(x => x.id === id);
-      if (a && a.cost <= cr && build.abilities.length < 2) { build.abilities.push(id); cr -= a.cost; }
-    }
-    for (const id of old.augments || []) {
-      const a = AUGMENTS.find(x => x.id === id);
-      if (a && a.cost <= cr && build.augments.length < 2) { build.augments.push(id); cr -= a.cost; }
-    }
+    if (WEAPONS.some(x => x.id === old.weapon)) build.weapon = old.weapon;
+    build.abilities = (old.abilities || []).filter(id => ABILITIES.some(x => x.id === id)).slice(0, 2);
+    build.augments = (old.augments || []).filter(id => AUGMENTS.some(x => x.id === id)).slice(0, 2);
     return { build, cr };
   }
 

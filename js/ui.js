@@ -119,9 +119,11 @@ function rr(ctx, x, y, w, h, r) {
 // ---------- fighter builder ----------
 
 export function renderBuilder(work) {
-  // work: {color, build, budget?} — mutated in place as the user shops. In a
-  // co-op expedition the budget is the credits earned this run, not the PvP purse.
-  const spent = buildCost(work.build);
+  // work: {color, build, budget?, pve?, unlocked?} — mutated in place as the
+  // user shops. In a co-op expedition the budget is the credits earned this
+  // run (spent on stats only — gear is free but gated behind loot-box
+  // unlocks listed in work.unlocked).
+  const spent = buildCost(work.build, work.pve);
   const budget = work.budget ?? TOTAL_CREDITS;
   const left = budget - spent;
   $('#builder-credits').textContent = left;
@@ -169,19 +171,27 @@ export function renderBuilder(work) {
   renderShop($('#builder-augments'), AUGMENTS, work.build.augments, MAX_AUGMENTS, left, work);
 }
 
+// Expedition loot gating: an item the run hasn't unlocked yet renders as a
+// sealed card — the loot boxes on the trail are the only way to open it.
+function lootGated(work, id) {
+  return !!(work.pve && work.unlocked && !work.unlocked.has(id));
+}
+
 // Weapon rack: exactly one is equipped, so tapping a weapon swaps to it.
 // Affordability is judged against the credits the swap itself frees up.
 function renderWeaponShop(box, work, left) {
   box.innerHTML = '';
-  const curCost = WEAPONS.find(w => w.id === work.build.weapon)?.cost || 0;
+  const curCost = work.pve ? 0 : WEAPONS.find(w => w.id === work.build.weapon)?.cost || 0;
   for (const w of WEAPONS) {
     const has = work.build.weapon === w.id;
-    const affordable = has || left + curCost >= w.cost;
+    const gated = lootGated(work, w.id);
+    const cost = work.pve ? 0 : w.cost;
+    const affordable = !gated && (has || left + curCost >= cost);
     const el = document.createElement('div');
-    el.className = 'shop-item' + (has ? ' owned' : affordable ? '' : ' locked');
+    el.className = 'shop-item' + (gated ? ' gated' : has ? ' owned' : affordable ? '' : ' locked');
     el.innerHTML = `
-      <div class="si-icon">${w.icon}</div>
-      <div class="si-cost">${has ? '✓ equipped' : w.cost ? w.cost + ' cr' : 'free'}</div>
+      <div class="si-icon">${gated ? '🔒' : w.icon}</div>
+      <div class="si-cost">${gated ? '🎁 loot box' : has ? '✓ equipped' : cost ? cost + ' cr' : 'free'}</div>
       <div class="si-name">${w.name}</div>
       <div class="si-desc">${w.desc}</div>`;
     el.addEventListener('click', () => {
@@ -263,15 +273,18 @@ function renderShop(box, defs, owned, maxOwned, left, work) {
   box.innerHTML = '';
   for (const item of defs) {
     const has = owned.includes(item.id);
-    const affordable = has || (left >= item.cost && owned.length < maxOwned);
+    const gated = lootGated(work, item.id);
+    const cost = work.pve ? 0 : item.cost;
+    const affordable = !gated && (has || (left >= cost && owned.length < maxOwned));
     const el = document.createElement('div');
-    el.className = 'shop-item' + (has ? ' owned' : affordable ? '' : ' locked');
+    el.className = 'shop-item' + (gated ? ' gated' : has ? ' owned' : affordable ? '' : ' locked');
     el.innerHTML = `
-      <div class="si-icon">${item.icon}</div>
-      <div class="si-cost">${has ? '✓ owned' : item.cost + ' cr'}</div>
+      <div class="si-icon">${gated ? '🔒' : item.icon}</div>
+      <div class="si-cost">${gated ? '🎁 loot box' : has ? '✓ owned' : cost ? cost + ' cr' : 'free'}</div>
       <div class="si-name">${item.name}</div>
       <div class="si-desc">${item.desc}</div>`;
     el.addEventListener('click', () => {
+      if (gated) return;
       if (has) owned.splice(owned.indexOf(item.id), 1);
       else if (affordable) owned.push(item.id);
       else return;
