@@ -62,9 +62,12 @@ export const WEAPONS = [
 ];
 export const DEFAULT_WEAPON = 'unarmed';
 
+// Abilities and augments can carry a `pveDesc` where the effect differs in
+// expeditions; the shop and loot cards show whichever matches the mode.
 export const AUGMENTS = [
   { id: 'vampiric',    icon: '🩸', name: 'Vampiric',     cost: 170,
-    desc: 'Heal 12% of the damage you deal · Expeditions: 4%' },
+    desc: 'Heal 12% of the damage you deal',
+    pveDesc: 'Heal 4% of the damage you deal' },
   { id: 'thorns',      icon: '🌵', name: 'Thorns',       cost: 160,
     desc: 'Melee attackers take 4% recoil damage' },
   { id: 'feather',     icon: '🪶', name: 'Featherweight',cost: 140,
@@ -72,7 +75,8 @@ export const AUGMENTS = [
   { id: 'heavy',       icon: '🗿', name: 'Heavyweight',  cost: 160,
     desc: '-15% knockback taken, but -5% run speed' },
   { id: 'berserker',   icon: '😤', name: 'Berserker',    cost: 170,
-    desc: '+20% damage while your own percent is 80+ · Expeditions: while your HP is low' },
+    desc: '+20% damage while your own percent is 80+',
+    pveDesc: '+20% damage while your HP is low' },
   { id: 'glasscannon', icon: '💎', name: 'Glass Cannon', cost: 170,
     desc: '+18% damage & knockback dealt, +18% knockback taken' },
   { id: 'quickhands',  icon: '⏱️', name: 'Quick Hands',  cost: 180,
@@ -88,9 +92,11 @@ export const AUGMENTS = [
   { id: 'bulwark',     icon: '🧱', name: 'Bulwark',      cost: 150,
     desc: 'Your duck guard wears down 40% slower' },
   { id: 'executioner', icon: '🪓', name: 'Executioner',  cost: 160,
-    desc: '+20% knockback vs foes at 100% or more · Expeditions: +20% damage vs low-HP enemies' },
+    desc: '+20% knockback vs foes at 100% or more',
+    pveDesc: '+20% damage vs low-HP enemies' },
   { id: 'reaper',      icon: '💀', name: 'Reaper',       cost: 170,
-    desc: 'KO a foe to heal 50% · Expeditions: 2% per creep' },
+    desc: 'KO a foe to heal 50%',
+    pveDesc: 'Heal 2% for every creep you defeat' },
 ];
 
 export const MAX_ABILITIES = 2;

@@ -280,7 +280,7 @@ function renderShop(box, defs, owned, maxOwned, left, work) {
       <div class="si-icon">${gated ? '🔒' : item.icon}</div>
       <div class="si-cost">${gated ? '🎁 loot box' : has ? '✓ owned' : item.cost + ' cr'}</div>
       <div class="si-name">${item.name}</div>
-      <div class="si-desc">${item.desc}</div>`;
+      <div class="si-desc">${work.pve && item.pveDesc ? item.pveDesc : item.desc}</div>`;
     el.addEventListener('click', () => {
       if (gated) return;
       if (has) owned.splice(owned.indexOf(item.id), 1);

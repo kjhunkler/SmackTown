@@ -1393,8 +1393,13 @@ class Session {
     return pool;
   }
 
-  // The bar grows a little longer for every box already minted.
-  lootNeed() { return Math.min(36, 12 + this.loot.boxesEarned * 4); }
+  // Box pricing: the first three come cheap to hook the run, then each one
+  // costs ~35% more than the last, climbing toward a 1000 CR ceiling.
+  lootNeed() {
+    const n = this.loot.boxesEarned;
+    if (n < 3) return 30;
+    return Math.min(1000, Math.round(30 * Math.pow(1.35, n - 2)));
+  }
 
   // Per-frame: bank credit gains into the progress bar, mint boxes when it
   // fills (they stack), and repaint the HUD only when something changed.
@@ -2105,31 +2110,42 @@ function stageLootBox() {
 const LOOT_TYPE_LABEL = { weapon: '⚔️ Weapon', ability: '✨ Ability', augment: '🧬 Augment', bonus: '🎁 One-Time Bonus' };
 let lootTable = null;   // cards dealt from the open box, awaiting the pick
 
-$('#loot-chest').addEventListener('click', () => {
+// Burst the box and deal its three cards. `instant` skips the chest burst
+// beat ("Open Another" goes straight to fresh cards).
+function dealLootCards(instant = false) {
+  if (lootTable) return;              // cards already on the table
   const cards = session?.lootOpen();
   if (!cards) return;
   lootTable = cards;
   SFX.play('lootopen');
   const chest = $('#loot-chest');
-  chest.classList.add('burst');
+  if (instant) chest.classList.add('hidden');
+  else chest.classList.add('burst');
+  $('#loot-title').textContent = session.loot.boxes > 0
+    ? `Loot Box! ×${session.loot.boxes + 1}` : 'Loot Box!';
   $('#loot-hint').textContent = 'Pick ONE card to keep!';
+  $('#loot-hint').classList.remove('hidden');
+  $('#loot-actions').classList.add('hidden');
+  const lead = instant ? 0.05 : 0.45;
   const box = $('#loot-cards');
   box.innerHTML = '';
   cards.forEach((c, i) => {
     const el = document.createElement('div');
     el.className = `loot-card lc-${c.type}`;
-    el.style.animationDelay = `${0.45 + i * 0.35}s`;
+    el.style.animationDelay = `${lead + i * 0.35}s`;
     el.innerHTML = `
       <span class="lc-new">${c.type === 'bonus' ? 'USE!' : 'NEW!'}</span>
       <span class="lc-icon">${c.icon}</span>
       <span class="lc-name">${c.name}</span>
       <span class="lc-type">${LOOT_TYPE_LABEL[c.type]}</span>
-      <span class="lc-desc">${c.desc}</span>`;
+      <span class="lc-desc">${c.pveDesc || c.desc}</span>`;
     el.addEventListener('click', () => pickLootCard(c, el));
     box.appendChild(el);
   });
-  setTimeout(() => chest.classList.add('hidden'), 450);
-});
+  if (!instant) setTimeout(() => chest.classList.add('hidden'), 450);
+}
+
+$('#loot-chest').addEventListener('click', () => dealLootCards(false));
 
 // The pick seals the deal: the chosen card glows, the rest fade, and only
 // then do the exit buttons appear.
@@ -2149,7 +2165,8 @@ function pickLootCard(card, el) {
   $('#loot-equip').classList.toggle('hidden', card.type === 'bonus');
 }
 
-$('#loot-again').addEventListener('click', stageLootBox);
+// no ceremony the second time: deal the next box's cards immediately
+$('#loot-again').addEventListener('click', () => dealLootCards(true));
 
 $('#loot-done').addEventListener('click', () => {
   $('#loot-overlay').classList.add('hidden');
