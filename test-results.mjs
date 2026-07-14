@@ -259,10 +259,32 @@ const players = [
   const v0 = a.vx;
   g._startAttack(a, { kind: 'tap', dx: 0, dy: 0 });
   check('waveland attack keeps its glide', a.vx === v0);
-  // combo taps no longer plant: momentum sails through the swing
+  // a neutral tap plants: no direction held means the string stands its ground
   c.grounded = true; c.vx = 250; c.facing = 1;
   g._startAttack(c, { kind: 'tap', dx: 0, dy: 0 });
-  check('grounded tap glides through the swing', c.vx === 250);
+  check('neutral grounded tap plants in place', c.vx === 250 * 0.35);
+}
+
+// --- 11b. jab combo: neutral stages stand still, held stages step ---
+{
+  const g = new Game(players, 7, 'arena');
+  const [a, b, c] = g.fighters;
+  // neutral string: jab and cross stay planted
+  a.grounded = true; a.vx = 0; a.facing = 1;
+  g._startAttack(a, { kind: 'tap', dx: 0, dy: 0 });
+  check('neutral jab stands in place', a.atk === 'jab' && a.vx === 0);
+  a.state = 'idle'; a.stateT = 0;                       // swing over, window armed
+  g._startAttack(a, { kind: 'tap', dx: 0, dy: 0 });
+  check('neutral cross stands in place', a.atk === 'cross' && a.vx === 0);
+  // held direction: the stage steps that way, even backward
+  b.grounded = true; b.vx = 0; b.facing = 1;
+  g._startAttack(b, { kind: 'tap', dx: -1, dy: 0 });
+  check('held-direction jab steps that way', b.atk === 'jab' && b.vx < 0 && b.facing === -1);
+  // the roundhouse sendoff lunges even on a neutral tap
+  c.grounded = true; c.vx = 0; c.facing = 1;
+  c.comboN = 3; c.comboT = 0.5;                         // string armed at the finisher
+  g._startAttack(c, { kind: 'tap', dx: 0, dy: 0 });
+  check('neutral roundhouse still lunges', c.atk === 'roundh' && c.vx > 0);
 }
 
 // --- 12. parked fighters: asleep, untouchable, wake to the lowest stocks ---

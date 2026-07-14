@@ -1371,9 +1371,13 @@ export class Game {
     f.atkHit.clear();
     f.atkSpd = Math.hypot(f.vx, f.vy);   // momentum: judge the run-up, not the plant
     // dash attacks keep their slide; so do attacks thrown mid-waveland and
-    // tap-combo stages, whose lunge merges with momentum instead of planting
-    const comboTap = !swipe && !fromDuck && COMBO_CHAIN.includes(name);
-    if (f.grounded && name !== 'dash' && !comboTap && f.slideT <= 0) f.vx *= 0.35;
+    // lunging tap-combo stages, whose step merges with momentum instead of
+    // planting. A combo stage only lunges while a direction is held — a
+    // neutral string stands its ground — except the roundhouse sendoff,
+    // which always throws its weight forward.
+    const comboLunge = !swipe && !fromDuck && COMBO_CHAIN.includes(name)
+      && !!(dx || dy || name === 'roundh');
+    if (f.grounded && name !== 'dash' && !comboLunge && f.slideT <= 0) f.vx *= 0.35;
     // upward smash in the air boosts you like an air jump — and costs none.
     // The lift itself is on a short cooldown so chained up-smashes can't be
     // spammed to fly forever; the swing still comes out either way.
@@ -1392,13 +1396,14 @@ export class Game {
     // and up-aimed rams climb extra hard (shield users fly shieldfirst)
     if (name === 'bash') this._lunge(f, dx, dy, chg, SHIELD_LUNGE, SHIELD_LUNGE_UP);
     if (name === 'quake') this.events.push({ e: 'quake', id: f.id, x: f.x, y: f.y + F_H / 2 });
-    // tap combo bookkeeping: every stage lunges along the live aim (harder
-    // deeper into the string) and arms the window for the next tap; the
-    // roundhouse resets. A dash attack opens the chain so a run-up flows
-    // straight into cross → knee → roundhouse.
+    // tap combo bookkeeping: a stage lunges along the held aim (harder
+    // deeper into the string) only while a direction is held — see
+    // comboLunge — and arms the window for the next tap; the roundhouse
+    // resets. A dash attack opens the chain so a run-up flows straight
+    // into cross → knee → roundhouse.
     const stage = swipe ? -1 : COMBO_CHAIN.indexOf(name);
     if (stage >= 0) {
-      if (!f.lowJab) this._lunge(f, dx || f.facing, dy, 0, COMBO_LUNGE[stage], COMBO_LUNGE_V);
+      if (comboLunge) this._lunge(f, dx || f.facing, dy, 0, COMBO_LUNGE[stage], COMBO_LUNGE_V);
       f.comboN = stage + 1 < COMBO_CHAIN.length ? stage + 1 : 0;
       f.comboT = f.comboN ? COMBO_WINDOW : 0;
     } else if (name === 'dash') {
