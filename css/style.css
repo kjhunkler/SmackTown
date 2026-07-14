@@ -560,8 +560,9 @@ input[type=text]:focus { border-color: var(--accent); }
 .settings-body { overflow-y: auto; min-height: 160px; }
 .settings-pane { display: flex; flex-direction: column; gap: 12px; }
 .settings-hint { font-size: 12px; color: var(--ink-dim); margin: 0; line-height: 1.4; }
-.settings-foot { display: flex; gap: 10px; }
+.settings-foot { display: flex; gap: 10px; flex-wrap: wrap; }
 .settings-foot #settings-done { flex: 1; }
+.settings-foot #settings-restore-chars { flex-basis: 100%; }
 
 /* sound sliders */
 .vol-row { display: grid; grid-template-columns: 86px 1fr 44px; align-items: center; gap: 10px; }

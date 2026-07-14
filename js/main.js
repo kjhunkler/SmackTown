@@ -2,7 +2,8 @@
 
 import {
   loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout, sanitizeHat,
-  loadHats, hatArt, saveHat, deleteHat, loadLoadouts, selectedLoadout, selectLoadout, seedDefaultCharacters,
+  loadHats, hatArt, saveHat, deleteHat, loadLoadouts, selectedLoadout, selectLoadout,
+  seedDefaultCharacters, restoreDefaultCharacters,
   HAT_CHARS, HAT_PALETTE, buildCost, earnedCredits, MAX_BUILD_COST,
   WEAPONS, ABILITIES, AUGMENTS, DEFAULT_WEAPON,
 } from './profile.js';
@@ -607,6 +608,15 @@ $('#settings-reset').addEventListener('click', () => {
   stopCapture();
   renderMute();
   paintSettings();
+});
+
+// Bring back any of the six shipped starter characters that have since been
+// deleted (existing characters, including edited ones, are never touched).
+$('#settings-restore-chars').addEventListener('click', () => {
+  const n = restoreDefaultCharacters();
+  if (n === -1) UI.banner('Your roster is full — delete a build first.', 'bad');
+  else if (n === 0) UI.banner('All default fighters are already in your roster!', 'good');
+  else UI.banner(`Restored ${n} default fighter${n === 1 ? '' : 's'}! 🥊`, 'good');
 });
 
 // My hats: tap the art to wear it (tap again to take it off), ✏️ edit, ✕ delete.

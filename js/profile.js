@@ -470,6 +470,28 @@ export function seedDefaultCharacters() {
   } catch (_) { /* storage unavailable — nothing to seed into */ }
 }
 
+// Re-add whichever default characters (and their hats) are missing, on
+// demand from settings. A loadout whose name is already taken is skipped —
+// deliberate edits saved over a default survive a restore. Returns how many
+// characters came back, or -1 when the roster is full.
+export function restoreDefaultCharacters() {
+  const hats = loadHats();
+  for (const h of DEFAULT_HATS) {
+    if (hats.length >= MAX_HATS) break;
+    if (!hats.some(x => x.id === h.id)) hats.push({ id: h.id, art: h.art });
+  }
+  localStorage.setItem(HATS_KEY, JSON.stringify(hats));
+  const have = new Set(loadLoadouts().map(l => l.name.toLowerCase()));
+  let added = 0;
+  for (const l of DEFAULT_LOADOUTS) {
+    if (have.has(l.name.toLowerCase())) continue;
+    const res = saveLoadout(l.name, l.color, l.build, l.hatId);
+    if (!res.ok) return added || -1;               // roster full
+    added++;
+  }
+  return added;
+}
+
 // ---------- selected character ----------
 // Which saved build the player is currently "being". Tracked by nickname;
 // the menu arrows cycle it and the workshop saves back into it.
