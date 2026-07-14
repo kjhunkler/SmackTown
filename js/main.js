@@ -2,7 +2,7 @@
 
 import {
   loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout, sanitizeHat,
-  loadHats, hatArt, saveHat, deleteHat, loadLoadouts, selectedLoadout, selectLoadout,
+  loadHats, hatArt, saveHat, deleteHat, loadLoadouts, selectedLoadout, selectLoadout, seedDefaultCharacters,
   HAT_CHARS, HAT_PALETTE, buildCost, earnedCredits, MAX_BUILD_COST,
   WEAPONS, ABILITIES, AUGMENTS, DEFAULT_WEAPON,
 } from './profile.js';
@@ -191,6 +191,7 @@ const urlJoin = new URLSearchParams(location.search).get('join');
 let pendingJoinCode = urlJoin && /^[A-Za-z]{4}$/.test(urlJoin) ? urlJoin.toUpperCase() : null;
 if (urlJoin) history.replaceState(null, '', location.pathname); // don't re-join on refresh
 
+seedDefaultCharacters();   // brand-new players start with a roster, not a blank slate
 profile = loadProfile();
 if (profile) {
   UI.renderMenuCard(profile);

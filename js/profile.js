@@ -402,6 +402,74 @@ export function deleteLoadout(name) {
   if (sel && sel.toLowerCase() === n) selectLoadout(null);
 }
 
+// ---------- default characters ----------
+// New players shouldn't face a blank workshop: the first run seeds one
+// ready-made character per weapon (with their signature hats) into the
+// normal hat/loadout stores, so they cycle, edit and delete like any
+// player-made character. A one-time flag keeps them from respawning for
+// veterans who deliberately clear their roster.
+
+const SEED_KEY = 'smacktown.defaults.v1';
+
+export const DEFAULT_HATS = [
+  { id: 'dflt-haymaker',
+    art: '............................................................................................................................................................................................................................................................................................................................1111111111111121........5555555555555555....................................................................................................................................................................................................' },
+  { id: 'dflt-bladewind',
+    art: '........................................................................................................................................................000000000..0......000..00000000000.00....000000000000000000000..0000000000000000000000..0000000022222222222000..0000000002222222222000...000000000000000000000...00000000000000000000.....000000000000000000....................................................................................................................................................................................................' },
+  { id: 'dflt-emberlyn',
+    art: '..................................................................................................................................000....................000000..................000000..................222212................0000000000......................................................................................................................................................1.......................0.......................0.......................0.......................0.......................0.......................0.......................0' },
+  { id: 'dflt-skewer',
+    art: '.........................................................................................................................1...................1...1...................1...111....22222222...111....1111222222222222111......11122222222222221........2222222222222222.......222222222222222222......342342342342342342......222222222222222222......222222222222222222........4.......................4.......................4.......................4.......................3..........................................................................................' },
+  { id: 'dflt-rebound',
+    art: '.....................................................................................0.................0.00..00............00..00000.000.00.........000000000000000.......0..00202000000000.0.....0000000220000020000......000000000002000000....00002000000000000020.....0002220000000002020.....00000200000000000200......00000000.0000000000...000000000.......0000...0000000.0.....667.00.....000000......66.6600......00000......6...6........000........66.66.........0..........666...............4.......2.......................22........................2....' },
+  { id: 'dflt-bastion',
+    art: '.........................................................................f5.f5..................f.f5fff.f....................5f5......................55f5.....................f5.......................43..................2222222222222122.......222222222222222222......222222222222222222......222222222222222222......222222222222222222......222222222222222222......222222222222222222......222222.2.2.2.2.2.2......222222.2.2.2.2.2.2......222222.2.2.2.2.2.2......222222222222222222......22222222222222222.......22222222222022222.............22222222222....' },
+];
+
+export const DEFAULT_LOADOUTS = [
+  { name: 'Haymaker', color: '#ffb02e', hatId: 'dflt-haymaker',
+    build: { stats: { power: 2, speed: 1, defense: 0, agility: 0 },
+      weapon: 'unarmed',
+      abilities: ['uppercut', 'dashstrike'],
+      augments: ['brawler', 'momentum'] } },
+  { name: 'Bladewind', color: '#f5f5f5', hatId: 'dflt-bladewind',
+    build: { stats: { power: 0, speed: 1, defense: 0, agility: 1 },
+      weapon: 'sword',
+      abilities: ['counter', 'blink'],
+      augments: ['vampiric', 'acrobat'] } },
+  { name: 'Emberlyn', color: '#b388ff', hatId: 'dflt-emberlyn',
+    build: { stats: { power: 1, speed: 0, defense: 0, agility: 1 },
+      weapon: 'magic',
+      abilities: ['fireball', 'volley'],
+      augments: ['sniper', 'quickhands'] } },
+  { name: 'Skewer', color: '#ff8a5c', hatId: 'dflt-skewer',
+    build: { stats: { power: 1, speed: 0, defense: 1, agility: 0 },
+      weapon: 'spear',
+      abilities: ['hook', 'trap'],
+      augments: ['executioner', 'bulwark'] } },
+  { name: 'Rebound', color: '#ff5470', hatId: 'dflt-rebound',
+    build: { stats: { power: 0, speed: 1, defense: 0, agility: 2 },
+      weapon: 'boomerang',
+      abilities: ['gale', 'anchor'],
+      augments: ['feather', 'glasscannon'] } },
+  { name: 'Bastion', color: '#38b6ff', hatId: 'dflt-bastion',
+    build: { stats: { power: 0, speed: 0, defense: 2, agility: 0 },
+      weapon: 'shield',
+      abilities: ['shockwave', 'bubble'],
+      augments: ['heavy', 'thorns'] } },
+];
+
+export function seedDefaultCharacters() {
+  try {
+    if (localStorage.getItem(SEED_KEY)) return;
+    localStorage.setItem(SEED_KEY, '1');
+    // Anything already here means a returning player — never overwrite.
+    if (loadProfile() || loadLoadouts().length || loadHats().length) return;
+    localStorage.setItem(HATS_KEY, JSON.stringify(DEFAULT_HATS));
+    localStorage.setItem(LOADOUT_KEY, JSON.stringify(DEFAULT_LOADOUTS));
+  } catch (_) { /* storage unavailable — nothing to seed into */ }
+}
+
 // ---------- selected character ----------
 // Which saved build the player is currently "being". Tracked by nickname;
 // the menu arrows cycle it and the workshop saves back into it.
