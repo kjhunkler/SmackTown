@@ -410,7 +410,7 @@ const ATTACKS = {
   // neutral-air spin: a whirl centered on the fighter that hits a tight
   // circle around the body several times. 'rehit' re-arms the hit set every
   // interval; the last window swaps in 'fin' for a launching finisher.
-  nspin:  { dmg: 2.5, kb: 120, ks: 5, startup: .06, active: .42, rec: .16, rx: 46, ry: 42, ang: -80, both: true,
+  nspin:  { dmg: 2.5, kb: 120, ks: 5, startup: .06, active: .28, rec: .16, rx: 46, ry: 42, ang: -80, both: true,
             tap: true, rehit: .14, fin: { kb: 210, ks: 16, ang: -40 } },
   // sword strong attack: one blade arc, aimed 8-way by the swipe, released
   // with a lunge along that aim. The hit is a true blade: a long, thin box
