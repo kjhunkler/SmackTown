@@ -440,9 +440,9 @@ const ATTACKS = {
   rang:   { dmg: 0, kb: 0, ks: 0, startup: .07, active: .02, rec: .16, rx: 30, ry: 24, ang: 0, cast: true },
   // shield strong attack: a battering-ram lunge. The short startup and long
   // active window let the box ride the body through the whole charge-in;
-  // 'bounce' caroms the wielder back off anything it connects with. A solid
+  // 'bounce' swaps the wielder into the victim's spot on clean hits. A modest
   // launcher with light damage — a slab of steel, not a blade.
-  bash:   { dmg: 7, kb: 380, ks: 24, startup: .05, active: .22, rec: .30, rx: 46, ry: 42, ang: -35, bounce: true },
+  bash:   { dmg: 7, kb: 340, ks: 22, startup: .09, active: .20, rec: .30, rx: 46, ry: 42, ang: -28, bounce: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -502,17 +502,15 @@ const RANG_CATCH_X = 34, RANG_CATCH_Y = 44;  // catch window around the thrower
 // can't trade places — the blocker stays put — so it stops with a nudge
 // back instead. While the charge is held the shield is raised, blunting
 // incoming damage.
-const SHIELD_LUNGE = 1.2;            // bash lunge, fraction of the sword's (a real ram)
-const SHIELD_LUNGE_UP = 1.3;         // up-bashes climb extra hard — a real recovery tool
+const SHIELD_LUNGE = 1.1;            // bash lunge, fraction of the sword's (a controlled ram)
+const SHIELD_LUNGE_UP = 1.15;        // up-bashes still climb, but less vertically than before
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
-// A landed (unblocked) bash turns its victim into a body-slam hazard for
-// the rest of their flight: whoever they collide with while this window is
-// live takes a hit too. Piggybacks entirely on the existing ability-melee
-// window (f.melee) — a centered, both-sided box that follows the victim's
-// body every tick — so it's free wiring into hitbox rendering, snapshotting,
-// duck-piercing, and (in expeditions) creep collision; no new entity, no
-// wire-format changes.
+// In co-op only, a landed (unblocked) bash turns its victim into a body-slam
+// hazard for the rest of their flight: creeps they collide with while this
+// window is live take a hit too. PvP victims do not gain a hitbox. Piggybacks
+// on the existing ability-melee window (f.melee) — a centered, both-sided box
+// that follows the victim's body every tick; no new entity or wire format.
 const SLAM_TICKS = 30;               // ~0.5s of hazard while flying (at 60Hz)
 const SLAM_DMG = 8, SLAM_KB = 300, SLAM_KS = 20;
 const SLAM_RX = 56, SLAM_RY = 56;    // body-sized box, a little generous
@@ -2166,17 +2164,18 @@ export class Game {
     }
     // shield bash: the victim is blasted out of their spot, the wielder
     // takes it (their position was read before the launch moved anything),
-    // and the victim becomes a body-slam hazard for the rest of their
-    // flight — anyone they collide with takes a hit too. The basher is
-    // pre-seeded into the hit set so they can't be immediately re-hit by
-    // the body that's now occupying their old spot.
+    // and, in co-op only, the victim becomes a body-slam hazard for the
+    // rest of their flight. PvP victims intentionally carry no hitbox after
+    // impact, so a clean shield bash cannot chain through bystanders.
     if (spec.bounce) {
       this._bashImpact(att, vic.x, vic.y, dirX);
-      vic.melee = {
-        name: 'slam', dmg: SLAM_DMG, kb: SLAM_KB, ks: SLAM_KS,
-        rx: SLAM_RX, ry: SLAM_RY, ang: 0, both: true,
-        until: this.tick + SLAM_TICKS, hit: new Set([att.id]),
-      };
+      if (this.coop) {
+        vic.melee = {
+          name: 'slam', dmg: SLAM_DMG, kb: SLAM_KB, ks: SLAM_KS,
+          rx: SLAM_RX, ry: SLAM_RY, ang: 0, both: true,
+          until: this.tick + SLAM_TICKS, hit: new Set([att.id]),
+        };
+      }
     }
 
     this.hitPause = Math.min(0.12, HIT_PAUSE + dmg * 0.004);

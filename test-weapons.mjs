@@ -391,7 +391,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('...then swings back down toward the hand', up.vy > 0);
 }
 
-// --- 10. shield: ram lunge, big launch, rebound, guard while charging ---
+// --- 10. shield: controlled ram lunge, launch, spot-swap, guard while charging ---
 {
   const g = mkGame('shield');
   const [a, b] = g.fighters;
@@ -399,16 +399,16 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
   g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
   check('shield swipe is the bash', a.atk === 'bash');
-  check('the bash lunges harder than an uncharged slash', a.vx > 500);
+  check('the bash still lunges hard', a.vx > 450);
   const spotX = b.x;
   let hit = false;
   for (let i = 0; i < 30 && !hit; i++) { g.step(); if (b.state === 'hitstun') hit = true; }
   check('the ram connects', hit);
-  check('the victim gets blasted away hard', b.vx > 300);
+  check('the victim gets knocked away', b.vx > 260);
   check('the wielder takes the victim\'s spot (no pass-through, no rebound)',
     Math.abs(a.x - spotX) < 5 && a.vx === 0);
 
-  // up-bash: a climbing ram that outclimbs even the sword's up-lunge
+  // up-bash: a climbing ram, with its vertical climb toned down
   const gU = mkGame('shield');
   const u = gU.fighters[0];
   u.grounded = false; u.y = -200; u.vy = 0;
@@ -417,8 +417,9 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const s = gS.fighters[0];
   s.grounded = false; s.y = -200; s.vy = 0;
   gS._startAttack(s, { kind: 'swipe', dx: 0, dy: -1 });
-  check('aerial up-bash climbs hard', u.vy < -900);
-  check('...harder than the sword\'s up-lunge', u.vy < s.vy);
+  check('aerial up-bash still climbs', u.vy < -800);
+  check('...with less extreme vertical launch than before', u.vy > -1100);
+  check('...still outclimbs the sword\'s up-lunge', u.vy < s.vy);
   check('up-bash arms the rise cooldown (no infinite climbing)', u.riseT > 0);
 
   // a blocked ram can't trade places: the wielder stops with a nudge back
@@ -448,7 +449,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('...and takes it in full when down', Math.abs(pctAfter(false) - 10) < 1e-9);
 }
 
-// --- 10b. shield: a bash victim becomes a body-slam hazard mid-flight ---
+// --- 10b. shield: PvP bash victims do not become body-slam hazards ---
 {
   const g = new Game([
     { id: 'A', name: 'Alice', color: '#f00', build: build('shield') },
@@ -456,44 +457,21 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
     { id: 'C', name: 'Cara', color: '#00f', build: build() },
   ], 7, 'flatlands');
   const [a, b, c] = g.fighters;
-  a.x = 0; a.facing = 1; b.x = 90; b.y = a.y; c.x = 5000;   // C out of the way for now
+  a.x = 0; a.facing = 1; b.x = 90; b.y = a.y; c.x = 5000;
   g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput()); g.inputs.set('C', blankInput());
   g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
   let hit = false;
   for (let i = 0; i < 30 && !hit; i++) { g.step(); if (b.state === 'hitstun') hit = true; }
   check('the ram connects', hit);
-  check('the victim is carrying a slam hazard', b.melee && b.melee.name === 'slam');
-  check('the original wielder is pre-excluded from their own victim\'s slam',
-    b.melee.hit.has('A'));
+  check('the PvP victim carries no slam hazard', !b.melee);
   check('the wielder is standing right where the victim was, but is not hit', a.state !== 'hitstun');
 
-  // drop a bystander exactly where the flying victim now is: an overlap is
-  // guaranteed regardless of the bash's exact launch trajectory. Clear the
-  // fresh spawn's respawn-invuln so it isn't that shielding the hit instead.
+  // drop a bystander exactly where the flying victim now is: without a slam
+  // hitbox on the impacted PvP player, the overlap is harmless.
+  a.state = 'idle'; a.atk = null; a.atkHit.clear();
   c.x = b.x; c.y = b.y; c.state = 'idle'; c.invuln = 0;
   g._resolveAttacks();
-  check('a bystander in the flight path takes a hit too', c.state === 'hitstun');
-  check('the slammed victim is credited as the hitter, not the original basher',
-    c.lastHitBy === 'B');
-  check('the bystander is launched, not just chip-damaged', c.pct > 0);
-
-  // the hazard window closes: once it expires, the same overlap is harmless
-  const g2 = new Game([
-    { id: 'A', name: 'Alice', color: '#f00', build: build('shield') },
-    { id: 'B', name: 'Bob', color: '#0f0', build: build() },
-    { id: 'C', name: 'Cara', color: '#00f', build: build() },
-  ], 7, 'flatlands');
-  const [a2, b2, c2] = g2.fighters;
-  a2.x = 0; a2.facing = 1; b2.x = 90; b2.y = a2.y; c2.x = 5000;
-  g2.inputs.set('A', blankInput()); g2.inputs.set('B', blankInput()); g2.inputs.set('C', blankInput());
-  g2._startAttack(a2, { kind: 'swipe', dx: 1, dy: 0 });
-  let hit2 = false;
-  for (let i = 0; i < 30 && !hit2; i++) { g2.step(); if (b2.state === 'hitstun') hit2 = true; }
-  for (let i = 0; i < 40; i++) g2.step();   // run the ~0.5s hazard window all the way out
-  check('the slam expires on its own', !b2.melee);
-  c2.x = b2.x; c2.y = b2.y; c2.state = 'idle'; c2.invuln = 0;
-  g2._resolveAttacks();
-  check('an expired slam no longer hits anyone standing in the same spot', c2.state !== 'hitstun');
+  check('a bystander in the flight path is not hit by the victim', c.state !== 'hitstun');
 }
 
 // --- 11. brawler augment: the tap kit hits 25% harder, weapons don't ---
