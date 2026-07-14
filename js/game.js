@@ -308,6 +308,7 @@ const BOSS_HEARTS = 10;              // defeat fireworks: hearts flung in all di
 const ENEMY_HIT_MERCY = 0.55;        // post-hit invulnerability so a swarm can't chain-stun
 const LOOT_HEAL_FRACTION = 0.5;      // "Patch Up" loot card: heal half of max HP
 export const LOOT_CR_BONUS = 200;    // "Windfall" loot card: CR straight into the wallet
+const EXPEDITION_START_CR = 160;     // co-op wallet balance at the start of a run
 const ENEMY_SEP_PUSH = 300;          // max px/s creeps shoulder each other apart (beats any chase speed)
 const ENEMY_SEP_GAP = 0.9;           // fraction of summed half-widths creeps keep between centers
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
@@ -720,7 +721,7 @@ export class Game {
       parked: false,                // owner stepped out to the lobby: asleep, untouchable
       dead: false,
       lastDir: { x: 1, y: 0 },
-      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: 0, elite: 0 }, // podium stats + expedition credits
+      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: this.coop ? EXPEDITION_START_CR : 0, elite: 0 }, // podium stats + expedition credits
     };
   }
 
