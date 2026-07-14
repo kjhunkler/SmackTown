@@ -1963,6 +1963,7 @@ class Session {
       }
       if (ev.e === 'boss') UI.toast(`⚠️ ${ev.name} bars the road!`, 2600);
       if (ev.e === 'bossdown') UI.toast(`🏆 ${ev.name || 'Boss'} defeated!`, 2600);
+      if (ev.e === 'bosssig') UI.toast(`⚡ ${ev.name} unleashes ${ev.atk}!`, 2400);
       if (ev.e === 'gameover') UI.toast('GAME!', 2000);
     }
   }

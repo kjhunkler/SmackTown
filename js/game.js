@@ -296,12 +296,19 @@ export const BOSS_VARIANTS = {
     { name: 'Doom Warlock',  color: '#e84f6a', hp: 1.8,  dmg: 1.45, spd: 1.22 },
   ],
 };
-// Per-type attack telegraphs (seconds of windup per attack index).
+// Per-type attack telegraphs (seconds of windup per attack index). Index 3
+// is each boss's signature: a rare, screen-spanning set piece (see
+// _bossTelegraphSignature) — its long windup is the whole point, showing
+// every strike point up front so surviving it is about reading and moving,
+// not reacting.
 export const BOSS_ATTACKS = {
-  colossus: [0.85, 1.15, 0.9],   // 0 slam · 1 stomp · 2 charge
-  tempest:  [0.7, 0.95, 0.9],    // 0 talon · 1 dive · 2 volley
-  warlock:  [0.9, 1.25, 0.95],   // 0 bolt burst · 1 eruption · 2 nova
+  colossus: [0.85, 1.15, 0.9, 1.7],   // 0 slam · 1 stomp · 2 charge · 3 meteor slam
+  tempest:  [0.7, 0.95, 0.9, 1.6],    // 0 talon · 1 dive · 2 volley · 3 lightning storm
+  warlock:  [0.9, 1.25, 0.95, 1.8],   // 0 bolt burst · 1 eruption · 2 nova · 3 arcane laser
 };
+export const BOSS_SIG_NAMES = { colossus: 'Meteor Slam', tempest: 'Lightning Storm', warlock: 'Arcane Laser' };
+const BOSS_SIG_CD = 13;         // minimum seconds between a boss's signature attacks
+const BOSS_SIG_CHANCE = 0.4;    // odds a ready-and-off-cooldown boss opts for it
 const BOSS_REGION_EVERY = 3;         // a boss bars the road every Nth biome region
 const BOSS_SPAWN_SLOW = 5.0;         // trickle spawn cadence floor while a boss lives
 const BOSS_HEARTS = 10;              // defeat fireworks: hearts flung in all directions
@@ -2533,6 +2540,20 @@ export class Game {
           else if (t.ranged) this._enemyFire(e, t, tgt);
           else this._enemyStrike(e, t, live);
         }
+      } else if (e.barrage) {
+        // signature set piece resolving: hold still while the locked strike
+        // points fire off one by one on their own clock
+        e.vx = approach(e.vx, 0, t.accel * TICK);
+        if (t.fly) e.vy = approach(e.vy, 0, t.accel * TICK);
+        else e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+        const bar = e.barrage;
+        bar.timer -= TICK;
+        while (bar.timer <= 0 && bar.idx < bar.pts.length) {
+          this._resolveBarragePoint(e, t, bar, bar.pts[bar.idx]);
+          bar.idx++;
+          bar.timer += bar.every;
+        }
+        if (bar.idx >= bar.pts.length) e.barrage = null;
       } else if (t.fly) {
         // flyer: home straight in at altitude, ignoring gravity, holding at
         // the edge of its strike arc instead of parking inside the target
@@ -2583,7 +2604,8 @@ export class Game {
       }
 
       // bosses: once in engagement range, pick one of three telegraphed attacks
-      if (t.boss && tgt && e.stagger <= 0 && e.windup <= 0 && e.rushT <= 0 && e.atkCd <= 0
+      // (or, rarely, off cooldown, the signature set piece)
+      if (t.boss && tgt && e.stagger <= 0 && e.windup <= 0 && e.rushT <= 0 && e.atkCd <= 0 && !e.barrage
           && (t.fly || e.grounded) && Math.abs(tgt.x - e.x) < 640) {
         this._bossTelegraph(e, t, tgt);
       }
@@ -2604,6 +2626,7 @@ export class Game {
       }
 
       if (e.atkCd > 0) e.atkCd -= TICK;
+      if (e.sigCd > 0) e.sigCd -= TICK;
       if (e.hurt > 0) e.hurt -= TICK;
       if (e.burn) this._burnEnemy(e);
     }
@@ -2757,6 +2780,7 @@ export class Game {
       focusId: null,
       elite: false,
       variant, rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
+      sigCd: 6, barrage: null, sigPts: null,  // signature set piece: grace, active barrage, locked strike points
     });
     this.events.push({ e: 'boss', name: v.name, kind, variant, x, y });
   }
@@ -2838,10 +2862,12 @@ export class Game {
   _bossVar(e) { return (BOSS_VARIANTS[e.kind] || BOSS_VARIANTS.colossus)[e.variant || 0] || BOSS_VARIANTS[e.kind][0]; }
 
   // Every boss blow funnels through here: heavy shove, hitstun, and the same
-  // post-hit mercy window regular creeps grant.
-  _bossHit(e, t, f, dmg, kb, pop) {
+  // post-hit mercy window regular creeps grant. originX lets a barrage point
+  // knock victims away from where the blow actually landed rather than from
+  // the boss itself, which may be standing well clear of it.
+  _bossHit(e, t, f, dmg, kb, pop, originX = e.x) {
     dmg = this._shielded(f, dmg);
-    const dir = Math.sign(f.x - e.x) || e.facing;
+    const dir = Math.sign(f.x - originX) || e.facing;
     f.vx += dir * kb;
     f.vy = Math.min(f.vy, pop);
     f.grounded = false;
@@ -2854,8 +2880,11 @@ export class Game {
 
   // Pick which of the three attacks to telegraph, by spacing with a dash of
   // rng. Aim is locked NOW — spot attacks land where the target stood when
-  // the windup began, so watching the telegraph is what saves you.
+  // the windup began, so watching the telegraph is what saves you. Once the
+  // signature's own long cooldown has cleared, there's a chance the boss
+  // reaches for that instead of its regular three.
   _bossTelegraph(e, t, tgt) {
+    if (e.sigCd <= 0 && this.rng() < BOSS_SIG_CHANCE) { this._bossTelegraphSignature(e, t, tgt); return; }
     const dx = Math.abs(tgt.x - e.x);
     let atk;
     if (e.kind === 'colossus') atk = dx < t.reach + e.hw ? 0 : dx < 460 && this.rng() < 0.55 ? 1 : 2;
@@ -2872,11 +2901,84 @@ export class Game {
     }
   }
 
+  // The rare fourth attack: a screen-spanning set piece. Every strike point
+  // (or the laser's full sweep lane) is locked in and broadcast to the
+  // renderer the instant the windup starts, so the whole hazard is visible
+  // for its entire long telegraph — reading it, not reacting to it, is what
+  // keeps a party alive.
+  _bossTelegraphSignature(e, t, tgt) {
+    e.atkKind = 3;
+    e.aimX = tgt.x; e.aimY = tgt.y;
+    const windup = BOSS_ATTACKS[e.kind][3];
+    e.windup = windup;
+    e.sigCd = BOSS_SIG_CD;
+    e.atkCd = t.atkCd * 1.6;
+    const v = this._bossVar(e);
+    const floor = this.stage.main.y;
+    this.events.push({ e: 'bosssig', kind: e.kind, name: v.name, atk: BOSS_SIG_NAMES[e.kind], x: e.x, y: e.y });
+
+    if (e.kind === 'warlock') {
+      // Arcane Laser: a beam lane the full width of a lunge, locked to a
+      // side of the boss right now so the entire lane is visible up front —
+      // clear it, or simply never stand in it.
+      const dir = tgt.x >= e.x ? 1 : -1;
+      const x0 = e.x + dir * 120, x1 = x0 + dir * 820;
+      e.sigPts = { x0, x1, y: floor };
+      this.events.push({ e: 'laserwarn', x0, x1, y: floor, life: windup });
+    } else {
+      // Meteor Slam / Lightning Storm: a spread of strike points across a
+      // wide swath around the party, each marked on the ground up front.
+      const n = 6, spread = 760, cx = tgt.x;
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        pts.push({ x: cx - spread / 2 + (spread / (n - 1)) * i + (this.rng() - 0.5) * 40, y: floor });
+      }
+      e.sigPts = pts;
+      const warnKind = e.kind === 'colossus' ? 'meteormark' : 'lightningmark';
+      const r = e.kind === 'colossus' ? 130 : 95;
+      for (const p of pts) this.events.push({ e: warnKind, x: p.x, y: p.y, r, life: windup });
+    }
+  }
+
+  // Resolve the signature attack the telegraph locked in: hand off to a
+  // barrage that fires its points on its own clock (see _stepEnemies).
+  _bossSignatureResolve(e, t, v, dmg) {
+    if (e.kind === 'warlock') {
+      const { x0, x1, y } = e.sigPts;
+      const n = 7;
+      const pts = [];
+      for (let i = 0; i < n; i++) pts.push({ x: x0 + (x1 - x0) * (i / (n - 1)), y });
+      // 'laserhit' (per-segment) is distinct from 'laserfire' (the beam
+      // visual, pushed once below) so the two don't fight over event shape
+      e.barrage = { pts, idx: 0, timer: 0, every: 0.09, dmg: dmg * 1.35, kb: 340, pop: -360, mode: 'column', w: 210, r: 0, kind: 'laserhit' };
+      this.events.push({ e: 'laserfire', x0, x1, y, life: 0.7 });
+    } else if (e.kind === 'colossus') {
+      e.barrage = { pts: e.sigPts, idx: 0, timer: 0, every: 0.22, dmg: dmg * 1.55, kb: 300, pop: -480, mode: 'radial', r: 130, w: 0, kind: 'meteor' };
+    } else {
+      e.barrage = { pts: e.sigPts, idx: 0, timer: 0, every: 0.13, dmg: dmg * 1.6, kb: 320, pop: -520, mode: 'radial', r: 95, w: 0, kind: 'lightning' };
+    }
+    e.sigPts = null;
+  }
+
+  // A single barrage point's turn: hit whoever's standing in it, then flare
+  // the impact for the renderer/SFX regardless of whether it connected.
+  _resolveBarragePoint(e, t, bar, pt) {
+    for (const f of this._liveFighters) {
+      if (f.invuln > 0) continue;
+      const hit = bar.mode === 'column'
+        ? Math.abs(f.x - pt.x) < bar.w / 2
+        : Math.abs(f.x - pt.x) < bar.r && Math.abs(f.y - pt.y) < bar.r + 60;
+      if (hit) this._bossHit(e, t, f, bar.dmg, bar.kb, bar.pop, pt.x);
+    }
+    this.events.push({ e: bar.kind, x: pt.x, y: pt.y, r: bar.r, w: bar.w });
+  }
+
   // The windup ended: resolve whichever attack was telegraphed.
   _bossAttack(e, t, live) {
     const v = this._bossVar(e);
     const dmg = t.dmg * v.dmg;
     const a = e.atkKind | 0;
+    if (a === 3) { this._bossSignatureResolve(e, t, v, dmg); return; }
     if (e.kind === 'colossus') {
       if (a === 0) this._enemyStrike(e, t, live, v.dmg);           // slam: huge frontal swing
       else if (a === 1) {
@@ -3278,6 +3380,7 @@ export function gameFromSnapshot(players, snap, seed = 2) {
       facing: r[5] || 1, kind, hw: t.w / 2, hh: t.h / 2,
       grounded: !t.fly, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11], stagger: r[12] || 0, variant: r[13] || 0,
       rushT: 0, rushHit: null, atkKind: r[14] || 0, aimX: r[15] || 0, aimY: r[16] || 0,
+      sigCd: 3, barrage: null, sigPts: null,  // a handoff drops any in-flight barrage; the boss just resumes cold
     };
   });
   g.hearts = (snap.ht || []).map(r => ({

@@ -94,6 +94,9 @@ export class Renderer {
     this.squash = new Map();         // fighter id -> landing squash {t, a}
     this.auras = new Map();          // fighter id -> {kind, t} bubble/counter overlays
     this.rings = [];                 // expanding shock rings {x,y,r0,r1,t,life,color,w}
+    this.bolts = [];                 // boss signature: falling lightning flashes {x,y0,y1,t,life}
+    this.beams = [];                 // boss signature: laser lane warn/fire bands {x0,x1,y,t,life,fire}
+    this.sigFlash = null;            // boss signature: full-screen warning pulse {t,life}
     this.ambient = [];               // ambient weather: embers & ash (ruins), rain (neon heights)
     this.enemySprites = new Map();   // cached static common-creep silhouettes
     this.setMap(DEFAULT_MAP);
@@ -330,6 +333,49 @@ export class Renderer {
       case 'bosswarn':
         // ground marker where a delayed boss attack will land
         this.rings.push({ x: ev.x, y: ev.y - 8, r0: 12, r1: ev.r || 150, t: 0, life: ev.life || 1, color: '#ff5470', w: 5 });
+        break;
+      case 'bosssig':
+        // the signature set piece begins: hard sky flash, roar, the biggest
+        // shake in the game — this is the "get moving" moment
+        this.sigFlash = { t: 0, life: 0.5 };
+        this.rings.push({ x: ev.x, y: ev.y, r0: 20, r1: 320, t: 0, life: 1.0, color: '#ff2e63', w: 8 });
+        this.shake = Math.max(this.shake, 18);
+        this.dmgPops.push({ x: ev.x, y: ev.y - 90, txt: (ev.atk || 'INCOMING').toUpperCase(), t: 0, life: 1.4, heavy: true, color: '#ff2e63' });
+        break;
+      case 'meteormark':
+        // ground marker for one of the meteor slam's boulder impacts
+        this.rings.push({ x: ev.x, y: ev.y - 8, r0: 14, r1: ev.r || 130, t: 0, life: ev.life || 1.4, color: '#e8663a', w: 6 });
+        break;
+      case 'lightningmark':
+        // ground marker for one of the lightning storm's bolt strikes
+        this.rings.push({ x: ev.x, y: ev.y - 8, r0: 10, r1: ev.r || 95, t: 0, life: ev.life || 1.4, color: '#bfe3ff', w: 5 });
+        break;
+      case 'meteor':
+        // a boulder actually lands
+        this.burst(ev.x, ev.y, 26, '#e8663a', 420);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 20, r1: (ev.r || 130) * 1.2, t: 0, life: 0.4, color: '#ffb02e', w: 7 });
+        this.shake = Math.max(this.shake, 14);
+        break;
+      case 'lightning':
+        // a bolt actually strikes
+        this.bolts.push({ x: ev.x, y0: ev.y - 900, y1: ev.y, t: 0, life: 0.22 });
+        this.burst(ev.x, ev.y, 22, '#eaf7ff', 400);
+        this.rings.push({ x: ev.x, y: ev.y, r0: 12, r1: (ev.r || 95) * 1.3, t: 0, life: 0.3, color: '#bfe3ff', w: 6 });
+        this.shake = Math.max(this.shake, 12);
+        break;
+      case 'laserwarn':
+        // the arcane laser's full lane, marked for the entire windup
+        this.beams.push({ x0: ev.x0, x1: ev.x1, y: ev.y, t: 0, life: ev.life || 1.6, fire: false });
+        break;
+      case 'laserfire':
+        // the lane lights up solid while the beam actually sweeps it
+        this.beams.push({ x0: ev.x0, x1: ev.x1, y: ev.y, t: 0, life: ev.life || 0.7, fire: true });
+        this.shake = Math.max(this.shake, 16);
+        break;
+      case 'laserhit':
+        // one segment of the sweep actually connects — a small spark, since
+        // the beam itself already carries the big visual and sound
+        this.burst(ev.x, ev.y, 8, '#eaf7ff', 260);
         break;
       case 'stomp':
         this.burst(ev.x, ev.y, 16, '#c9b49a', 300);
@@ -609,6 +655,65 @@ export class Renderer {
     ctx.globalAlpha = 1;
     this.rings = this.rings.filter(r => r.t < r.life);
 
+    // boss signature: falling lightning — a jagged flash from off the top
+    // of the screen down to the strike point
+    for (const b of this.bolts) {
+      b.t += dt;
+      const k = b.t / b.life;
+      if (k >= 1) continue;
+      ctx.globalAlpha = (1 - k) * 0.95;
+      let x = b.x, y = b.y0;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      const steps = 7;
+      for (let i = 1; i <= steps; i++) {
+        y = b.y0 + (b.y1 - b.y0) * (i / steps);
+        x = b.x + (Math.random() - 0.5) * 26;
+        ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = 'rgba(191,227,255,.5)';
+      ctx.lineWidth = 14 * (1 - k * 0.5);
+      ctx.stroke();
+      ctx.strokeStyle = '#eaf7ff';
+      ctx.lineWidth = 4 * (1 - k * 0.5);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    this.bolts = this.bolts.filter(b => b.t < b.life);
+
+    // boss signature: arcane laser lane — a dashed warning band while it
+    // charges, a blinding solid core the instant it actually fires
+    for (const b of this.beams) {
+      b.t += dt;
+      const k = b.t / b.life;
+      if (k >= 1) continue;
+      const bx0 = Math.min(b.x0, b.x1), bx1 = Math.max(b.x0, b.x1);
+      const y0 = b.y - 1400, y1 = b.y + 30;
+      if (b.fire) {
+        const flick = 0.75 + Math.random() * 0.25;
+        ctx.globalAlpha = (1 - k * 0.6) * flick;
+        const g = ctx.createLinearGradient(bx0, 0, bx1, 0);
+        g.addColorStop(0, 'rgba(196,79,232,0)');
+        g.addColorStop(0.5, 'rgba(255,255,255,.9)');
+        g.addColorStop(1, 'rgba(196,79,232,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(bx0, y0, bx1 - bx0, y1 - y0);
+      } else {
+        const pulse = 0.35 + 0.25 * Math.sin(t * 14);
+        ctx.globalAlpha = pulse * (1 - k * 0.3);
+        ctx.fillStyle = 'rgba(196,79,232,.12)';
+        ctx.fillRect(bx0, y0, bx1 - bx0, y1 - y0);
+        ctx.strokeStyle = '#c44fe8';
+        ctx.setLineDash([14, 8]);
+        ctx.lineDashOffset = -t * 60;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(bx0, y0, bx1 - bx0, y1 - y0);
+        ctx.setLineDash([]);
+      }
+    }
+    ctx.globalAlpha = 1;
+    this.beams = this.beams.filter(b => b.t < b.life);
+
     // timed fighter auras: bubble shield dome & counter parry stance.
     // Timers tick for every entry (even fighters missing from this frame's
     // view) so auras can't outlive their owner; drawing is per-fighter.
@@ -693,6 +798,17 @@ export class Renderer {
     this.dmgPops = this.dmgPops.filter(d => d.t < d.life);
 
     ctx.restore();
+
+    // boss signature: a hard red pulse across the whole screen the instant
+    // one begins, on top of everything else — the unmissable "move now" cue
+    if (this.sigFlash) {
+      this.sigFlash.t += dt;
+      const k = this.sigFlash.t / this.sigFlash.life;
+      if (k < 1) {
+        ctx.fillStyle = `rgba(255,45,72,${(0.35 * (1 - k)).toFixed(2)})`;
+        ctx.fillRect(0, 0, W, H);
+      } else this.sigFlash = null;
+    }
   }
 
   // Sky centerpiece per theme: parallaxes gently with the camera.
@@ -1197,6 +1313,7 @@ export class Renderer {
 
   _bossTelegraph(ctx, e, ty, t) {
     const a = e.atkKind | 0;
+    if (a === 3) { this._bossSigLabel(ctx, e, ty, t); return; }
     const max = BOSS_ATTACKS[e.kind]?.[a] || ty.windup || 1;
     const k = 1 - Math.min(1, e.windup / max);
     const pulse = 0.55 + 0.25 * Math.sin(t * 16);
@@ -1246,6 +1363,27 @@ export class Renderer {
     const label = `${labels[e.kind]?.[a] || 'ATTACK'}  ${e.windup.toFixed(1)}s`;
     ctx.strokeText(label, e.x, e.y - ty.h / 2 - 34);
     ctx.fillStyle = k > 0.72 ? '#ffffff' : '#ffdf68'; ctx.fillText(label, e.x, e.y - ty.h / 2 - 34);
+    ctx.restore();
+  }
+
+  // The signature set piece's danger zone is already shown precisely by its
+  // own ground markers / laser lane (pushed once, at telegraph start), so
+  // this per-frame overlay is just a pulsing callout over the boss itself —
+  // drawing a shape here too would either duplicate or, worse, mislead.
+  _bossSigLabel(ctx, e, ty, t) {
+    const hints = {
+      colossus: 'METEOR SLAM — WEAVE THROUGH THE GAPS',
+      tempest: 'LIGHTNING STORM — KEEP MOVING',
+      warlock: 'ARCANE LASER — CLEAR THE LANE',
+    };
+    const pulse = 0.6 + 0.3 * Math.sin(t * 10);
+    ctx.save();
+    ctx.font = '900 20px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(20,8,14,.9)';
+    const label = `${hints[e.kind] || 'BIG ATTACK INCOMING'}  ${e.windup.toFixed(1)}s`;
+    ctx.strokeText(label, e.x, e.y - ty.h / 2 - 40);
+    ctx.fillStyle = `rgba(255,120,80,${pulse.toFixed(2)})`;
+    ctx.fillText(label, e.x, e.y - ty.h / 2 - 40);
     ctx.restore();
   }
 

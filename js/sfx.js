@@ -255,6 +255,29 @@ class Sfx {
         this._tone({ type: 'sine', f0: 660, f1: 1320, dur: 0.25, vol: 0.15 });
         break;
 
+      // --- boss signature attacks ---
+      case 'bosssig':   // the roar that opens a set piece: low, long, ominous
+        this._tone({ type: 'sawtooth', f0: 90, f1: 40, dur: 0.9, vol: 0.32 });
+        this._tone({ type: 'square', f0: 55, dur: 0.5, vol: 0.22 });
+        this._noise({ type: 'lowpass', f0: 900, f1: 200, dur: 0.7, vol: 0.22 });
+        break;
+      case 'meteor':    // a boulder crashing down: heavier than a normal hit
+        this._tone({ type: 'sawtooth', f0: 140, f1: 40, dur: 0.28, vol: 0.34 });
+        this._noise({ f0: 2400, f1: 200, dur: 0.22, vol: 0.28 });
+        break;
+      case 'thunder':   // a lightning bolt striking: sharp crack, rolling boom
+        this._noise({ type: 'highpass', f0: 3200, dur: 0.09, vol: 0.3 });
+        this._tone({ type: 'sawtooth', f0: 900, f1: 80, dur: 0.22, vol: 0.22 });
+        this._noise({ f0: 700, f1: 90, t0: 0.05, dur: 0.35, vol: 0.16 });
+        break;
+      case 'laserwarn': // the beam lane charging up: a rising whine
+        this._tone({ type: 'sawtooth', f0: 200, f1: 1200, dur: 1.1, vol: 0.14 });
+        break;
+      case 'laserfire': // the beam actually firing: a sustained buzzing zap
+        this._tone({ type: 'sawtooth', f0: 2200, f1: 300, dur: 0.5, vol: 0.22 });
+        this._noise({ type: 'bandpass', f0: 1800, f1: 600, q: 2, dur: 0.6, vol: 0.22 });
+        break;
+
       // --- weapons ---
       case 'slash':   // metallic shing over the swing whoosh
         this._noise({ type: 'bandpass', f0: 1600, f1: 3400, q: 2.4, dur: 0.11, vol: 0.16 });
@@ -407,6 +430,11 @@ class Sfx {
       case 'quake':   this.play('hitheavy'); break;
       case 'eruption': this.play('hitheavy'); break;
       case 'bossdown': this.play('secondwind'); break;
+      case 'bosssig':  this.play('bosssig'); break;
+      case 'meteor':   this.play('meteor'); break;
+      case 'lightning':this.play('thunder'); break;
+      case 'laserwarn':this.play('laserwarn'); break;
+      case 'laserfire':this.play('laserfire'); break;
       case 'burstboom': this.play(ev.fire ? 'burn' : 'hitheavy'); break;
       case 'spikebounce': this.play('jump'); break;
       case 'land':    this.play('land'); break;
