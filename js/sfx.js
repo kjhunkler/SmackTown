@@ -427,7 +427,6 @@ class Sfx {
       case 'strike':  this.play('swing'); break;   // creep melee swing (hit or whiff)
       case 'boss':    this.play('crush'); break;   // a boss bars the road
       case 'stomp':   this.play('hitheavy'); break;
-      case 'quake':   this.play('hitheavy'); break;
       case 'eruption': this.play('hitheavy'); break;
       case 'bossdown': this.play('secondwind'); break;
       case 'bosssig':  this.play('bosssig'); break;

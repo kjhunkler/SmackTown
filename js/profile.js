@@ -40,7 +40,13 @@ export const ABILITIES = [
   { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 6.0,
     desc: 'Plant spikes that launch and stun whoever steps in' },
   { id: 'anchor',    icon: '⚓', name: 'Second Wind',  cost: 200, cd: 6.0,
-    desc: 'Drop a teleport anchor — hit the button again while it\'s down to warp back to it' },
+    desc: 'Drop a teleport anchor — hit the button again within 4s to warp back to it' },
+  { id: 'springtrap',icon: '🌀', name: 'Spring Trap',  cost: 210, cd: 6.0,
+    desc: 'Plant a coiled spring that launches whoever steps in exactly backwards' },
+  { id: 'troop',     icon: '🪖', name: 'Summon Troop', cost: 260, cd: 10.0,
+    desc: 'Call in a random ground troop that fights at your side for a spell' },
+  { id: 'bird',      icon: '🦅', name: 'Summon Bird',  cost: 240, cd: 8.0,
+    desc: 'Whistle down a battle bird that dives your foes for a spell' },
 ];
 
 // Weapons: what the strong-attack control swings. Every fighter carries
@@ -69,7 +75,7 @@ export const AUGMENTS = [
     desc: 'Heal 12% of the damage you deal',
     pveDesc: 'Heal 4% of the damage you deal' },
   { id: 'thorns',      icon: '🌵', name: 'Thorns',       cost: 160,
-    desc: 'Melee attackers take 4% recoil damage' },
+    desc: 'Melee attackers take 8% recoil damage' },
   { id: 'feather',     icon: '🪶', name: 'Featherweight',cost: 140,
     desc: '+1 midair jump, but you fly 8% further when hit' },
   { id: 'heavy',       icon: '🗿', name: 'Heavyweight',  cost: 160,
@@ -90,7 +96,7 @@ export const AUGMENTS = [
   { id: 'brawler',     icon: '🥋', name: 'Brawler',      cost: 160,
     desc: 'Your tap attacks — jabs, the combo string, dash attacks — hit 25% harder' },
   { id: 'bulwark',     icon: '🧱', name: 'Bulwark',      cost: 150,
-    desc: 'Your duck guard wears down 40% slower' },
+    desc: 'Your duck guard wears down 80% slower' },
   { id: 'executioner', icon: '🪓', name: 'Executioner',  cost: 160,
     desc: '+20% knockback vs foes at 100% or more',
     pveDesc: '+20% damage vs low-HP enemies' },

@@ -253,6 +253,9 @@ export const ENEMY_TYPES = {
   flyer:   { hp: 6,  speed: 170, accel: 720,  w: 40, h: 38, dmg: 3, kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', reach: 48, windup: 0.45, atkCd: 1.9, fly: true },
   slinger: { hp: 7,  speed: 120, accel: 820,  w: 42, h: 48, dmg: 2, kbTaken: 0.72, touchKb: 230, color: '#d94fb0',
              ranged: true, shotDmg: 3, shotSpd: 360, range: 440, windup: 0.85, atkCd: 2.6 },
+  // battle bird: summon-only (never spawns wild) — a quick golden flyer
+  // that pesters with fast dive pecks
+  bird:    { hp: 8,  speed: 260, accel: 950,  w: 38, h: 34, dmg: 3, kbTaken: 0.75, touchKb: 250, color: '#ffd23e', reach: 46, windup: 0.30, atkCd: 1.2, fly: true },
   // Bosses: huge road-blocking creeps with three telegraphed attacks each
   // (picked in _bossTelegraph, resolved in _bossAttack). They shrug off
   // stagger, ignore crowd rules, and burst into hearts when they fall.
@@ -323,7 +326,7 @@ const ENEMY_RECYCLE_BEHIND = 1200;   // recycle stragglers ahead of the forward-
 const ENEMY_BASE_MAX = 14;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 36;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
-const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger', 'colossus', 'tempest', 'warlock'];
+const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger', 'colossus', 'tempest', 'warlock', 'bird'];
 const ENEMY_TEMPERAMENTS = ['bold', 'cautious', 'vengeful', 'pack'];
 const BIOME_ENEMY_WEIGHTS = {
   battlefield: { flyer: 1, hopper: 1 },
@@ -384,10 +387,6 @@ const GUARD_REDUCK = 25;             // min guard needed to start a duck
 const CRUSH_STUN = 1.0;              // crumple duration at guard zero
 const CRUSH_KB_TAKEN = 1.3;         // knockback penalty while crushed
 
-// The quake's dead-zone radius: shared with the renderer so the drawn ring
-// matches exactly what the sim tests.
-export const QUAKE_GAP = 55;
-
 // attack archetypes: [damage, baseKb, kbScale, startup, active, recover, reach, angle]
 // 'tap: true' marks the bare tap kit (jab combo, dash attack, air spin) —
 // the Brawler augment keys off it.
@@ -428,12 +427,11 @@ const ATTACKS = {
   // edge; ry = half-thickness of the head). Whiffs up close, rewards
   // spacing with the biggest hit in the game.
   thrust: { dmg: 17, kb: 170, ks: 16, startup: .11, active: .08, rec: .22, rx: 150, gap: 50, ry: 8, ang: -20, spear: true },
-  // spear grounded down-thrust: instead of stabbing the earth, the spear
-  // plants and QUAKES it — a both-sides ground eruption that launches
-  // everything at spear's length up and away. Its weakness is the ring:
-  // the wave only lives from `gap` outward, so anything hugging the
-  // wielder stands safely inside the eye of the quake.
-  quake:  { dmg: 8, kb: 240, ks: 16, startup: .20, active: .12, rec: .36, rx: 150, gap: QUAKE_GAP, ry: 34, ang: -75, both: true },
+  // spear grounded down-smash: a haft SWEEP whirled low around the body,
+  // both sides at once with no dead zone — the spear's answer to being
+  // crowded. Everything hugging the wielder gets swept up and away; at
+  // real range the thrust is still the better tool.
+  sweep:  { dmg: 11, kb: 240, ks: 16, startup: .14, active: .11, rec: .28, rx: 100, ry: 30, ang: -50, both: true },
   // boomerang strong attack: the throw pose. Like a cast, no melee box ever
   // goes active — the hit is the returning rang spawned at release. Snappy
   // recovery: the thrower is back in control while the blade works.
@@ -515,8 +513,9 @@ const SLAM_TICKS = 30;               // ~0.5s of hazard while flying (at 60Hz)
 const SLAM_DMG = 8, SLAM_KB = 300, SLAM_KS = 20;
 const SLAM_RX = 56, SLAM_RY = 56;    // body-sized box, a little generous
 // Grapple hook: the reel-in scales with flight distance — see the hook case
-// in _useAbility. A snag at full stretch pulls with real violence.
-const HOOK_KB0 = 380, HOOK_KB1 = 950;
+// in _useAbility. Even a point-blank tag yanks with real force (KB0 is the
+// floor), and a snag at full stretch pulls with real violence.
+const HOOK_KB0 = 650, HOOK_KB1 = 1250;
 const HOOK_RANGE = 700;              // flight distance for the full-strength pull
 const BURST_SPD0 = 520,  BURST_SPD1 = 1150;  // burst speed vs charge
 const BURST_TTL0 = 0.55, BURST_TTL1 = 1.5;   // burst lifetime vs charge
@@ -541,7 +540,7 @@ function chargeScale(base0, base1, k) {
 // number formatting overhead.
 export function packEnemyDelta(delta) {
   const [changed = [], removed = []] = delta || [];
-  const bytes = 4 + changed.length * 45 + removed.length * 4;
+  const bytes = 4 + changed.length * 50 + removed.length * 4;
   const view = new DataView(new ArrayBuffer(bytes));
   let offset = 0;
   view.setUint16(offset, changed.length, true); offset += 2;
@@ -564,6 +563,10 @@ export function packEnemyDelta(delta) {
     view.setUint8(offset, row[14] || 0); offset++;
     view.setFloat32(offset, row[15] || 0, true); offset += 4;
     view.setFloat32(offset, row[16] || 0, true); offset += 4;
+    // summons: the wire carries a bare ally flag (the owner id itself only
+    // rides full JSON snapshots) plus the seconds of life left
+    view.setUint8(offset, row[17] ? 1 : 0); offset++;
+    view.setFloat32(offset, row[18] || 0, true); offset += 4;
   }
   for (const id of removed) { view.setUint32(offset, id, true); offset += 4; }
   return view.buffer;
@@ -595,7 +598,9 @@ export function unpackEnemyDelta(buffer) {
     const atkKind = view.getUint8(offset); offset++;
     const aimX = r1(view.getFloat32(offset, true)); offset += 4;
     const aimY = r1(view.getFloat32(offset, true)); offset += 4;
-    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, cr, temperament, elite, stagger, variant, atkKind, aimX, aimY];
+    const ally = view.getUint8(offset); offset++;
+    const life = r2(view.getFloat32(offset, true)); offset += 4;
+    changed[i] = [id, x, y, hp, maxHp, facing, hurt, kind, windup, cr, temperament, elite, stagger, variant, atkKind, aimX, aimY, ally, life];
   }
   const removed = new Array(removedCount);
   for (let i = 0; i < removedCount; i++) { removed[i] = view.getUint32(offset, true); offset += 4; }
@@ -651,10 +656,19 @@ const ABILITY_DEFS = {
   hook:      { cd: 4.5 },
   trap:      { cd: 6.0 },
   anchor:    { cd: 6.0 },
+  springtrap:{ cd: 6.0 },
+  troop:     { cd: 10.0 },
+  bird:      { cd: 8.0 },
 };
 const COUNTER_WINDOW = 0.6;          // parry stance duration (s)
 const BUBBLE_INVULN = 1.5;           // bubble shield duration (s)
 const ANCHOR_TP_INVULN = 0.35;       // brief invuln on landing at the anchor
+const ANCHOR_TTL = 4.0;              // seconds the beacon stays warpable (< the cooldown)
+// Summoned allies: a creep that fights FOR its summoner for a spell —
+// creeps in co-op, rival fighters in PvP — then fades. The bird is its own
+// pool; the ground pool is a random pull from the walking roster.
+const SUMMON_LIFE = 10;              // seconds a summon fights before fading
+const SUMMON_GROUND_KINDS = ['grunt', 'runner', 'brute', 'hopper', 'slinger'];
 
 let nextEid = 1;
 
@@ -926,6 +940,7 @@ export class Game {
     this._stepHazards();
     this._checkBlast();
     if (this.coop) { this._stepCoop(); this._stepEnemies(); }
+    this._stepAllies();   // summoned allies fight in both modes
 
     // Co-op runs never resolve to a winner — the expedition just keeps going.
     if (!this.coop) {
@@ -1395,7 +1410,7 @@ export class Game {
     // the bash IS a lunge: the shield rams ahead harder than any blade,
     // and up-aimed rams climb extra hard (shield users fly shieldfirst)
     if (name === 'bash') this._lunge(f, dx, dy, chg, SHIELD_LUNGE, SHIELD_LUNGE_UP);
-    if (name === 'quake') this.events.push({ e: 'quake', id: f.id, x: f.x, y: f.y + F_H / 2 });
+    if (name === 'sweep') this.events.push({ e: 'sweep', id: f.id, x: f.x, y: f.y + F_H / 2 });
     // tap combo bookkeeping: a stage lunges along the held aim (harder
     // deeper into the string) only while a direction is held — see
     // comboLunge — and arms the window for the next tap; the roundhouse
@@ -1424,7 +1439,7 @@ export class Game {
     const w = f.st.weapon;
     if (w === 'sword') return 'slash';
     if (w === 'magic') return 'mcast';
-    if (w === 'spear') return dy > 0 && f.grounded ? 'quake' : 'thrust';
+    if (w === 'spear') return dy > 0 && f.grounded ? 'sweep' : 'thrust';
     if (w === 'boomerang') return 'rang';
     if (w === 'shield') return 'bash';
     if (dy < 0 && !dx) return 'usmash';
@@ -1569,6 +1584,7 @@ export class Game {
     }
     for (const e of this.enemies) {
       if (e.hp <= 0 || 'e' + e.eid === pr.struck) continue;
+      if (e.ally && (this.coop || e.ally === att.id)) continue;
       if (Math.abs(e.x - pr.x) < R + e.hw && Math.abs(e.y - pr.y) < R + e.hh) {
         this._hitEnemy(att, e, spec, deg(-40), Math.sign(e.x - pr.x) || 1, false);
       }
@@ -1594,6 +1610,7 @@ export class Game {
     }
     for (const e of this.enemies) {
       if (e.hp <= 0 || 'e' + e.eid === pr.struck) continue;
+      if (e.ally && (this.coop || e.ally === att.id)) continue;
       if (Math.abs(e.x - pr.x) < R + e.hw && Math.abs(e.y - pr.y) < R + e.hh) {
         this._hitEnemy(att, e, spec, deg(-45), Math.sign(e.x - pr.x) || 1, false);
       }
@@ -1720,9 +1737,9 @@ export class Game {
         break;
       }
       case 'gale':
-        // radial windbox: little damage, lots of shove; works midair
+        // radial windbox: modest damage, an enormous shove; works midair
         this.events.push({ e: 'gale', id: f.id, x: f.x, y: f.y });
-        this._radialHit(f, 200, { dmg: 5, kb: 420, ks: 6 },
+        this._radialHit(f, 200, { dmg: 10, kb: 840, ks: 6 },
           (dx, dy) => Math.atan2(dy, dx) * 0.25 - Math.PI / 6);
         break;
       case 'bubble':
@@ -1756,17 +1773,34 @@ export class Game {
           dmg: 8, kb: 330, ks: 16, r: 16, ang: -80, pierce: true, stun: 1.5,
         });
         break;
+      case 'springtrap':
+        // planted coil: whoever steps in gets launched EXACTLY backwards —
+        // dead flat, reversing the way they were moving (or facing, if
+        // they stood still). No stun; the point is the eviction.
+        this.projectiles.push({
+          eid: nextEid++, kind: 'spring', owner: f.id,
+          x: f.x + f.facing * 30, y: f.y + F_H / 2 - 12,
+          vx: 0, vy: 0, grav: 1400, ttl: 6,
+          dmg: 4, kb: 560, ks: 10, r: 16, ang: 0, pierce: true, spring: true,
+        });
+        break;
+      case 'troop':
+        // a random pull from the walking roster answers the call
+        this._summonAlly(f, SUMMON_GROUND_KINDS[Math.floor(this.rng() * SUMMON_GROUND_KINDS.length)]);
+        break;
+      case 'bird':
+        this._summonAlly(f, 'bird');
+        break;
     }
     this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y, dir: f.facing, up: evUp });
   }
 
   // Teleport anchor: press once to drop a beacon at your feet, armed for
-  // the whole cooldown; press the same button again anytime in that window
-  // to warp straight back to it instead of waiting the timer out. One
-  // anchor per fighter — a live one blocks a fresh drop, so the button
-  // can't do anything but activate until it's used or expires. cds[slot]
-  // and the beacon's ttl are set from the same value and tick down in
-  // lockstep, so "on cooldown" and "anchor is live" are the same window.
+  // ANCHOR_TTL seconds; press the same button again while it's down to warp
+  // straight back to it instead of waiting the timer out. One anchor per
+  // fighter — a live one blocks a fresh drop. The beacon expires before the
+  // cooldown does, so there's a dead stretch where the warp window has
+  // closed but the ability isn't back yet.
   _useAnchor(f, slot) {
     const anchor = this.projectiles.find(p => p.kind === 'anchor' && p.owner === f.id && p.ttl > 0);
     if (anchor) {
@@ -1786,7 +1820,7 @@ export class Game {
     f.cds[slot] = cd;
     this.projectiles.push({
       eid: nextEid++, kind: 'anchor', owner: f.id,
-      x: f.x, y: f.y, vx: 0, vy: 0, ttl: cd,
+      x: f.x, y: f.y, vx: 0, vy: 0, ttl: Math.min(ANCHOR_TTL, cd),
     });
     this.events.push({ e: 'ability', id: f.id, ability: 'anchor', x: f.x, y: f.y, dir: f.facing });
   }
@@ -1804,7 +1838,7 @@ export class Game {
   _radialHit(f, radius, spec, angleFn) {
     if (this.coop) {
       for (const e of this.enemies) {
-        if (e.hp <= 0) continue;
+        if (e.hp <= 0 || e.ally) continue;   // party summons ride out the blast
         const dx = e.x - f.x, dy = e.y - f.y;
         if (Math.hypot(dx, dy) < radius) this._hitEnemy(f, e, spec, angleFn(dx, dy), Math.sign(dx) || 1, false);
       }
@@ -1815,6 +1849,12 @@ export class Game {
       const pos = this._rewound(o, f.id);
       const dx = pos.x - f.x, dy = pos.y - f.y;
       if (Math.hypot(dx, dy) < radius) this._applyHit(f, o, spec, angleFn(dx, dy), Math.sign(dx) || 1);
+    }
+    // PvP: rival summons get blasted too
+    for (const e of this.enemies) {
+      if (e.hp <= 0 || !e.ally || e.ally === f.id) continue;
+      const dx = e.x - f.x, dy = e.y - f.y;
+      if (Math.hypot(dx, dy) < radius) this._hitEnemy(f, e, spec, angleFn(dx, dy), Math.sign(dx) || 1, false);
     }
   }
 
@@ -1868,7 +1908,7 @@ export class Game {
   }
 
   _resolveAttacks() {
-    if (this.coop) this._rebuildEnemyGrid();
+    if (this.coop || this.enemies.length) this._rebuildEnemyGrid();
     for (const f of this.fighters) {
       if (f.dead) continue;
 
@@ -1918,8 +1958,12 @@ export class Game {
           const att = this.fighters.find(x => x.id === pr.owner);
           if (o.counterT > 0) { pr.vx *= -1; pr.owner = o.id; this.events.push({ e: 'counter', x: o.x, y: o.y }); continue; }
           if (att) {
-            // hooks yank the victim toward the thrower; traps launch straight up
-            const dirX = pr.pull ? (Math.sign(att.x - pos.x) || 1) : (Math.sign(pr.vx) || 1);
+            // hooks yank the victim toward the thrower; traps launch straight
+            // up; springs bounce the victim exactly backwards — dead flat,
+            // reversing their motion (or their facing, standing still)
+            const dirX = pr.pull ? (Math.sign(att.x - pos.x) || 1)
+              : pr.spring ? -(Math.sign(o.vx) || o.facing || 1)
+              : (Math.sign(pr.vx) || 1);
             let spec = pr;
             if (pr.pull && pr.x0 != null) {
               // grapple pull grows with how far the hook flew before tagging
@@ -1934,8 +1978,8 @@ export class Game {
       }
     }
 
-    // friendly projectiles vs creeps (co-op)
-    if (this.coop) {
+    // friendly projectiles vs creeps (co-op) and vs rival summons (PvP)
+    if (this.coop || this.enemies.length) {
       for (const pr of this.projectiles) {
         if (pr.foe || pr.kind === 'anchor') continue;   // creeps' own shots, and beacons, don't hit creeps
         const att = this.fighters.find(x => x.id === pr.owner);
@@ -1948,8 +1992,12 @@ export class Game {
           if (!enemies) continue;
           for (const e of enemies) {
             if (e.hp <= 0 || pr.hit?.has('e' + e.eid)) continue;
+            // summons are friendly to the whole party in co-op; in PvP only
+            // to their own summoner
+            if (e.ally && (this.coop || e.ally === pr.owner)) continue;
             if (Math.abs(e.x - pr.x) < e.hw + pr.r && Math.abs(e.y - pr.y) < e.hh + pr.r) {
-              this._hitEnemy(att, e, pr, deg(pr.ang ?? -40), Math.sign(pr.vx) || 1, false);
+              const dirX = pr.spring ? -(Math.sign(e.vx) || e.facing || 1) : (Math.sign(pr.vx) || 1);
+              this._hitEnemy(att, e, pr, deg(pr.ang ?? -40), dirX, false);
               if (pr.thru) pr.hit?.add('e' + e.eid);
               else { pr.struck = 'e' + e.eid; pr.ttl = 0; break; }   // burst AoE skips the direct victim
             }
@@ -1997,8 +2045,6 @@ export class Game {
       if (this.coop) continue;   // co-op: teammates can't hurt each other (enemies are a separate faction)
       const pos = this._rewound(o, f.id);
       const ob = hurtBox(o);
-      // ringed both-sides attacks (quake) have an eye: point-blank is safe
-      if (spec.both && spec.gap && Math.abs(pos.x - f.x) < spec.gap) continue;
       if (Math.abs(pos.x - cx) < hb.hw + F_W / 2 && Math.abs(pos.y + ob.dy - cy) < hb.hh + ob.hh) {
         hitSet.add(o.id);
         if (o.counterT > 0) {
@@ -2022,8 +2068,9 @@ export class Game {
         this._applyHit(f, o, spec, ang, dirX, spike, pierce);
       }
     }
-    // co-op: the same swing also carves into any creeps it overlaps
-    if (this.coop) {
+    // co-op: the same swing also carves into any creeps it overlaps.
+    // In PvP the only creeps alive are summons — a rival's is fair game.
+    if (this.coop || this.enemies.length) {
       const c0 = Math.floor((cx - hb.hw - 80) / ENEMY_GRID_CELL);   // pad covers the widest body (bosses)
       const c1 = Math.floor((cx + hb.hw + 80) / ENEMY_GRID_CELL);
       for (let cell = c0; cell <= c1; cell++) {
@@ -2031,10 +2078,9 @@ export class Game {
         if (!enemies) continue;
         for (const e of enemies) {
           if (e.hp <= 0) continue;
+          if (e.ally && (this.coop || e.ally === f.id)) continue;
           const key = 'e' + e.eid;
           if (hitSet.has(key)) continue;
-          // ringed both-sides attacks (quake) have an eye: point-blank is safe
-          if (spec.both && spec.gap && Math.abs(e.x - f.x) < spec.gap) continue;
           if (Math.abs(e.x - cx) < hb.hw + e.hw && Math.abs(e.y - cy) < hb.hh + e.hh) {
             hitSet.add(key);
             const dirX = spec.both ? (Math.sign(e.x - f.x) || 1) : (a ? (a.x || f.facing) : f.facing);
@@ -2086,7 +2132,7 @@ export class Game {
         * att.st.kbMult * vic.st.kbTaken * DUCK_KB_TAKEN;
       vic.vx = Math.cos(angRad) * kb * dirX;
       if (vic.st.augments.includes('bulwark')) {
-        vic.guard -= raw * 0.6;   // bulwark: the guard shrugs off more
+        vic.guard -= raw * 0.2;   // bulwark: the guard shrugs off most of the wear
         this.events.push({ e: 'augment', aug: 'bulwark', id: vic.id, x: vic.x, y: vic.y });
       } else {
         vic.guard -= raw;
@@ -2121,7 +2167,7 @@ export class Game {
     }
     // thorns recoil (melee only — projectiles have no body contact)
     if (vic.st.augments.includes('thorns') && !spec.r) {
-      att.pct = Math.min(999, att.pct + 4);
+      att.pct = Math.min(999, att.pct + 8);
       this.events.push({ e: 'augment', aug: 'thorns', id: vic.id, x: vic.x, y: vic.y, vic: att.id });
     }
 
@@ -2514,6 +2560,7 @@ export class Game {
 
     const floor = this.stage.main.y;
     for (const e of this.enemies) {
+      if (e.ally) continue;   // summons run on their own clock — see _stepAllies
       const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
       const tgt = this._enemyTarget(e, live);
       // facing locks through a windup so a telegraphed swing can be dodged
@@ -2648,9 +2695,10 @@ export class Game {
       for (const e of this.enemies) {
         const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
         // bosses never teleport-recycle (that would heal-and-ambush); a party
-        // that outruns one far enough simply escapes it
-        if (e.hp <= 0 || e.x > cx + ENEMY_DESPAWN || (t.boss && e.x < cx - ENEMY_DESPAWN)) continue;
-        if (!t.boss && e.x < cx - ENEMY_RECYCLE_BEHIND) this._recycleEnemy(e, cx);
+        // that outruns one far enough simply escapes it. Summons stick with
+        // their summoner — never recycled or distance-culled.
+        if (e.hp <= 0 || (!e.ally && (e.x > cx + ENEMY_DESPAWN || (t.boss && e.x < cx - ENEMY_DESPAWN)))) continue;
+        if (!t.boss && !e.ally && e.x < cx - ENEMY_RECYCLE_BEHIND) this._recycleEnemy(e, cx);
         this.enemies[kept++] = e;
       }
       this.enemies.length = kept;
@@ -2858,7 +2906,186 @@ export class Game {
         f.invuln = Math.max(f.invuln, ENEMY_HIT_MERCY);
       }
     }
+    // summons standing in the arc get clipped too — a summon can tank a
+    // swing for the party, at the price of its own hide
+    for (const o of this.enemies) {
+      if (!o.ally || o.hp <= 0) continue;
+      if (Math.abs(o.x - sx) < half + o.hw && Math.abs(o.y - e.y) < e.hh + 26 + o.hh) {
+        o.hp -= t.dmg * dmgMult;
+        o.hurt = 0.14;
+        o.vx += (Math.sign(o.x - e.x) || e.facing) * t.touchKb;
+        if (!(ENEMY_TYPES[o.kind] || ENEMY_TYPES.grunt).fly) { o.vy = Math.min(o.vy, -150); o.grounded = false; }
+        this.events.push({ e: 'hit', x: o.x, y: o.y, dmg: Math.round(t.dmg * dmgMult), heavy: false, vic: 'e' + o.eid, att: 'e' + e.eid });
+        if (o.hp <= 0) this._enemyDied(o, null);
+      }
+    }
     this.events.push({ e: 'strike', x: sx, y: e.y, kind: e.kind, facing: e.facing });
+  }
+
+  // ---------- summoned allies ----------
+
+  // A summon is a creep that fights FOR its summoner: it lives in
+  // this.enemies (so it streams, interpolates, and hands off exactly like
+  // any creep) but carries `ally` (the summoner's fighter id) and `life`
+  // (seconds left). Allies are stepped by _stepAllies in BOTH modes —
+  // _stepEnemies skips them — and target creeps in co-op, rivals in PvP.
+  _summonAlly(f, kind) {
+    const t = ENEMY_TYPES[kind] || ENEMY_TYPES.grunt;
+    const hw = t.w / 2, hh = t.h / 2;
+    this.enemies.push({
+      eid: nextEid++, kind, hw, hh,
+      x: f.x + f.facing * 70,
+      y: t.fly ? f.y - 50 : f.y + F_H / 2 - hh,
+      vx: 0, vy: 0, hp: t.hp, maxHp: t.hp, cr: 0,
+      facing: f.facing, grounded: false, hurt: 0,
+      windup: 0, atkCd: 0.6, stagger: 0,
+      temperament: 'bold', focusId: null, elite: false,
+      variant: 0, rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
+      ally: f.id, life: SUMMON_LIFE,
+    });
+    this.events.push({ e: 'summon', x: f.x + f.facing * 70, y: f.y - 20, kind, id: f.id });
+  }
+
+  // Who a summon hunts: the nearest live creep in co-op, the nearest rival
+  // fighter in PvP. A summon whose owner has vanished (host handoff edge)
+  // goes passive rather than guessing.
+  _allyTarget(e, owner) {
+    if (!owner) return null;
+    let best = null, bestD = Infinity;
+    if (this.coop) {
+      for (const o of this.enemies) {
+        if (o.ally || o.hp <= 0) continue;
+        const d = Math.abs(o.x - e.x) + Math.abs(o.y - e.y);
+        if (d < bestD) { bestD = d; best = o; }
+      }
+    } else {
+      for (const f of this.fighters) {
+        if (f.dead || f.parked || f.id === e.ally) continue;
+        const d = Math.abs(f.x - e.x) + Math.abs(f.y - e.y);
+        if (d < bestD) { bestD = d; best = f; }
+      }
+    }
+    return best;
+  }
+
+  // The summon's telegraphed windup ends: ranged kinds loose a shot owned
+  // by the summoner (so the normal projectile pipeline handles who it can
+  // hurt); melee kinds swing a strike box ahead of their locked facing.
+  _allyStrike(e, t, owner) {
+    if (!owner || owner.dead) return;
+    if (t.ranged) {
+      const tgt = this._allyTarget(e, owner);
+      let dx = e.facing, dy = 0;
+      if (tgt) { dx = tgt.x - e.x; dy = (tgt.y - 8) - e.y; const n = Math.hypot(dx, dy) || 1; dx /= n; dy /= n; }
+      const spd = t.shotSpd || 360;
+      this.projectiles.push({
+        eid: nextEid++, kind: 'bolt', owner: owner.id,
+        x: e.x + dx * (e.hw + 8), y: e.y - 4 + dy * 8,
+        vx: dx * spd, vy: dy * spd, ttl: 1.6,
+        dmg: t.shotDmg || 3, kb: 200, ks: 8, r: 11,
+      });
+      this.events.push({ e: 'foefire', x: e.x, y: e.y, kind: e.kind });
+      return;
+    }
+    const half = (t.reach || 50) / 2;
+    const sx = e.x + e.facing * (e.hw + half);
+    const spec = { dmg: t.dmg, kb: t.touchKb, ks: 10 };
+    if (this.coop) {
+      for (const o of this.enemies) {
+        if (o.ally || o.hp <= 0) continue;
+        if (Math.abs(o.x - sx) < half + o.hw && Math.abs(o.y - e.y) < e.hh + 26 + o.hh) {
+          this._hitEnemy(owner, o, spec, deg(-30), Math.sign(o.x - e.x) || e.facing, false);
+        }
+      }
+    } else {
+      for (const o of this.fighters) {
+        if (o.dead || o.id === owner.id || o.invuln > 0) continue;
+        const ob = hurtBox(o);
+        if (Math.abs(o.x - sx) < half + F_W / 2 && Math.abs((o.y + ob.dy) - e.y) < e.hh + 26 + ob.hh) {
+          this._applyHit(owner, o, spec, deg(-30), Math.sign(o.x - e.x) || e.facing);
+        }
+      }
+    }
+    this.events.push({ e: 'strike', x: sx, y: e.y, kind: e.kind, facing: e.facing });
+  }
+
+  // Per-tick summon behavior, shared by both modes: chase the mark, plant
+  // and telegraph a strike in reach, heel back to the summoner when there's
+  // nothing to fight, and fade out when the clock (or the hide) runs out.
+  _stepAllies() {
+    let any = false;
+    for (const e of this.enemies) if (e.ally) { any = true; break; }
+    if (!any) return;
+    const floor = this.stage.main.y;
+    const plats = this.platsNow();
+    const b = this.stage.blast;
+    let kept = 0;
+    for (const e of this.enemies) {
+      if (!e.ally) { this.enemies[kept++] = e; continue; }
+      const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
+      e.life -= TICK;
+      const blasted = b && (e.x < b.l || e.x > b.r || e.y < b.t || e.y > b.b);
+      if (e.hp <= 0 || e.life <= 0 || blasted) {
+        if (e.hp > 0) this.events.push({ e: 'summonout', x: e.x, y: e.y, kind: e.kind });
+        continue;   // dropped from the array
+      }
+      const owner = this.fighters.find(f => f.id === e.ally);
+      const tgt = this._allyTarget(e, owner);
+      if (tgt && e.windup <= 0) e.facing = Math.sign(tgt.x - e.x) || e.facing;
+
+      if (e.stagger > 0) {
+        e.stagger = Math.max(0, e.stagger - TICK);
+        e.windup = 0;
+        e.vx = approach(e.vx, 0, t.accel * TICK);
+        if (!t.fly) e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+      } else if (e.windup > 0) {
+        e.windup -= TICK;
+        e.vx = approach(e.vx, 0, t.accel * TICK);
+        if (t.fly) e.vy = approach(e.vy, 0, t.accel * TICK);
+        else e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+        if (e.windup <= 0) { e.windup = 0; this._allyStrike(e, t, owner); }
+      } else {
+        // chase the mark; with nothing to fight, heel beside the summoner
+        const goal = tgt || owner;
+        const hold = tgt ? (t.ranged ? t.range * 0.7 : (t.reach + e.hw) * 0.85) : 90;
+        let want = 0;
+        if (goal && Math.abs(goal.x - e.x) > hold) want = Math.sign(goal.x - e.x) * t.speed;
+        e.vx = approach(e.vx, want, t.accel * TICK);
+        if (t.fly) {
+          const wantY = goal ? clamp(((goal.y - 30) - e.y) * 3, -t.speed, t.speed) : 0;
+          e.vy = approach(e.vy, wantY, t.accel * TICK);
+        } else {
+          e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+          if (t.jump && e.grounded && goal && goal.y < e.y - 70 && this.rng() < 0.05) { e.vy = -1000; e.grounded = false; }
+        }
+        const rx = t.ranged ? t.range : t.reach + e.hw + ((tgt && tgt.hw) || F_W / 2);
+        const ry = t.ranged ? 260 : e.hh + ((tgt && tgt.hh) || F_H / 2) + 26;
+        if (tgt && e.atkCd <= 0 && (t.fly || e.grounded)
+            && Math.abs(tgt.x - e.x) < rx && Math.abs(tgt.y - e.y) < ry) {
+          e.windup = t.windup;
+          e.atkCd = t.atkCd * (0.75 + this.rng() * 0.5);
+          this.events.push({ e: 'telegraph', x: e.x, y: e.y, kind: e.kind });
+        }
+      }
+
+      e.x += e.vx * TICK;
+      e.y += e.vy * TICK;
+      if (!t.fly) {
+        e.grounded = false;
+        if (e.vy >= 0) {
+          const feet = e.y + e.hh;
+          if (feet >= floor && feet <= floor + 46) { e.y = floor - e.hh; e.vy = 0; e.grounded = true; }
+          else for (const p of plats) {
+            if (feet >= p.y && feet <= p.y + 22 && e.x > p.x && e.x < p.x + p.w) { e.y = p.y - e.hh; e.vy = 0; e.grounded = true; break; }
+          }
+        }
+      }
+      if (e.atkCd > 0) e.atkCd -= TICK;
+      if (e.hurt > 0) e.hurt -= TICK;
+      if (e.burn) this._burnEnemy(e);
+      this.enemies[kept++] = e;
+    }
+    this.enemies.length = kept;
   }
 
   // ---------- bosses ----------
@@ -3148,6 +3375,12 @@ export class Game {
       dmg *= 1.2;
       this.events.push({ e: 'augment', aug: 'berserker', id: att.id, x: att.x, y: att.y });
     }
+    // momentum: fast-moving melee bites harder out on the road too
+    if (att.st.augments.includes('momentum') && !spec.r
+        && (att.atkSpd > 320 || Math.hypot(att.vx, att.vy) > 320)) {
+      dmg *= 1.15;
+      this.events.push({ e: 'augment', aug: 'momentum', id: att.id, x: att.x, y: att.y });
+    }
     // executioner: extra bite finishing off a nearly-dead creep
     if (att.st.augments.includes('executioner') && e.hp <= e.maxHp * COOP_EXEC_HP) {
       dmg *= 1.2;
@@ -3204,15 +3437,17 @@ export class Game {
   }
 
   // A creep goes down: pay the killer, maybe drop a heart, tell the renderer.
+  // Downed summons pay nothing — no bounty, no KO credit, no hearts.
   _enemyDied(e, att) {
     e.hp = 0;
-    if (att) {
+    if (att && !e.ally) {
       att.score.ko++;
       att.score.cr += e.cr || 1;
       if (e.elite) att.score.elite++;
       if (att.st.augments.includes('reaper')) att.hp = Math.min(att.maxHp, att.hp + att.maxHp * 0.02);
     }
-    this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid, kind: e.kind, cr: e.cr || 1, att: att?.id || null });
+    this.events.push({ e: 'enemyko', x: e.x, y: e.y, id: 'e' + e.eid, kind: e.kind, cr: e.ally ? 0 : (e.cr || 1), att: e.ally ? null : (att?.id || null) });
+    if (e.ally) return;
     const t = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
     if (t.boss) {
       // defeat fireworks: hearts burst in every direction for the whole party
@@ -3336,7 +3571,7 @@ export class Game {
         ];
       }),
       p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
-      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0, e.atkKind || 0, r1(e.aimX || 0), r1(e.aimY || 0)]),
+      en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0, e.atkKind || 0, r1(e.aimX || 0), r1(e.aimY || 0), e.ally || 0, r2(e.life || 0)]),
       ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),
     };
@@ -3384,6 +3619,9 @@ export function gameFromSnapshot(players, snap, seed = 2) {
       facing: r[5] || 1, kind, hw: t.w / 2, hh: t.h / 2,
       grounded: !t.fly, hurt: 0, windup: r[8] || 0, atkCd: t.atkCd || 0, cr: r[9] || 1, temperament: r[10] || 'bold', elite: !!r[11], stagger: r[12] || 0, variant: r[13] || 0,
       rushT: 0, rushHit: null, atkKind: r[14] || 0, aimX: r[15] || 0, aimY: r[16] || 0,
+      // summons carry their owner id in full JSON snapshots; a delta-built
+      // row only carries a truthy flag, and the orphaned summon goes passive
+      ally: r[17] || null, life: +r[18] || 0,
       sigCd: 3, barrage: null, sigPts: null,  // a handoff drops any in-flight barrage; the boss just resumes cold
     };
   });
@@ -3458,7 +3696,7 @@ export function interpolateEnemyRows(aRows, bRows, k, from = new Map(), out = []
     view.eid = e2[0];
     view.x = e1[1] + (e2[1] - e1[1]) * k;
     view.y = e1[2] + (e2[2] - e1[2]) * k;
-    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11]; view.stagger = e2[12] || 0; view.variant = e2[13] || 0; view.atkKind = e2[14] || 0; view.aimX = e2[15] || 0; view.aimY = e2[16] || 0;
+    view.hp = e2[3]; view.maxHp = e2[4]; view.facing = e2[5]; view.hurt = !!e2[6]; view.kind = e2[7] || 'grunt'; view.windup = e2[8] || 0; view.temperament = e2[10] || 'bold'; view.elite = !!e2[11]; view.stagger = e2[12] || 0; view.variant = e2[13] || 0; view.atkKind = e2[14] || 0; view.aimX = e2[15] || 0; view.aimY = e2[16] || 0; view.ally = !!e2[17];
   }
   return out;
 }

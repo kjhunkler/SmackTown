@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE, QUAKE_GAP } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -158,7 +158,16 @@ export class Renderer {
           break;
         case 'enemyko':
           this.burst(ev.x, ev.y, 12, '#ffcf6a', 280);
-          this.dmgPops.push({ x: ev.x + 52, y: ev.y - 34, txt: `+${ev.cr || 5} CR`, t: 0, life: 0.9, heavy: false, color: '#ffcf6a' });
+          // downed summons pay no bounty — no CR pop for them
+          if (ev.cr) this.dmgPops.push({ x: ev.x + 52, y: ev.y - 34, txt: `+${ev.cr} CR`, t: 0, life: 0.9, heavy: false, color: '#ffcf6a' });
+          break;
+        case 'summon':
+          this.burst(ev.x, ev.y, 14, '#3ddc84', 260);
+          this.rings.push({ x: ev.x, y: ev.y, r0: 10, r1: 70, t: 0, life: 0.35, color: '#3ddc84', w: 5 });
+          break;
+        case 'summonout':
+          // a summon's time runs out: a soft fade-poof in its own color
+          this.burst(ev.x, ev.y, 10, (ENEMY_TYPES[ev.kind] || ENEMY_TYPES.grunt).color, 180);
           break;
         case 'shockwave':
           this.burst(ev.x, ev.y, 26, '#ffb02e', 520);
@@ -297,6 +306,9 @@ export class Renderer {
       case 'volley':    this.burst(ev.x, ev.y, 12, '#ffd23e', 260); break;
       case 'hook':      this.burst(ev.x, ev.y, 8, '#c9d4e8', 200); break;
       case 'trap':      this.burst(ev.x, ev.y, 8, '#9aa3c7', 160); break;
+      case 'springtrap':this.burst(ev.x, ev.y, 8, '#8fd3ff', 160); break;
+      case 'troop':     break;   // the 'summon' event carries the arrival pop
+      case 'bird':      break;   // same
       case 'anchor':    this.burst(ev.x, ev.y, 8, '#3ddc84', 160); break;   // the planted projectile sells the beacon
       case 'anchortp':
         // warp-in: a bright pop plus an expanding ring at the arrival point
@@ -381,11 +393,11 @@ export class Renderer {
         this.burst(ev.x, ev.y, 16, '#c9b49a', 300);
         this.shake = Math.max(this.shake, 14);
         break;
-      case 'quake':
-        // spear ground slam: rippling earth ring + dust off the plant point
-        this.rings.push({ x: ev.x, y: ev.y, r0: 20, r1: 170, t: 0, life: 0.35, color: '#d9c9a0', w: 6 });
-        this.burst(ev.x, ev.y, 18, '#c9b49a', 340);
-        this.shake = Math.max(this.shake, 10);
+      case 'sweep':
+        // spear haft sweep: a low dust ring whirled around the wielder
+        this.rings.push({ x: ev.x, y: ev.y, r0: 16, r1: 120, t: 0, life: 0.3, color: '#d9c9a0', w: 5 });
+        this.burst(ev.x, ev.y, 12, '#c9b49a', 280);
+        this.shake = Math.max(this.shake, 6);
         break;
       case 'eruption':
         this.burst(ev.x, ev.y, 20, '#ff8a4f', 380);
@@ -429,7 +441,7 @@ export class Renderer {
         break;
       case 'momentum':
         this.burst(ev.x, ev.y, 8, '#ff8a5c', 230);
-        this.dmgPops.push({ x: ev.x, y: ev.y - F_H / 2 - 20, txt: 'RUSH', t: 0, life: 0.5, heavy: false, color: '#ff8a5c' });
+        this.dmgPops.push({ x: ev.x, y: ev.y - F_H / 2 - 20, txt: 'MOMENTUM', t: 0, life: 0.55, heavy: false, color: '#ff8a5c' });
         break;
       case 'bulwark':
         this.rings.push({ x: ev.x, y: ev.y, r0: 20, r1: 50, t: 0, life: 0.26, color: '#8fd3ff', w: 5 });
@@ -581,6 +593,21 @@ export class Renderer {
           ctx.fill();
         }
         ctx.globalAlpha = 1;
+      } else if (p.kind === 'spring') {
+        // armed launcher coil: stacked loops over a base plate, quivering
+        // with stored tension while it waits
+        const quiver = Math.sin(t * 10 + p.eid) * 1.5;
+        ctx.fillStyle = '#9aa3c7';
+        roundRect(ctx, -16, 4, 32, 7, 3); ctx.fill();   // base plate
+        ctx.strokeStyle = '#8fd3ff';
+        ctx.lineWidth = 3;
+        for (const dy of [0, -6, -12]) {
+          ctx.beginPath();
+          ctx.ellipse(quiver * (dy / -12), dy - 2, 11, 4.5, 0, 0, 7);
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#eaf7ff';
+        roundRect(ctx, -9, -19, 18, 4, 2); ctx.fill();  // top cap
       } else if (p.kind === 'anchor') {
         // planted teleport beacon: a slow-spinning rune ring over a
         // pulsing core, marking the exact spot a warp lands on
@@ -1215,6 +1242,16 @@ export class Renderer {
 
     ctx.save();
     ctx.translate(e.x, e.y + bob);
+    if (e.ally) {
+      // summoned ally: a friendly spinning dashed ring so it never reads
+      // as a threat, whoever's screen it's on
+      ctx.save();
+      ctx.rotate(t * 1.2 + e.eid);
+      ctx.strokeStyle = 'rgba(61,220,132,.75)'; ctx.lineWidth = 2.5;
+      ctx.setLineDash([7, 7]);
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(w, h) * .68, 0, 7); ctx.stroke();
+      ctx.restore();
+    }
     if (e.elite) {
       ctx.strokeStyle = '#ffcf6a'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, Math.max(w, h) * .72, 0, 7); ctx.stroke();
@@ -1225,7 +1262,7 @@ export class Renderer {
       ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(0, 0, Math.max(w, h) * 0.68 + 6 * Math.sin(t * 3), 0, 7); ctx.stroke();
     }
-    const temperamentColor = { bold: '#ff6a7a', cautious: '#bfe3ff', vengeful: '#ffcf6a', pack: '#b388ff' }[e.temperament];
+    const temperamentColor = e.ally ? null : { bold: '#ff6a7a', cautious: '#bfe3ff', vengeful: '#ffcf6a', pack: '#b388ff' }[e.temperament];
     if (temperamentColor) { ctx.fillStyle = temperamentColor; ctx.beginPath(); ctx.arc(0, -h / 2 - 8, 3.5, 0, 7); ctx.fill(); }
 
     const sprite = !flash && !e.windup && !fly && !ty.boss && e.kind !== 'brute' && e.kind !== 'slinger'
@@ -1273,6 +1310,17 @@ export class Renderer {
       const legH = ty.jump ? 12 : 8;
       roundRect(ctx, -w / 2 + 4, h / 2 - legH + 2, w * 0.24, legH, 4); ctx.fill();
       roundRect(ctx, w / 2 - w * 0.24 - 4, h / 2 - legH + 2, w * 0.24, legH, 4); ctx.fill();
+    }
+
+    // bird: a bright little beak stuck out toward its facing
+    if (e.kind === 'bird') {
+      const fc = e.facing || 1;
+      ctx.fillStyle = '#ff8a2e';
+      ctx.beginPath();
+      ctx.moveTo(fc * (w * 0.5 - 2), -h * 0.2);
+      ctx.lineTo(fc * (w * 0.5 + 13), -h * 0.06);
+      ctx.lineTo(fc * (w * 0.5 - 2), h * 0.08);
+      ctx.closePath(); ctx.fill();
     }
 
     // brutes and bosses: horns to read as the heavy
@@ -3188,7 +3236,6 @@ export class Renderer {
   _hitbox(ctx, f, t) {
     if (f.hb.blade) return this._blade(ctx, f, t);
     if (f.hb.spear) return this._spear(ctx, f, t);
-    if (f.atk === 'quake') return this._quake(ctx, f, t);
     if (f.atk === 'nspin') return;   // no hitbox overlay — the body's own crouch-and-spin sells the move
     const { dx, dy, hw, hh, active, round } = f.hb;
     const x = f.x + dx - hw, y = f.y + dy - hh;
@@ -3294,53 +3341,6 @@ export class Renderer {
   // exactly the box the sim tests — but a dulled wood shaft is drawn
   // bridging body to head so the whole weapon (and the gap up close) reads
   // at a glance. Only the leaf-shaped head lights up as live steel.
-  // Quake: the spear stands planted in the earth while the shockwave lives
-  // only from QUAKE_GAP outward on both sides — the two drawn segments are
-  // exactly what the sim tests, leaving the safe eye visible at the wielder.
-  _quake(ctx, f, t) {
-    const { dy, hw, hh, active } = f.hb;
-    const cy = f.y + dy;
-    ctx.save();
-    // planted spear: shaft standing out of the ground, leaf head buried
-    ctx.translate(f.x + f.facing * 10, f.y);
-    ctx.strokeStyle = active ? 'rgba(150,110,70,.95)' : 'rgba(150,110,70,.6)';
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(0, -F_H * 0.55); ctx.lineTo(0, F_H / 2 - 4); ctx.stroke();
-    ctx.fillStyle = active ? 'rgba(244,250,255,.95)' : 'rgba(215,236,255,.7)';
-    ctx.beginPath();
-    ctx.moveTo(0, F_H / 2 + 10);
-    ctx.lineTo(-6, F_H / 2 - 8);
-    ctx.lineTo(6, F_H / 2 - 8);
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
-    // the two live wave segments, gap..reach each side
-    ctx.save();
-    const chg = f.hb.chg || 0;
-    const pulse = chg ? (0.5 + 0.5 * Math.sin(t * (2 + 9 * chg) * 2 * Math.PI)) * chg : 0;
-    for (const s of [-1, 1]) {
-      const x0 = f.x + s * QUAKE_GAP, x1 = f.x + s * hw;
-      const shape = () => { ctx.beginPath(); ctx.rect(Math.min(x0, x1), cy - hh, Math.abs(x1 - x0), hh * 2); };
-      if (active) {
-        ctx.fillStyle = 'rgba(255, 82, 82, .30)';
-        ctx.strokeStyle = 'rgba(255, 150, 130, .95)';
-        ctx.lineWidth = 3;
-        shape(); ctx.fill(); ctx.stroke();
-      } else {
-        if (pulse > 0.02) {
-          ctx.fillStyle = `rgba(255, 160, 90, ${(0.32 * pulse).toFixed(3)})`;
-          shape(); ctx.fill();
-        }
-        ctx.strokeStyle = `rgba(255, ${214 - Math.round(90 * pulse)}, 102, ${(0.55 + 0.45 * pulse).toFixed(3)})`;
-        ctx.lineWidth = 2 + 2.5 * chg;
-        ctx.setLineDash([7, 6]);
-        ctx.lineDashOffset = -t * 60;
-        shape(); ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
-    ctx.restore();
-  }
-
   _spear(ctx, f, t) {
     const { dx, dy, hw, hh, active } = f.hb;
     const n = Math.hypot(dx, dy) || 1;

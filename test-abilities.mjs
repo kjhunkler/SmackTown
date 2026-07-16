@@ -102,8 +102,8 @@ const mkGame = (abilities, extra = []) => new Game([
     return b.state === 'hitstun' ? -b.vx : null;   // reeled back toward the thrower
   };
   const near = pullAt(120), far = pullAt(450);   // both on the flatlands ground
-  check('a point-blank tag still reels the victim in', near !== null && near > 0);
-  check('a max-range snag hauls far harder', far !== null && far > near * 1.5);
+  check('a point-blank tag yanks with real minimum force', near !== null && near > 500);
+  check('a max-range snag hauls far harder still', far !== null && far > near * 1.2);
 }
 
 // --- 6. teleport anchor: drop a beacon, warp back to it, one at a time ---
@@ -114,7 +114,7 @@ const mkGame = (abilities, extra = []) => new Game([
   g._useAbility(a, 0);
   const beacon = g.projectiles.find(p => p.kind === 'anchor');
   check('the button drops a beacon at your feet', beacon && beacon.x === 40 && beacon.y === -100);
-  check('the beacon is armed for exactly the cooldown', beacon.ttl === 6 && a.cds[0] === 6);
+  check('the beacon is armed for 4s while the cooldown runs 6s', beacon.ttl === 4 && a.cds[0] === 6);
 
   // wander off, then activate: the button warps you straight back
   a.x = 500; a.y = -400; a.vx = 300; a.vy = -50;
@@ -148,6 +148,124 @@ const mkGame = (abilities, extra = []) => new Game([
   g._useAbility(a, 0);
   check('a new beacon can be dropped once the cooldown clears',
     g.projectiles.some(p => p.kind === 'anchor' && p.x === 900));
+
+  // the beacon expires at 4s while the cooldown still has 2s to run: the
+  // warp window is gone and the button goes dead until the cooldown clears
+  const g3 = mkGame(['anchor']);
+  const c = g3.fighters[0];
+  c.x = 0; c.y = -50;
+  g3._useAbility(c, 0);
+  g3.inputs.set('A', blankInput()); g3.inputs.set('B', blankInput());
+  for (let i = 0; i < 4.2 / (1 / 60); i++) g3.step();
+  check('the beacon expires after 4s', !g3.projectiles.some(p => p.kind === 'anchor'));
+  check('...while the cooldown is still running', c.cds[0] > 1);
+  const beforeX = c.x;
+  g3._useAbility(c, 0);
+  check('pressing in the dead stretch neither warps nor drops',
+    c.x === beforeX && !g3.projectiles.some(p => p.kind === 'anchor'));
+}
+
+// --- 7. spring trap: launches the victim exactly backwards ---
+{
+  const g = mkGame(['springtrap']);
+  const [a, b] = g.fighters;
+  a.x = 0; a.facing = 1;
+  g._useAbility(a, 0);
+  const sp = g.projectiles.find(p => p.kind === 'spring');
+  check('spring plants and arms', sp && sp.spring === true && sp.ang === 0);
+  // Bob runs onto it moving RIGHT: the spring fires him back LEFT, dead flat
+  b.x = sp.x; b.y = -32; b.vx = 300; b.facing = 1;
+  g._resolveAttacks();
+  check('spring victim is launched backwards', b.vx < 0);
+  check('the launch is exactly flat', b.vy === 0);
+  check('the spring is spent', sp.ttl <= 0);
+
+  // standing still on it, the launch reverses the victim's facing instead
+  const g2 = mkGame(['springtrap']);
+  const [c, d] = g2.fighters;
+  c.x = 0; c.facing = 1;
+  g2._useAbility(c, 0);
+  const sp2 = g2.projectiles.find(p => p.kind === 'spring');
+  d.x = sp2.x; d.y = -32; d.vx = 0; d.facing = 1;
+  g2._resolveAttacks();
+  check('a still victim flies opposite their facing', d.vx < 0 && d.vy === 0);
+}
+
+// --- 8. summons: a ground troop and a bird that fight for the summoner ---
+{
+  const g = mkGame(['troop', 'bird']);
+  const [a, b] = g.fighters;
+  a.x = 0; a.facing = 1; b.x = 220; b.y = a.y;
+  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
+  g._useAbility(a, 0);
+  const troop = g.enemies.find(e => e.ally === 'A');
+  check('the call is answered by a ground troop',
+    troop && ['grunt', 'runner', 'brute', 'hopper', 'slinger'].includes(troop.kind));
+  check('the troop carries a life clock', troop.life === 10);
+  g._useAbility(a, 1);
+  const bird = g.enemies.find(e => e.ally === 'A' && e.kind === 'bird');
+  check('the bird summon is always a bird', !!bird);
+  check('summons cost no CR bounty when downed', troop.cr === 0 && bird.cr === 0);
+
+  // in PvP the summons hunt the rival: someone lands a hit inside a while
+  const pct0 = b.pct;
+  for (let i = 0; i < 60 * 6 && b.pct === pct0; i++) g.step();
+  check('a summon hits the rival within a few seconds', b.pct > pct0);
+  check('summon damage credits the summoner', a.score.dmg > 0);
+
+  // the clocks run out: summons fade on their own (rival kept untouchable
+  // so no KO can end the match and freeze the clock mid-check)
+  const g3 = mkGame(['troop']);
+  const [e3, f3] = g3.fighters;
+  g3.inputs.set('A', blankInput()); g3.inputs.set('B', blankInput());
+  f3.invuln = 30;
+  g3._useAbility(e3, 0);
+  check('the fresh summon is on the field', g3.enemies.some(e => e.ally === 'A'));
+  for (let i = 0; i < 60 * 11; i++) g3.step();
+  check('summons fade when their time is up', !g3.enemies.some(e => e.ally === 'A'));
+
+  // rivals can kill a summon: it dies to damage, paying nothing
+  const g2 = mkGame(['bird']);
+  const [c, d] = g2.fighters;
+  c.x = 0; c.facing = 1; d.x = 400;
+  g2.inputs.set('A', blankInput()); g2.inputs.set('B', blankInput());
+  g2._useAbility(c, 0);
+  const bird2 = g2.enemies.find(e => e.ally === 'A');
+  const dKos = d.score.ko;
+  bird2.hp = 1;
+  g2._hitEnemy(d, bird2, { dmg: 5, kb: 200, ks: 5 }, 0, 1, false);
+  check('a rival can strike a summon down', bird2.hp <= 0);
+  check('downing a summon earns no KO credit', d.score.ko === dKos);
+  for (let i = 0; i < 10; i++) g2.step();   // ride out the kill's hit pause
+  check('the dead summon is cleared from the field', !g2.enemies.some(e => e.ally === 'A'));
+}
+
+// --- 9. summons in co-op: they hunt creeps, not the party ---
+{
+  const g = new Game([
+    { id: 'A', name: 'Alice', color: '#f00', build: build(['troop']) },
+    { id: 'B', name: 'Bob', color: '#0f0', build: build() },
+  ], 7, 'expanse');
+  const [a, b] = g.fighters;
+  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
+  a.x = 0; a.facing = 1;
+  g._useAbility(a, 0);
+  const pet = g.enemies.find(e => e.ally === 'A');
+  check('summons work on the expedition road', !!pet);
+  // park a creep right next to the summon and let it swing
+  g.enemies.push({
+    eid: 99999, kind: 'grunt', hw: 22, hh: 26,
+    x: pet.x + 60, y: g.stage.main.y - 26, vx: 0, vy: 0,
+    hp: 9, maxHp: 9, cr: 5, facing: -1, grounded: true, hurt: 0,
+    windup: 0, atkCd: 99, stagger: 0, temperament: 'bold', focusId: null,
+    elite: false, variant: 0, rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
+  });
+  const creep = g.enemies[g.enemies.length - 1];
+  const hpBefore = creep.hp;
+  const hpA = a.hp, hpB = b.hp;
+  for (let i = 0; i < 60 * 4 && creep.hp === hpBefore; i++) g.step();
+  check('the summon carves into the creep', creep.hp < hpBefore);
+  check('the party is never its target', a.hp === hpA && b.hp === hpB);
 }
 
 console.log(`\n${n - fails}/${n} passed`);

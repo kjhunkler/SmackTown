@@ -187,6 +187,25 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const fistHit = dealt('unarmed', 'fsmash', 55);
   check('spear hits harder than sword or fists', spearHit.dmg > swordHit.dmg && spearHit.dmg > fistHit.dmg);
   check('spear knockback sits between sword and fists', spearHit.kb > swordHit.kb && spearHit.kb < fistHit.kb);
+
+  // grounded down-smash: a both-sides haft sweep that covers point-blank —
+  // the range the thrust can't touch — with no dead zone on either side
+  const g5 = mkGame('spear');
+  const e5 = g5.fighters[0];
+  e5.grounded = true;
+  check('grounded down aim swings the sweep', g5._weaponAttack(e5, 0, 1) === 'sweep');
+  e5.grounded = false;
+  check('airborne down aim still thrusts', g5._weaponAttack(e5, 0, 1) === 'thrust');
+  const sweepClose = (victimX) => {
+    const g6 = mkGame('spear');
+    const [f, o] = g6.fighters;
+    f.x = 0; o.x = victimX; f.facing = 1; f.grounded = true; o.grounded = true;
+    f.state = 'attack'; f.atk = 'sweep'; f.stateT = 0.16; f.atkDir = { x: 0, y: 1 };
+    g6._resolveAttacks();
+    return o.pct > 0;
+  };
+  check('the sweep connects point-blank where the thrust whiffs', sweepClose(30));
+  check('the sweep covers both sides', sweepClose(-60) && sweepClose(60));
 }
 
 // --- 5. magic: bursts, mana, charge = range ---

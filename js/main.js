@@ -1107,7 +1107,7 @@ function startSession(cfg) {
 
 // Cosmetic events the client already plays locally via prediction; the
 // host's copies are dropped for our own fighter to avoid double effects.
-const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'shockwave', 'gale', 'mend', 'duck', 'quake']);
+const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'shockwave', 'gale', 'mend', 'duck', 'sweep']);
 const SNAPSHOT_INTEREST_RADIUS = 1800;
 const FULL_SNAPSHOT_TICKS = 60;
 
@@ -1604,6 +1604,7 @@ class Session {
       enemies: this.game.enemies.map(e => ({
         eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing,
         hurt: e.hurt > 0, kind: e.kind, windup: e.windup || 0, temperament: e.temperament, elite: e.elite,
+        ally: !!e.ally,
       })),
       hearts: this.game.hearts.map(h => ({ hid: h.hid, x: h.x, y: h.y, tLeft: HEART_LIFE - h.t })),
     };
