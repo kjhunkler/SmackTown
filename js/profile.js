@@ -44,9 +44,9 @@ export const ABILITIES = [
   { id: 'springtrap',icon: '🌀', name: 'Spring Trap',  cost: 210, cd: 6.0,
     desc: 'Plant a coiled spring that launches whoever steps in exactly backwards' },
   { id: 'troop',     icon: '🪖', name: 'Summon Troop', cost: 260, cd: 10.0,
-    desc: 'Call in a random ground troop that fights at your side for a spell' },
-  { id: 'bird',      icon: '🦅', name: 'Summon Bird',  cost: 240, cd: 8.0,
-    desc: 'Whistle down a battle bird that dives your foes for a spell' },
+    desc: 'Call in a random ground troop that fights at your side — up to two at a time' },
+  { id: 'bird',      icon: '🦅', name: 'Summon Flyer', cost: 240, cd: 8.0,
+    desc: 'Call down a flyer that dives your foes — up to two at a time' },
 ];
 
 // Weapons: what the strong-attack control swings. Every fighter carries

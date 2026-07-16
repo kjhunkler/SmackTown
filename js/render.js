@@ -99,6 +99,10 @@ export class Renderer {
     this.sigFlash = null;            // boss signature: full-screen warning pulse {t,life}
     this.ambient = [];               // ambient weather: embers & ash (ruins), rain (neon heights)
     this.enemySprites = new Map();   // cached static common-creep silhouettes
+    this.allyAges = new Map();       // summon eid -> seconds on screen (spawn materialize)
+    this._allySeen = new Map();      // summon eid -> last drawn {x,y,kind,facing} (despawn detection)
+    this._allyNow = new Map();       // scratch for this frame's summon set
+    this.despawns = [];              // dissolving summon ghosts {eid,x,y,kind,facing,t}
     this.setMap(DEFAULT_MAP);
     this.stars = Array.from({ length: 90 }, () => ({
       x: Math.random() * 2900 - 1450,
@@ -651,10 +655,37 @@ export class Renderer {
     const top = this.cam.y - halfH, bottom = this.cam.y + halfH;
     for (const e of view.enemies || []) {
       const ty = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
+      // summons materialize in over a beat, and their disappearance is
+      // watched so a ghost can dissolve out where they stood
+      let appear = 1;
+      if (e.ally) {
+        const age = this.allyAges.get(e.eid) ?? 0;
+        this.allyAges.set(e.eid, age + dt);
+        appear = Math.min(1, age / 0.35);
+        this._allyNow.set(e.eid, { x: e.x, y: e.y, kind: e.kind, facing: e.facing });
+      }
       if (e.x + ty.w / 2 < left || e.x - ty.w / 2 > right || e.y + ty.h / 2 < top || e.y - ty.h / 2 > bottom) continue;
       if (ty.boss && e.windup > 0) this._bossTelegraph(ctx, e, ty, t);
-      this._enemy(ctx, e, t);
+      this._enemy(ctx, e, t, appear);
     }
+    // a summon gone from the view dissolves out: the spawn animation run
+    // backwards over the last spot it was drawn
+    for (const [eid, last] of this._allySeen) {
+      if (this._allyNow.has(eid)) continue;
+      this.despawns.push({ eid, ...last, t: 0 });
+      this.allyAges.delete(eid);
+    }
+    const swap = this._allySeen;
+    this._allySeen = this._allyNow;
+    this._allyNow = swap;
+    this._allyNow.clear();
+    for (const gst of this.despawns) {
+      gst.t += dt;
+      const k = gst.t / 0.4;
+      if (k >= 1) continue;
+      this._enemy(ctx, { ...gst, hp: 1, maxHp: 1, hurt: false, windup: 0, elite: false, ally: true }, t, 1 - k);
+    }
+    this.despawns = this.despawns.filter(g => g.t < 0.4);
     for (const h of view.hearts || []) {
       if (h.x < left || h.x > right || h.y < top || h.y > bottom) continue;
       this._heart(ctx, h, t);
@@ -1229,7 +1260,9 @@ export class Renderer {
   // size, color, and a behavior tell (flyer wings, hopper legs, brute bulk,
   // slinger's telegraph glow). Flashes white when struck, shows a health pip
   // once hurt, and pulses a wind-up ring while charging a ranged shot.
-  _enemy(ctx, e, t) {
+  // `appear` (0..1) scales and fades the whole body — summons materialize
+  // in with it rising and dissolve out with it falling; 1 draws normally.
+  _enemy(ctx, e, t, appear = 1) {
     const ty = ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt;
     const w = ty.w, h = ty.h;
     const flash = e.hurt;
@@ -1242,6 +1275,11 @@ export class Renderer {
 
     ctx.save();
     ctx.translate(e.x, e.y + bob);
+    if (appear < 1) {
+      const s = 0.15 + 0.85 * appear;
+      ctx.scale(s, s);
+      ctx.globalAlpha = Math.max(0.1, appear);
+    }
     if (e.ally) {
       // summoned ally: a friendly spinning dashed ring so it never reads
       // as a threat, whoever's screen it's on
@@ -1271,7 +1309,7 @@ export class Renderer {
       ctx.scale(e.facing || 1, 1);
       ctx.drawImage(sprite.canvas, -w / 2 - sprite.pad, -h / 2 - sprite.pad);
       ctx.restore();
-      if (e.hp < e.maxHp) this._enemyHealth(ctx, e, w, h);
+      if (appear >= 1 && e.hp < e.maxHp) this._enemyHealth(ctx, e, w, h);
       return;
     }
 
@@ -1312,17 +1350,6 @@ export class Renderer {
       roundRect(ctx, w / 2 - w * 0.24 - 4, h / 2 - legH + 2, w * 0.24, legH, 4); ctx.fill();
     }
 
-    // bird: a bright little beak stuck out toward its facing
-    if (e.kind === 'bird') {
-      const fc = e.facing || 1;
-      ctx.fillStyle = '#ff8a2e';
-      ctx.beginPath();
-      ctx.moveTo(fc * (w * 0.5 - 2), -h * 0.2);
-      ctx.lineTo(fc * (w * 0.5 + 13), -h * 0.06);
-      ctx.lineTo(fc * (w * 0.5 - 2), h * 0.08);
-      ctx.closePath(); ctx.fill();
-    }
-
     // brutes and bosses: horns to read as the heavy
     if (e.kind === 'brute' || ty.boss) {
       ctx.fillStyle = dark;
@@ -1356,7 +1383,7 @@ export class Renderer {
     }
     ctx.restore();
 
-    if (e.hp < e.maxHp || ty.boss) this._enemyHealth(ctx, e, w, h);
+    if (appear >= 1 && (e.hp < e.maxHp || ty.boss)) this._enemyHealth(ctx, e, w, h);
   }
 
   _bossTelegraph(ctx, e, ty, t) {

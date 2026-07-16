@@ -191,7 +191,7 @@ const mkGame = (abilities, extra = []) => new Game([
   check('a still victim flies opposite their facing', d.vx < 0 && d.vy === 0);
 }
 
-// --- 8. summons: a ground troop and a bird that fight for the summoner ---
+// --- 8. summons: a ground troop and a flyer that fight for the summoner ---
 {
   const g = mkGame(['troop', 'bird']);
   const [a, b] = g.fighters;
@@ -201,11 +201,11 @@ const mkGame = (abilities, extra = []) => new Game([
   const troop = g.enemies.find(e => e.ally === 'A');
   check('the call is answered by a ground troop',
     troop && ['grunt', 'runner', 'brute', 'hopper', 'slinger'].includes(troop.kind));
-  check('the troop carries a life clock', troop.life === 10);
+  check('the troop carries a one-minute life clock', troop.life === 60);
   g._useAbility(a, 1);
-  const bird = g.enemies.find(e => e.ally === 'A' && e.kind === 'bird');
-  check('the bird summon is always a bird', !!bird);
-  check('summons cost no CR bounty when downed', troop.cr === 0 && bird.cr === 0);
+  const flyer = g.enemies.find(e => e.ally === 'A' && e.kind === 'flyer');
+  check('the flyer summon is always the flying creep', !!flyer);
+  check('summons cost no CR bounty when downed', troop.cr === 0 && flyer.cr === 0);
 
   // in PvP the summons hunt the rival: someone lands a hit inside a while
   const pct0 = b.pct;
@@ -213,15 +213,15 @@ const mkGame = (abilities, extra = []) => new Game([
   check('a summon hits the rival within a few seconds', b.pct > pct0);
   check('summon damage credits the summoner', a.score.dmg > 0);
 
-  // the clocks run out: summons fade on their own (rival kept untouchable
-  // so no KO can end the match and freeze the clock mid-check)
+  // the clock runs out: the summon fades on its own
   const g3 = mkGame(['troop']);
-  const [e3, f3] = g3.fighters;
+  const e3 = g3.fighters[0];
   g3.inputs.set('A', blankInput()); g3.inputs.set('B', blankInput());
-  f3.invuln = 30;
   g3._useAbility(e3, 0);
-  check('the fresh summon is on the field', g3.enemies.some(e => e.ally === 'A'));
-  for (let i = 0; i < 60 * 11; i++) g3.step();
+  const pet3 = g3.enemies.find(e => e.ally === 'A');
+  check('the fresh summon is on the field', !!pet3);
+  pet3.life = 0.5;   // fast-forward the clock to its last half second
+  for (let i = 0; i < 60; i++) g3.step();
   check('summons fade when their time is up', !g3.enemies.some(e => e.ally === 'A'));
 
   // rivals can kill a summon: it dies to damage, paying nothing
@@ -266,6 +266,52 @@ const mkGame = (abilities, extra = []) => new Game([
   for (let i = 0; i < 60 * 4 && creep.hp === hpBefore; i++) g.step();
   check('the summon carves into the creep', creep.hp < hpBefore);
   check('the party is never its target', a.hp === hpA && b.hp === hpB);
+}
+
+// --- 10. summon caps: 2 per layer, the weakest replaced at the limit ---
+{
+  const g = mkGame(['troop', 'bird']);
+  const [a, b] = g.fighters;
+  b.invuln = 999;
+  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
+  const ground = () => g.enemies.filter(e => e.ally === 'A' && e.kind !== 'flyer');
+  const flying = () => g.enemies.filter(e => e.ally === 'A' && e.kind === 'flyer');
+
+  g._useAbility(a, 0); a.cds[0] = 0;
+  g._useAbility(a, 0); a.cds[0] = 0;
+  check('two ground summons can hold the field at once', ground().length === 2);
+  const [g1, g2] = ground();
+  g1.hp = 1;   // wound the first: it's now the weakest of the pair
+  g._useAbility(a, 0); a.cds[0] = 0;
+  check('a third cast never exceeds the ground cap', ground().length === 2);
+  check('the weakest ground summon made way for the fresh one',
+    !g.enemies.includes(g1) && g.enemies.includes(g2));
+
+  g._useAbility(a, 1); a.cds[1] = 0;
+  g._useAbility(a, 1); a.cds[1] = 0;
+  g._useAbility(a, 1); a.cds[1] = 0;
+  check('flyers cap at two on their own separate layer', flying().length === 2);
+  check('the flying cap never touches the ground pair', ground().length === 2);
+}
+
+// --- 11. PvP: summons duel rival summons ---
+{
+  const g = new Game([
+    { id: 'A', name: 'Alice', color: '#f00', build: build(['bird']) },
+    { id: 'B', name: 'Bob', color: '#0f0', build: build(['bird']) },
+  ], 7, 'flatlands');
+  const [a, b] = g.fighters;
+  g.inputs.set('A', blankInput()); g.inputs.set('B', blankInput());
+  a.x = -150; b.x = 150;
+  a.invuln = 999; b.invuln = 999;   // untouchable fighters: only the summons can trade
+  g._useAbility(a, 0);
+  g._useAbility(b, 0);
+  const mine = g.enemies.find(e => e.ally === 'A');
+  const theirs = g.enemies.find(e => e.ally === 'B');
+  check('both sides field a summon', !!mine && !!theirs);
+  for (let i = 0; i < 60 * 8 && mine.hp === mine.maxHp && theirs.hp === theirs.maxHp; i++) g.step();
+  check('rival summons find and fight each other',
+    mine.hp < mine.maxHp || theirs.hp < theirs.maxHp);
 }
 
 console.log(`\n${n - fails}/${n} passed`);

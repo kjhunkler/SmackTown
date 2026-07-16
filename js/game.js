@@ -253,9 +253,6 @@ export const ENEMY_TYPES = {
   flyer:   { hp: 6,  speed: 170, accel: 720,  w: 40, h: 38, dmg: 3, kbTaken: 0.72, touchKb: 260, color: '#4fb0e8', reach: 48, windup: 0.45, atkCd: 1.9, fly: true },
   slinger: { hp: 7,  speed: 120, accel: 820,  w: 42, h: 48, dmg: 2, kbTaken: 0.72, touchKb: 230, color: '#d94fb0',
              ranged: true, shotDmg: 3, shotSpd: 360, range: 440, windup: 0.85, atkCd: 2.6 },
-  // battle bird: summon-only (never spawns wild) — a quick golden flyer
-  // that pesters with fast dive pecks
-  bird:    { hp: 8,  speed: 260, accel: 950,  w: 38, h: 34, dmg: 3, kbTaken: 0.75, touchKb: 250, color: '#ffd23e', reach: 46, windup: 0.30, atkCd: 1.2, fly: true },
   // Bosses: huge road-blocking creeps with three telegraphed attacks each
   // (picked in _bossTelegraph, resolved in _bossAttack). They shrug off
   // stagger, ignore crowd rules, and burst into hearts when they fall.
@@ -326,7 +323,7 @@ const ENEMY_RECYCLE_BEHIND = 1200;   // recycle stragglers ahead of the forward-
 const ENEMY_BASE_MAX = 14;           // living creeps at once at difficulty 0
 const ENEMY_MAX_CAP = 36;            // hard ceiling: large swarm, still practical for browser hosts
 const ENEMY_GRID_CELL = 160;         // horizontal broad-phase cell width
-const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger', 'colossus', 'tempest', 'warlock', 'bird'];
+const ENEMY_KIND_IDS = ['grunt', 'runner', 'brute', 'hopper', 'flyer', 'slinger', 'colossus', 'tempest', 'warlock'];
 const ENEMY_TEMPERAMENTS = ['bold', 'cautious', 'vengeful', 'pack'];
 const BIOME_ENEMY_WEIGHTS = {
   battlefield: { flyer: 1, hopper: 1 },
@@ -665,9 +662,12 @@ const BUBBLE_INVULN = 1.5;           // bubble shield duration (s)
 const ANCHOR_TP_INVULN = 0.35;       // brief invuln on landing at the anchor
 const ANCHOR_TTL = 4.0;              // seconds the beacon stays warpable (< the cooldown)
 // Summoned allies: a creep that fights FOR its summoner for a spell —
-// creeps in co-op, rival fighters in PvP — then fades. The bird is its own
-// pool; the ground pool is a random pull from the walking roster.
-const SUMMON_LIFE = 10;              // seconds a summon fights before fading
+// creeps in co-op, rival fighters (and their summons) in PvP — then fades.
+// Each summoner fields up to SUMMON_CAP ground and SUMMON_CAP flying
+// summons at once; summoning at a full cap dismisses the weakest of that
+// layer to make room for the fresh arrival.
+const SUMMON_LIFE = 60;              // seconds a summon fights before fading
+const SUMMON_CAP = 2;                // per-summoner limit, per layer (ground/flying)
 const SUMMON_GROUND_KINDS = ['grunt', 'runner', 'brute', 'hopper', 'slinger'];
 
 let nextEid = 1;
@@ -1789,7 +1789,7 @@ export class Game {
         this._summonAlly(f, SUMMON_GROUND_KINDS[Math.floor(this.rng() * SUMMON_GROUND_KINDS.length)]);
         break;
       case 'bird':
-        this._summonAlly(f, 'bird');
+        this._summonAlly(f, 'flyer');
         break;
     }
     this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y, dir: f.facing, up: evUp });
@@ -2931,6 +2931,19 @@ export class Game {
   // _stepEnemies skips them — and target creeps in co-op, rivals in PvP.
   _summonAlly(f, kind) {
     const t = ENEMY_TYPES[kind] || ENEMY_TYPES.grunt;
+    // per-layer cap: at the limit, the weakest of your summons in that
+    // layer is dismissed on the spot to make room for the fresh arrival
+    let weakest = null, count = 0;
+    for (const e of this.enemies) {
+      if (e.ally !== f.id || e.hp <= 0) continue;
+      if (!!(ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt).fly !== !!t.fly) continue;
+      count++;
+      if (!weakest || e.hp < weakest.hp) weakest = e;
+    }
+    if (count >= SUMMON_CAP && weakest) {
+      this.events.push({ e: 'summonout', x: weakest.x, y: weakest.y, kind: weakest.kind });
+      this.enemies.splice(this.enemies.indexOf(weakest), 1);
+    }
     const hw = t.w / 2, hh = t.h / 2;
     this.enemies.push({
       eid: nextEid++, kind, hw, hh,
@@ -2946,9 +2959,10 @@ export class Game {
     this.events.push({ e: 'summon', x: f.x + f.facing * 70, y: f.y - 20, kind, id: f.id });
   }
 
-  // Who a summon hunts: the nearest live creep in co-op, the nearest rival
-  // fighter in PvP. A summon whose owner has vanished (host handoff edge)
-  // goes passive rather than guessing.
+  // Who a summon hunts: the nearest live creep in co-op; in PvP the
+  // nearest rival — fighter or rival summon, whichever is closer. A summon
+  // whose owner has vanished (host handoff edge) goes passive rather than
+  // guessing.
   _allyTarget(e, owner) {
     if (!owner) return null;
     let best = null, bestD = Infinity;
@@ -2963,6 +2977,11 @@ export class Game {
         if (f.dead || f.parked || f.id === e.ally) continue;
         const d = Math.abs(f.x - e.x) + Math.abs(f.y - e.y);
         if (d < bestD) { bestD = d; best = f; }
+      }
+      for (const o of this.enemies) {
+        if (o.hp <= 0 || !o.ally || o.ally === e.ally) continue;
+        const d = Math.abs(o.x - e.x) + Math.abs(o.y - e.y);
+        if (d < bestD) { bestD = d; best = o; }
       }
     }
     return best;
@@ -3003,6 +3022,13 @@ export class Game {
         const ob = hurtBox(o);
         if (Math.abs(o.x - sx) < half + F_W / 2 && Math.abs((o.y + ob.dy) - e.y) < e.hh + 26 + ob.hh) {
           this._applyHit(owner, o, spec, deg(-30), Math.sign(o.x - e.x) || e.facing);
+        }
+      }
+      // rival summons in the arc get carved too — summons duel summons
+      for (const o of this.enemies) {
+        if (o.hp <= 0 || !o.ally || o.ally === owner.id) continue;
+        if (Math.abs(o.x - sx) < half + o.hw && Math.abs(o.y - e.y) < e.hh + 26 + o.hh) {
+          this._hitEnemy(owner, o, spec, deg(-30), Math.sign(o.x - e.x) || e.facing, false);
         }
       }
     }
