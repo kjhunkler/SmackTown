@@ -22,23 +22,23 @@ const mkGame = (abilities, extra = []) => new Game([
   ...extra,
 ], 7, 'flatlands');
 
-// --- 1. spike trap: the snap stuns for 1.5 seconds ---
+// --- 1. spike trap: the snap stuns for 1 second ---
 {
   const g = mkGame(['trap']);
   const [a, b] = g.fighters;
   a.x = 0; a.facing = 1;
   g._useAbility(a, 0);
   const tr = g.projectiles[0];
-  check('trap plants and arms', tr && tr.kind === 'trap' && tr.stun === 1.5);
+  check('trap plants and arms', tr && tr.kind === 'trap' && tr.stun === 1.0);
   b.x = tr.x; b.y = -32;
   g._resolveAttacks();
-  check('trap victim is stunned', b.state === 'hitstun' && b.hitstunFor >= 1.5);
+  check('trap victim is stunned', b.state === 'hitstun' && b.hitstunFor >= 1.0);
   const inA = blankInput(), inB = blankInput();
   g.inputs.set('A', inA); g.inputs.set('B', inB);
-  for (let i = 0; i < 60; i++) g.step();          // a full second later...
-  check('stun still holds at the 1s mark', b.state === 'hitstun');
-  for (let i = 0; i < 45; i++) g.step();          // ...and past 1.5s it breaks
-  check('stun releases after 1.5s', b.state !== 'hitstun');
+  for (let i = 0; i < 36; i++) g.step();          // 0.6s later...
+  check('stun still holds at the 0.6s mark', b.state === 'hitstun');
+  for (let i = 0; i < 45; i++) g.step();          // ...and past 1s it breaks
+  check('stun releases after 1s', b.state !== 'hitstun');
 }
 
 // --- 2. uppercut: massive knockback, straight up ---
@@ -268,7 +268,7 @@ const mkGame = (abilities, extra = []) => new Game([
   check('the party is never its target', a.hp === hpA && b.hp === hpB);
 }
 
-// --- 10. summon caps: 2 per layer, the weakest replaced at the limit ---
+// --- 10. summon caps: 5 per layer, the weakest replaced at the limit ---
 {
   const g = mkGame(['troop', 'bird']);
   const [a, b] = g.fighters;
@@ -277,21 +277,19 @@ const mkGame = (abilities, extra = []) => new Game([
   const ground = () => g.enemies.filter(e => e.ally === 'A' && e.kind !== 'flyer');
   const flying = () => g.enemies.filter(e => e.ally === 'A' && e.kind === 'flyer');
 
+  for (let i = 0; i < 5; i++) { g._useAbility(a, 0); a.cds[0] = 0; }
+  check('five ground summons can hold the field at once', ground().length === 5);
+  const squad = ground();
+  const wounded = squad[2];
+  wounded.hp = 1;   // wound one: it's now the weakest of the squad
   g._useAbility(a, 0); a.cds[0] = 0;
-  g._useAbility(a, 0); a.cds[0] = 0;
-  check('two ground summons can hold the field at once', ground().length === 2);
-  const [g1, g2] = ground();
-  g1.hp = 1;   // wound the first: it's now the weakest of the pair
-  g._useAbility(a, 0); a.cds[0] = 0;
-  check('a third cast never exceeds the ground cap', ground().length === 2);
+  check('a sixth cast never exceeds the ground cap', ground().length === 5);
   check('the weakest ground summon made way for the fresh one',
-    !g.enemies.includes(g1) && g.enemies.includes(g2));
+    !g.enemies.includes(wounded) && squad.filter(e => g.enemies.includes(e)).length === 4);
 
-  g._useAbility(a, 1); a.cds[1] = 0;
-  g._useAbility(a, 1); a.cds[1] = 0;
-  g._useAbility(a, 1); a.cds[1] = 0;
-  check('flyers cap at two on their own separate layer', flying().length === 2);
-  check('the flying cap never touches the ground pair', ground().length === 2);
+  for (let i = 0; i < 6; i++) { g._useAbility(a, 1); a.cds[1] = 0; }
+  check('flyers cap at five on their own separate layer', flying().length === 5);
+  check('the flying cap never touches the ground squad', ground().length === 5);
 }
 
 // --- 11. PvP: summons duel rival summons ---

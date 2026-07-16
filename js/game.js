@@ -654,8 +654,8 @@ const ABILITY_DEFS = {
   trap:      { cd: 6.0 },
   anchor:    { cd: 6.0 },
   springtrap:{ cd: 6.0 },
-  troop:     { cd: 10.0 },
-  bird:      { cd: 8.0 },
+  troop:     { cd: 5.0 },
+  bird:      { cd: 4.0 },
 };
 const COUNTER_WINDOW = 0.6;          // parry stance duration (s)
 const BUBBLE_INVULN = 1.5;           // bubble shield duration (s)
@@ -667,7 +667,7 @@ const ANCHOR_TTL = 4.0;              // seconds the beacon stays warpable (< the
 // summons at once; summoning at a full cap dismisses the weakest of that
 // layer to make room for the fresh arrival.
 const SUMMON_LIFE = 60;              // seconds a summon fights before fading
-const SUMMON_CAP = 2;                // per-summoner limit, per layer (ground/flying)
+const SUMMON_CAP = 5;                // per-summoner limit, per layer (ground/flying)
 const SUMMON_GROUND_KINDS = ['grunt', 'runner', 'brute', 'hopper', 'slinger'];
 
 let nextEid = 1;
@@ -1770,7 +1770,7 @@ export class Game {
           eid: nextEid++, kind: 'trap', owner: f.id,
           x: f.x + f.facing * 30, y: f.y + F_H / 2 - 12,
           vx: 0, vy: 0, grav: 1400, ttl: 6,
-          dmg: 8, kb: 330, ks: 16, r: 16, ang: -80, pierce: true, stun: 1.5,
+          dmg: 8, kb: 330, ks: 16, r: 16, ang: -80, pierce: true, stun: 1.0,
         });
         break;
       case 'springtrap':
