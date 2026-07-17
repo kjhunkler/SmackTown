@@ -221,8 +221,9 @@ export function hazardsAt(mapId, tickF) {
 }
 
 const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
-const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 2400;
-const TURN_ACCEL = 1.8;              // ground accel multiplier while reversing a run
+const FALL_GRAV = 1.35;              // gravity multiplier on descent — rise unchanged, so jump heights hold
+const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 3400;
+const TURN_ACCEL = 2.2;              // ground accel multiplier while reversing a run
 const CHARGE_FRICTION = 0.4;         // charging holds momentum: 40% of normal ground friction
 const JUMP_V = 860, JUMP2_V = 780;
 // Variable jump height: letting go of the jump control mid-rise trims the
@@ -232,7 +233,7 @@ const JUMP_V = 860, JUMP2_V = 780;
 // time — never in hitstun, so launch knockback keeps its exact physics.
 const JUMP_CUT = 0.45;               // fraction of the remaining rise kept on release
 const JUMP_CUT_GRACE = 0.08;         // liftoff seconds before a release can cut
-const APEX_GRAV = 0.62;              // gravity multiplier through the apex band
+const APEX_GRAV = 0.75;              // gravity multiplier through the apex band
 const APEX_BAND = 130;               // |vy| below this counts as the apex
 const JUMP_FF_LOCK = 0.1;            // brief window after a jump before fast fall can trigger
 const SPIKE_BOUNCE = 640;            // attacker's upward spring off a landed spike
@@ -1150,8 +1151,11 @@ export class Game {
       // easier to place. Off in hitstun/crush (launch KOs keep their exact
       // physics) and while fast-falling.
       const apex = !inHitstun && !inCrush && !f.fastfall && Math.abs(f.vy) < APEX_BAND ? APEX_GRAV : 1;
+      // heavier gravity on the way down — off in hitstun/crush so launch
+      // knockback keeps its exact physics, like the apex hang above
+      const fall = !inHitstun && !inCrush && f.vy > 0 ? FALL_GRAV : 1;
       const cap = (f.fastfall ? FASTFALL : MAX_FALL) * slow;
-      f.vy = Math.min(cap, f.vy + GRAV * slow * apex * TICK);
+      f.vy = Math.min(cap, f.vy + GRAV * slow * apex * fall * TICK);
     }
     f.x += f.vx * TICK;
     f.y += f.vy * TICK;
