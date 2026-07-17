@@ -489,6 +489,7 @@ const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 // smash kit and the spear thrust ride a small lunge along their 8-way aim
 // (scaled-down sword lunge), and the spear's up-thrust climbs extra hard.
 const FIST_LUNGE = 0.45;             // smash-kit lunge, fraction of the sword's
+const FIST_LUNGE_UP = 1.8;           // up & diagonal-up smashes climb extra hard (recovery)
 const SPEAR_LUNGE = 0.5;             // thrust lunge, fraction of the sword's
 const SPEAR_LUNGE_UP = 1.6;          // up-thrusts carry extra upward momentum
 // Magic movement: big casts kick. A charged release shoves the caster
@@ -1430,7 +1431,7 @@ export class Game {
     }
     if (name === 'slash') this._lunge(f, dx, dy, chg);
     // fists and spear ride a scaled-down version of the sword's lunge
-    if (name === 'fsmash' || name === 'usmash' || name === 'dsmash' || name === 'dair') this._lunge(f, dx, dy, chg, FIST_LUNGE);
+    if (name === 'fsmash' || name === 'usmash' || name === 'dsmash' || name === 'dair') this._lunge(f, dx, dy, chg, FIST_LUNGE, FIST_LUNGE_UP);
     if (name === 'thrust') this._lunge(f, dx, dy, chg, SPEAR_LUNGE, SPEAR_LUNGE_UP);
     // the bash IS a lunge: the shield rams ahead harder than any blade,
     // and up-aimed rams climb extra hard (shield users fly shieldfirst)
