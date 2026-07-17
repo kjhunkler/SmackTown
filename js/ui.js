@@ -615,6 +615,30 @@ function pickAwards(rows) {
   return out;
 }
 
+// Full build breakdown for the results screen: weapon, non-zero base
+// stats, abilities, and augments as labeled pill groups (unlike the
+// terse buildSummary() line used in the lobby roster).
+function buildDetailHtml(build) {
+  const b = build || {};
+  const stats = b.stats || {};
+  const wpn = WEAPONS.find(w => w.id === b.weapon) || WEAPONS.find(w => w.id === 'unarmed');
+  const statBits = STATS.filter(s => stats[s.id] > 0).map(s => `${s.name} ${stats[s.id]}`);
+  const abilities = (b.abilities || []).map(id => ABILITIES.find(a => a.id === id)).filter(Boolean);
+  const augments = (b.augments || []).map(id => AUGMENTS.find(a => a.id === id)).filter(Boolean);
+  const groups = [];
+  groups.push(`<span class="r-bd-group"><span class="r-bd-label">Weapon</span><span class="r-bd-pill">${wpn.icon} ${esc(wpn.name)}</span></span>`);
+  groups.push(`<span class="r-bd-group"><span class="r-bd-label">Stats</span>${
+    statBits.length ? statBits.map(s => `<span class="r-bd-pill">${esc(s)}</span>`).join('') : '<span class="r-bd-pill r-bd-empty">—</span>'
+  }</span>`);
+  groups.push(`<span class="r-bd-group"><span class="r-bd-label">Abilities</span>${
+    abilities.length ? abilities.map(a => `<span class="r-bd-pill">${a.icon} ${esc(a.name)}</span>`).join('') : '<span class="r-bd-pill r-bd-empty">—</span>'
+  }</span>`);
+  groups.push(`<span class="r-bd-group"><span class="r-bd-label">Augments</span>${
+    augments.length ? augments.map(a => `<span class="r-bd-pill">${a.icon} ${esc(a.name)}</span>`).join('') : '<span class="r-bd-pill r-bd-empty">—</span>'
+  }</span>`);
+  return groups.join('');
+}
+
 export function renderResults(players, winnerId, finalFighters, { myId = null, onCopy = null } = {}) {
   $('#results-title').textContent = winnerId
     ? `${esc(players.find(p => p.id === winnerId)?.name || '???')} wins!`
@@ -637,16 +661,19 @@ export function renderResults(players, winnerId, finalFighters, { myId = null, o
       .map(a => `<span class="r-award">${a.icon} ${esc(a.name)}</span>`).join('');
     const li = document.createElement('li');
     li.innerHTML = `
-      <span class="r-score">${p.id === winnerId ? '🏆' : '#' + (i + 1)}</span>
-      <span class="r-fig"></span>
-      <span class="r-col">
-        <span class="r-name">${esc(p.name)}</span>
-        ${chips ? `<span class="r-awards">${chips}</span>` : ''}
-      </span>
-      <span class="r-meta">
-        <span>${f ? (f.stocks > 0 ? f.stocks + (f.stocks === 1 ? ' stock' : ' stocks') + ' left' : 'KO’d') : ''}</span>
-        <span>👊 ${s.ko} KO${s.ko === 1 ? '' : 's'} · 💥 ${Math.round(s.dmg)} dmg</span>
-      </span>`;
+      <div class="r-top">
+        <span class="r-score">${p.id === winnerId ? '🏆' : '#' + (i + 1)}</span>
+        <span class="r-fig"></span>
+        <span class="r-col">
+          <span class="r-name">${esc(p.name)}</span>
+          ${chips ? `<span class="r-awards">${chips}</span>` : ''}
+        </span>
+        <span class="r-meta">
+          <span>${f ? (f.stocks > 0 ? f.stocks + (f.stocks === 1 ? ' stock' : ' stocks') + ' left' : 'KO’d') : ''}</span>
+          <span>👊 ${s.ko} KO${s.ko === 1 ? '' : 's'} · 💥 ${Math.round(s.dmg)} dmg</span>
+        </span>
+      </div>
+      <div class="r-build-detail">${buildDetailHtml(p.build)}</div>`;
     li.querySelector('.r-fig').appendChild(fighterThumb(p.color, p.hat));
     if (onCopy && p.id !== myId) {
       const copy = document.createElement('button');
