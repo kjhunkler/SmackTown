@@ -787,6 +787,16 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(255, 255, 255, .45) 0 17%, transparent 17% 83%,
     rgba(255, 255, 255, .45) 83% 100%);
 }
+.map-thumb-temple { background: linear-gradient(#4f92cf, #d9d3b4); }
+.map-thumb-temple::after { left: 4%; right: 4%; background: #8a8168; }
+/* tiered ruins: west terraces stacked high, east hall low, apex bridge */
+.map-thumb-temple::before {
+  left: 8%; right: 8%; top: 15px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, .6) 0 24%, transparent 24% 60%,
+    rgba(255, 255, 255, .6) 60% 90%, transparent 90% 100%);
+  box-shadow: 0 -7px 0 -1px rgba(255, 255, 255, .5);
+}
 .map-thumb-garden { background: linear-gradient(#3c2b5c, #14251a); }
 .map-thumb-garden::after { left: 10%; right: 10%; background: #5fae4e; }
 /* log bridge centered, two flower pads at the edges */

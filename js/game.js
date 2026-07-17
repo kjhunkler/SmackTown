@@ -94,6 +94,27 @@ export const MAPS = {
     spawns: [ -330, 330, -120, 120 ],
     respawnY: -320,
   },
+  // Homage to the sprawling Melee temple: by far the biggest arena in the
+  // rotation. An asymmetric ruin — grand west terraces stacked two tiers
+  // high, a broken east hall, fallen-column stepping stones, and one apex
+  // sky bridge over the middle. Every step is single-jumpable from the
+  // tier below it (≤150u); the columns want a double jump from the ground.
+  temple: {
+    name: 'Ancient Temple',
+    main: { x: -920, y: 0, w: 1840, h: 46 },             // vast temple foundation
+    plats: [
+      { x: -840, y: -150, w: 400 },                      // west terrace
+      { x: -750, y: -300, w: 290 },                      // upper-west plateau
+      { x: -320, y: -230, w: 180 },                      // fallen column (west)
+      { x: -430, y: -420, w: 340 },                      // apex sky bridge
+      { x: 170,  y: -230, w: 180 },                      // fallen column (east)
+      { x: 440,  y: -150, w: 380 },                      // east hall floor
+      { x: 600,  y: -300, w: 230 },                      // upper-east ruin ledge
+    ],
+    blast: { l: -2050, r: 2050, t: -1250, b: 560 },
+    spawns: [ -640, 640, -220, 220 ],
+    respawnY: -360,
+  },
   training: {
     name: 'Training Room',
     hidden: true,                     // never in the vote grid or random rotation

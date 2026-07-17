@@ -65,6 +65,14 @@ const THEMES = {
     deck: '#2e4a2c', lip: '#476b40', trim: '#ffd7f0',
     plat: '#5c4632', platTop: '#7a5f44',
   },
+  temple: {
+    sky: ['#4f92cf', '#8fbede', '#d9d3b4'],
+    motif: 'noon',
+    stars: 0,
+    ambient: 'cloudwisp',
+    deck: '#8a8168', lip: '#a89f83', trim: '#d8b45a',
+    plat: '#8f8670', platTop: '#9fb06a',
+  },
   training: {
     sky: ['#0d1126', '#1a2142', '#0e1524'],
     motif: 'moon',
@@ -124,7 +132,9 @@ export class Renderer {
       : null;
     this.mesas = this.mapId === 'flatlands' ? buildMesas() : null;
     this.flora = this.mapId === 'garden' ? buildFlora() : null;
-    this.isles = this.mapId === 'battlefield' ? buildSkyIsles() : null;
+    this.isles = this.mapId === 'battlefield' ? buildSkyIsles()
+      : this.mapId === 'temple' ? buildSkyIsles('day')
+      : null;
     this.works = this.mapId === 'foundry' ? buildWorks() : null;
   }
 
@@ -1095,6 +1105,7 @@ export class Renderer {
     if (this.mapId === 'flatlands') { this._flatlandsStage(ctx, t); return; }
     if (this.mapId === 'garden') { this._gardenStage(ctx, plats, t); return; }
     if (this.mapId === 'foundry') { this._crucibleStage(ctx, plats, tickF, t); return; }
+    if (this.mapId === 'temple') { this._templeStage(ctx, plats, t); return; }
     if (this.mapId === 'training') { this._trainingStage(ctx, plats, t); return; }
     if (this.mapId === 'expanse') { this._expanseStage(ctx, t); return; }
     const th = this.theme;
@@ -2524,6 +2535,178 @@ export class Renderer {
     }
   }
 
+  // Ancient Temple: a sun-bleached mountain of masonry adrift in a cloud
+  // sea — vast sandstone foundation on a jagged rock keel, colonnades
+  // holding up the ruined terrace floors, a broken pediment, breathing
+  // braziers, shrine bells swinging under the wings, and moss reclaiming
+  // every ledge. Geometry comes from MAPS in game.js; this is all paint.
+  _templeStage(ctx, plats, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // jagged rock keel tapering into the cloud sea below
+    ctx.fillStyle = '#6d6650';
+    ctx.beginPath();
+    ctx.moveTo(m.x + 8, m.y + m.h + 24);
+    ctx.lineTo(m.x + m.w * 0.14, m.y + 210);
+    ctx.lineTo(m.x + m.w * 0.30, m.y + 340);
+    ctx.lineTo(m.x + m.w * 0.46, m.y + 480);
+    ctx.lineTo(m.x + m.w * 0.60, m.y + 350);
+    ctx.lineTo(m.x + m.w * 0.74, m.y + 430);
+    ctx.lineTo(m.x + m.w * 0.88, m.y + 200);
+    ctx.lineTo(m.x + m.w - 8, m.y + m.h + 24);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(240, 232, 200, .18)';    // keel cracks
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(m.x + m.w * 0.24, m.y + 130); ctx.lineTo(m.x + m.w * 0.36, m.y + 310);
+    ctx.moveTo(m.x + m.w * 0.66, m.y + 120); ctx.lineTo(m.x + m.w * 0.58, m.y + 290);
+    ctx.moveTo(m.x + m.w * 0.80, m.y + 150); ctx.lineTo(m.x + m.w * 0.76, m.y + 340);
+    ctx.stroke();
+
+    // shrine bells swinging on chains under each wing of the keel
+    for (const [bx, ph] of [[m.x + m.w * 0.08, 0], [m.x + m.w * 0.92, 2.4]]) {
+      const sway = Math.sin(t * 0.7 + ph) * 0.09;
+      const len = 120;
+      const ex = bx + Math.sin(sway) * len, ey = m.y + m.h + 18 + Math.cos(sway) * len;
+      ctx.strokeStyle = '#575142';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(bx, m.y + m.h + 18); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillStyle = '#7d7660';                     // little hanging shrine
+      roundRect(ctx, ex - 13, ey, 26, 20, 5); ctx.fill();
+      ctx.fillStyle = th.trim;                       // gilt clapper
+      ctx.fillRect(ex - 3, ey + 16, 6, 8);
+    }
+
+    // foundation deck: dressed sandstone with staggered masonry joints
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(74, 66, 46, .45)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let row = 0; row < 2; row++) {
+      const jy = m.y + 22 + row * 26;
+      ctx.moveTo(m.x + 6, jy); ctx.lineTo(m.x + m.w - 6, jy);
+      const off = row % 2 ? 55 : 0;
+      for (let jx = m.x + 55 + off; jx < m.x + m.w - 20; jx += 110) {
+        ctx.moveTo(jx, jy - (row ? 26 : 22) + 4); ctx.lineTo(jx, jy);
+      }
+    }
+    ctx.stroke();
+    ctx.fillStyle = th.lip;                          // worn cap course
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.fillStyle = th.trim;                         // gilt inlay
+    ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+    ctx.fillStyle = 'rgba(110, 150, 80, .55)';       // moss creeping over the lip
+    for (let i = 0; i < 12; i++) {
+      const mx = m.x + 40 + ((i * 379) % (m.w - 80));
+      ctx.beginPath();
+      ctx.ellipse(mx, m.y + 3, 16 + (i % 3) * 9, 5, 0, 0, 7);
+      ctx.fill();
+    }
+
+    // ruined colonnade standing on the deck — worship-hall remnants
+    // [x, height, broken?] — thin background dressing, never gameplay
+    for (const [cx, ch, broken] of [
+      [m.x + m.w * 0.20, 150, false], [m.x + m.w * 0.27, 150, true],
+      [m.x + m.w * 0.52, 120, true],  [m.x + m.w * 0.66, 160, false],
+    ]) {
+      const hh = broken ? ch * 0.55 : ch;
+      ctx.fillStyle = '#7d7660';                     // fluted shaft
+      ctx.fillRect(cx - 11, m.y - hh, 22, hh);
+      ctx.strokeStyle = 'rgba(60, 54, 38, .35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 4, m.y - hh + 4); ctx.lineTo(cx - 4, m.y - 4);
+      ctx.moveTo(cx + 4, m.y - hh + 4); ctx.lineTo(cx + 4, m.y - 4);
+      ctx.stroke();
+      ctx.fillStyle = '#8d8570';                     // base
+      ctx.fillRect(cx - 15, m.y - 8, 30, 8);
+      if (broken) {                                  // snapped ragged top
+        ctx.beginPath();
+        ctx.moveTo(cx - 11, m.y - hh);
+        ctx.lineTo(cx - 3, m.y - hh - 9);
+        ctx.lineTo(cx + 5, m.y - hh - 3);
+        ctx.lineTo(cx + 11, m.y - hh);
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.fillRect(cx - 15, m.y - hh - 8, 30, 8);  // capital
+      }
+    }
+
+    // braziers flanking the centre stair, flames breathing slow
+    for (const bx of [m.x + m.w * 0.42, m.x + m.w * 0.58]) {
+      ctx.fillStyle = '#575142';
+      ctx.fillRect(bx - 4, m.y - 26, 8, 26);
+      ctx.fillStyle = '#7d7660';
+      roundRect(ctx, bx - 12, m.y - 36, 24, 10, 4); ctx.fill();
+      const breathe = 0.75 + 0.25 * Math.sin(t * 2.1 + bx);
+      const fg = ctx.createRadialGradient(bx, m.y - 44, 1, bx, m.y - 44, 26 * breathe);
+      fg.addColorStop(0, 'rgba(255, 190, 90, .6)');
+      fg.addColorStop(1, 'rgba(255, 190, 90, 0)');
+      ctx.fillStyle = fg;
+      ctx.fillRect(bx - 26, m.y - 70, 52, 52);
+      ctx.fillStyle = `rgba(255, 210, 120, ${0.55 + 0.45 * breathe})`;
+      ctx.beginPath();
+      ctx.moveTo(bx - 6, m.y - 36);
+      ctx.quadraticCurveTo(bx - 2, m.y - 48 - breathe * 6, bx, m.y - 52 - breathe * 8);
+      ctx.quadraticCurveTo(bx + 3, m.y - 46 - breathe * 5, bx + 6, m.y - 36);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // terrace floors (the two y:-150 plats) ride on their own colonnades
+    for (const p of plats) {
+      if (p.y !== -150) continue;
+      for (const cx of [p.x + 26, p.x + p.w - 26]) {
+        ctx.fillStyle = '#7d7660';
+        ctx.fillRect(cx - 10, p.y + 12, 20, m.y - p.y - 12);
+        ctx.strokeStyle = 'rgba(60, 54, 38, .35)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, p.y + 16); ctx.lineTo(cx, m.y - 6);
+        ctx.stroke();
+        ctx.fillStyle = '#8d8570';
+        ctx.fillRect(cx - 14, m.y - 8, 28, 8);       // base
+        ctx.fillRect(cx - 14, p.y + 12, 28, 7);      // capital
+      }
+    }
+
+    // ruined slab platforms: weathered stone, mossy tops, hanging vines
+    for (const [i, p] of plats.entries()) {
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 14, 5); ctx.fill();
+      ctx.fillStyle = th.platTop;                    // moss-topped course
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      ctx.strokeStyle = 'rgba(60, 54, 38, .4)';      // block joints
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let jx = p.x + 55; jx < p.x + p.w - 12; jx += 55) {
+        ctx.moveTo(jx, p.y + 4); ctx.lineTo(jx, p.y + 12);
+      }
+      ctx.stroke();
+      if (p.y !== -150) {                            // floaters get stub keels
+        const cx = p.x + p.w / 2;
+        ctx.fillStyle = '#6d6650';
+        ctx.beginPath();
+        ctx.moveTo(p.x + p.w * 0.3, p.y + 14);
+        ctx.lineTo(cx, p.y + 30 + (i % 2) * 8);
+        ctx.lineTo(p.x + p.w * 0.7, p.y + 14);
+        ctx.closePath(); ctx.fill();
+      }
+      // vines swaying off the underside
+      ctx.strokeStyle = 'rgba(96, 138, 70, .7)';
+      ctx.lineWidth = 2.5;
+      for (let v = 0; v < 1 + (i % 3); v++) {
+        const vx = p.x + p.w * (0.22 + v * 0.3);
+        const len = 26 + ((i * 7 + v * 13) % 3) * 14;
+        const drift = Math.sin(t * 0.9 + i * 1.7 + v * 2.3) * 5;
+        ctx.beginPath();
+        ctx.moveTo(vx, p.y + 13);
+        ctx.quadraticCurveTo(vx + drift * 0.4, p.y + 13 + len * 0.6, vx + drift, p.y + 13 + len);
+        ctx.stroke();
+      }
+    }
+  }
+
   // The Crucible: a slag-crusted pour deck over a churning lava moat, two
   // riveted side perches, and the vent grates — glowing hotter through the
   // telegraph, then erupting in a column of melt exactly where the sim says.
@@ -3564,17 +3747,25 @@ function buildWorks() {
 // Deterministic floating archipelago: three parallax layers of drifting
 // islands (rock keels, turf caps, spires, waterfalls) over a three-bank
 // rolling cloud sea. Same seed every time, so all players share the sky.
-function buildSkyIsles() {
+function buildSkyIsles(style) {
+  const day = style === 'day';                 // temple: sunlit isles, and a
+  const span = day ? 2400 : 1500;              // wider field for the huge map
   let s = 77003;
   const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
-  const layers = [
+  // Day isles wear atmospheric haze — pale, low-contrast, near the sky
+  // tint — so they always read as backdrop, never as landable terrain.
+  const layers = day ? [
+    { lag: 0.82, rock: '#9cbbd8', turf: '#a9c9b6', flag: '#cfdde9', isles: [] },   // far haze
+    { lag: 0.66, rock: '#92b2d2', turf: '#9ec2ab', flag: '#dbe4ed', isles: [] },
+    { lag: 0.5,  rock: '#88a9ca', turf: '#93b9a1', flag: '#e6ecf2', isles: [] },   // near
+  ] : [
     { lag: 0.82, rock: '#221d40', turf: '#2c2a58', flag: '#54517e', isles: [] },   // far haze
     { lag: 0.66, rock: '#2a2450', turf: '#37346e', flag: '#6f68a8', isles: [] },
     { lag: 0.5,  rock: '#332b60', turf: '#434083', flag: '#8f86c9', isles: [] },   // near
   ];
   for (const [li, layer] of layers.entries()) {
-    let x = -1500 + rnd() * 200;
-    while (x < 1500) {
+    let x = -span + rnd() * 200;
+    while (x < span) {
       const w = 130 + rnd() * (150 + li * 90);
       layer.isles.push({
         x, w,
@@ -3589,17 +3780,21 @@ function buildSkyIsles() {
         fall: rnd() < 0.45,
         fallLen: 90 + rnd() * 110,
       });
-      x += w + 190 + rnd() * (260 + li * 120);
+      x += w + (day ? 340 : 190) + rnd() * ((day ? 400 : 260) + li * 120);
     }
   }
-  const banks = [
+  const banks = day ? [
+    { lag: 0.75, fill: 'rgba(255, 255, 255, .40)', puffs: [] },
+    { lag: 0.58, fill: 'rgba(255, 255, 255, .50)', puffs: [] },
+    { lag: 0.42, fill: 'rgba(255, 255, 255, .60)', puffs: [] },
+  ] : [
     { lag: 0.75, fill: 'rgba(90, 82, 150, .35)',  puffs: [] },
     { lag: 0.58, fill: 'rgba(120, 108, 190, .3)', puffs: [] },
     { lag: 0.42, fill: 'rgba(165, 150, 225, .25)', puffs: [] },
   ];
   for (const [bi, bank] of banks.entries()) {
-    let x = -1600 + rnd() * 120;
-    while (x < 1600) {
+    let x = -span - 100 + rnd() * 120;
+    while (x < span + 100) {
       bank.puffs.push({
         x,
         dy: bi * 55 + rnd() * 70,
