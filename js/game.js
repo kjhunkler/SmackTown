@@ -640,7 +640,7 @@ const SWORD_LUNGE_V = 1.3;           // upward lunge boosted 30% (up & diagonals
 const CHG_FALL = {
   sword:     { up: 0.4, down: 0.4,  side: 0.4 },  // 60% slow on every aim
   magic:     { up: 0.2, down: 0.2,  side: 0.2 },  // the caster's near-hover
-  spear:     { up: 0.6, down: -0.2, side: 0.6 },  // down-thrust rises at 20%
+  spear:     { up: 0.6, down: -0.1, side: 0.6 },  // down-thrust rises at 10%
   unarmed:   { up: 0.6, down: 0.8,  side: 0.8 },  // fists: 40% up, 20% else
   boomerang: { up: 1,   down: 0.2,  side: 1 },    // down-charge hangs 80% slow…
 };
@@ -651,9 +651,9 @@ const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 // smash kit and the spear thrust ride a small lunge along their 8-way aim
 // (scaled-down sword lunge), and the spear's up-thrust climbs extra hard.
 const FIST_LUNGE = 0.45;             // smash-kit lunge, fraction of the sword's
-const FIST_LUNGE_UP = 1.8;           // up & diagonal-up smashes climb extra hard (recovery)
+const FIST_LUNGE_UP = 2.2;           // up & diagonal-up smashes climb extra hard (recovery)
 const SPEAR_LUNGE = 0.5;             // thrust lunge, fraction of the sword's
-const SPEAR_LUNGE_UP = 3.2;          // up-thrusts carry extra upward momentum (doubled)
+const SPEAR_LUNGE_UP = 2.4;          // up-thrusts carry extra upward momentum
 // Magic movement: big casts kick. A charged release shoves the caster
 // slightly backward, and a charged DOWN-cast rocket-jumps them skyward.
 const CAST_RECOIL_MIN = 0.45;        // charge fraction where recoil starts
@@ -1907,7 +1907,7 @@ export class Game {
       case 'uppercut':
         f.vy = -980;
         f.grounded = false;
-        f.melee = { name: 'upper', dmg: 14.3, kb: 702, ks: 30, rx: 48, ry: 68, ang: -88, until: this.tick + 18, hit: new Set() };
+        f.melee = { name: 'upper', dmg: 14.3, kb: 667, ks: 30, rx: 48, ry: 68, ang: -88, until: this.tick + 18, hit: new Set() };
         break;
       case 'counter':
         f.counterT = COUNTER_WINDOW;

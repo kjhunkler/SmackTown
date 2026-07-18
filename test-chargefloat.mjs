@@ -63,7 +63,7 @@ const vyAt = (weapon, dx, dy, ticks = 26) => charging(weapon, dx, dy, ticks).f.v
   const early = vyAt('spear', 0, 1, 26);
   check('spear down-charge is rising within half a second', early < 0);
   const held = vyAt('spear', 0, 1, 60);
-  check('the rise caps at 20% of fall speed (-230)', near(held, -MAX_FALL * 0.2));
+  check('the rise caps at 10% of fall speed (-115)', near(held, -MAX_FALL * 0.1));
   const { f } = charging('spear', 0, 1, 60);
   check('the floating spearman actually gains height', f.y < -600);
   // a fast fall in progress gets braked, then reversed
@@ -73,7 +73,7 @@ const vyAt = (weapon, dx, dy, ticks = 26) => charging(weapon, dx, dy, ticks).f.v
   const inp = blankInput(); inp.chg = { dx: 0, dy: 1 }; inp.chgArm = true;
   g2.setInput('A', inp);
   for (let i = 0; i < 40; i++) { const h = blankInput(); h.chg = { dx: 0, dy: 1 }; g2.setInput('A', h); g2.step(); }
-  check('a plummeting spearman brakes instead of snapping upward', f2.vy < 900 && f2.vy > -MAX_FALL * 0.2 - 2);
+  check('a plummeting spearman brakes instead of snapping upward', f2.vy < 900 && f2.vy > -MAX_FALL * 0.1 - 2);
 }
 
 // --- 3. rang down-charge release: the upward vault ---
