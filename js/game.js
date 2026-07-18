@@ -13,6 +13,7 @@ export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
 export const MAPS = {
   battlefield: {
     name: 'Sky Bastion',
+    size: 'small',
     main: { x: -340, y: 0, w: 680, h: 46 },              // solid ground (top at y=0)
     plats: [                                             // the classic triplat — static, sacred
       { x: -230, y: -130, w: 170 },
@@ -25,6 +26,7 @@ export const MAPS = {
   },
   flatlands: {
     name: 'Dust Divide',
+    size: 'medium',
     main: { x: -520, y: 0, w: 1040, h: 46 },             // wide open ground, no plats
     plats: [],
     blast: { l: -1300, r: 1300, t: -950, b: 500 },
@@ -33,6 +35,7 @@ export const MAPS = {
   },
   skyline: {
     name: 'Neon Heights',
+    size: 'small',
     main: { x: -250, y: 0, w: 500, h: 46 },              // mega-tower helipad, aerial towers
     plats: [
       { x: -350, y: -160, w: 150 },                      // west rooftop terrace
@@ -49,6 +52,7 @@ export const MAPS = {
   },
   ruins: {
     name: 'Ruined City',
+    size: 'medium',
     main: { x: -390, y: 0, w: 780, h: 46 },              // collapsed freeway deck
     plats: [
       { x: -330, y: -130, w: 150 },                      // gutted rooftop (left)
@@ -65,6 +69,7 @@ export const MAPS = {
   },
   foundry: {
     name: 'The Crucible',
+    size: 'small',
     main: { x: -300, y: 0, w: 600, h: 46 },              // compact arena with side perches
     plats: [
       { x: -420, y: -150, w: 140 },
@@ -83,6 +88,7 @@ export const MAPS = {
   },
   garden: {
     name: 'Overgrown Eden',
+    size: 'medium',
     main: { x: -460, y: 0, w: 920, h: 46 },              // mossy root-shelf, one log bridge
     plats: [
       { x: -90,  y: -205, w: 180 },                      // fallen log bridge
@@ -101,6 +107,7 @@ export const MAPS = {
   // tier below it (≤150u); the columns want a double jump from the ground.
   temple: {
     name: 'Ancient Temple',
+    size: 'large',
     main: { x: -920, y: 0, w: 1840, h: 46 },             // vast temple foundation
     plats: [
       { x: -840, y: -150, w: 400 },                      // west terrace
@@ -122,6 +129,7 @@ export const MAPS = {
   // double jump, so it plays as a commitment platform, not a safe landing.
   frostspire: {
     name: 'Frostspire Reach',
+    size: 'large',
     main: { x: -800, y: 0, w: 1600, h: 46 },             // frozen basin floor
     plats: [
       { x: -680, y: -140, w: 260 },                      // west shelf
@@ -143,6 +151,7 @@ export const MAPS = {
   // reachable off the sand with a double jump, like frostspire's floe.
   coliseum: {
     name: 'Coliseum Sands',
+    size: 'large',
     main: { x: -750, y: 0, w: 1500, h: 46 },             // sunken arena floor
     plats: [
       { x: -660, y: -140, w: 240 },                      // west stand
@@ -162,6 +171,7 @@ export const MAPS = {
   // enough over center to need a double jump straight off the deck.
   docks: {
     name: 'Sunken Docks',
+    size: 'medium',
     main: { x: -500, y: 0, w: 1000, h: 46 },             // boardwalk over the harbor
     plats: [
       { x: -430, y: -140, w: 170 },                      // west pier stack
@@ -178,6 +188,7 @@ export const MAPS = {
   // enough over the gap to need a double jump straight off the ground.
   canyon: {
     name: 'Canyon Pass',
+    size: 'medium',
     main: { x: -480, y: 0, w: 960, h: 46 },              // sun-baked canyon floor
     plats: [
       { x: -410, y: -140, w: 160 },                      // west ledge
@@ -194,6 +205,7 @@ export const MAPS = {
   // enough over center to need a double jump straight off the ground.
   market: {
     name: 'Midnight Market',
+    size: 'medium',
     main: { x: -490, y: 0, w: 980, h: 46 },              // paved bazaar plaza
     plats: [
       { x: -420, y: -140, w: 160 },                      // west stall roof
@@ -238,6 +250,26 @@ export const MAPS = {
 export const DEFAULT_MAP = 'battlefield';
 // Rotation/votes skip hidden maps (training is reachable only by mode)
 export const MAP_IDS = Object.keys(MAPS).filter(id => !MAPS[id].hidden);
+// Size classes double as vote tokens: a lobby vote is either a map id or
+// one of these, and the two kinds never collide.
+export const MAP_SIZES = ['small', 'medium', 'large'];
+export const mapsOfSize = size => MAP_IDS.filter(id => MAPS[id].size === size);
+
+// Tally the lobby's map votes: most votes wins, ties break randomly among
+// the leaders, and nobody voting means a random map for everyone. A size
+// vote (small/medium/large) backs that whole size class as one option;
+// when a size wins, the map is drawn at random from its class.
+export function tallyMapVotes(votes) {
+  const pick = pool => pool[(Math.random() * pool.length) | 0];
+  const counts = new Map();
+  for (const v of votes) {
+    if (v && (MAP_IDS.includes(v) || MAP_SIZES.includes(v))) counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  if (!counts.size) return pick(MAP_IDS);
+  const top = Math.max(...counts.values());
+  const winner = pick([...counts.entries()].filter(([, n]) => n === top).map(([id]) => id));
+  return MAP_SIZES.includes(winner) ? pick(mapsOfSize(winner)) : winner;
+}
 export const EXPANSE_BIOMES = ['battlefield', 'flatlands', 'skyline', 'ruins', 'foundry', 'garden'];
 const EXPANSE_BIOME_LENGTH = 3600;
 const EXPANSE_BIOME_BLEND = 700;

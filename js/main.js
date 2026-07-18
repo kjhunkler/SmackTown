@@ -9,7 +9,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, expanseBiomeAt, platsAt, HEART_LIFE, LOOT_CR_BONUS } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, LOOT_CR_BONUS } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -1032,19 +1032,6 @@ function maybeAutoStart() {
   $('#lobby-status').textContent = `All ready — starting in ${left}…`;
 }
 
-// Tally the lobby's map votes: most votes wins, ties break randomly among
-// the leaders, and nobody voting means a random map for everyone.
-function tallyMapVotes(active) {
-  const counts = new Map();
-  for (const m of active) {
-    if (m.vote && MAP_IDS.includes(m.vote)) counts.set(m.vote, (counts.get(m.vote) || 0) + 1);
-  }
-  if (!counts.size) return MAP_IDS[(Math.random() * MAP_IDS.length) | 0];
-  const top = Math.max(...counts.values());
-  const leaders = [...counts.entries()].filter(([, n]) => n === top).map(([id]) => id);
-  return leaders[(Math.random() * leaders.length) | 0];
-}
-
 function startFight() {
   cancelAutoStart();
   if (!net?.isHost || session) return;
@@ -1056,7 +1043,7 @@ function startFight() {
     id: m.peerId, pid: m.pid || null, name: m.name, color: m.color, build: sanitizeBuild(m.build), hat: sanitizeHat(m.hat),
   }));
   const seed = (Math.random() * 1e9) | 0;
-  const votedMap = tallyMapVotes(active);
+  const votedMap = tallyMapVotes(active.map(m => m.vote));
   const map = MAPS[votedMap] ? votedMap : DEFAULT_MAP;
   net.broadcast({ t: 'start', players, seed, map });
   startSession({ mode: 'host', myId: net.myId, players, seed, map });

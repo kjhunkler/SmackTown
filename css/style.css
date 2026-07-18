@@ -881,6 +881,19 @@ input[type=text]:focus { border-color: var(--accent); }
     #ffd76a 86% 100%);
 }
 
+/* size cards: vote a whole size class, fate picks the arena. The floor
+   bar grows with the class; the dice mark the random draw. */
+.size-thumb { background: linear-gradient(#141b30, #232c4a); }
+.size-thumb::before {
+  content: '🎲';
+  position: static; height: auto; border-radius: 0; background: none;
+  display: block; text-align: center; margin-top: 4px; font-size: 15px;
+  filter: saturate(.4);
+}
+.size-thumb-small::after { left: 36%; right: 36%; }
+.size-thumb-medium::after { left: 22%; right: 22%; }
+.size-thumb-large::after { left: 7%; right: 7%; }
+
 /* Landscape phones: short viewport — compact the chrome and lay the lobby
    out in two columns (room info + roster left, actions right) so nothing
    important sits below the fold. */
