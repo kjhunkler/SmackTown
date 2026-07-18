@@ -674,6 +674,10 @@ input[type=text]:focus { border-color: var(--accent); }
   width: 46px; height: 46px;
   display: block;
 }
+/* lobby roster: full-detail idle fighters (body + weapon + hat), taller
+   than the plain thumbs so the whole design fits */
+.roster .r-fighter-live { display: block; width: 100%; height: 100%; }
+#lobby-roster .r-fig { width: 58px; height: 72px; margin: -6px 0; }
 .roster .r-swatch { display: block; width: 24px; height: 24px; border-radius: 7px; flex: none; }
 .roster .r-hat {
   position: absolute;
@@ -961,6 +965,7 @@ input[type=text]:focus { border-color: var(--accent); }
   .lobby-panel > .btn.ghost, .lobby-panel > .btn.invite { padding: 8px; font-size: 13px; }
   .lobby-panel > .section-title { grid-area: maptitle; margin: 0; align-self: center; }
   .lobby-panel > .section-title .hint { display: none; }   /* too tight here */
+  #lobby-roster .r-fig { width: 46px; height: 58px; margin: -8px 0; }
   #lobby-maps { grid-area: maps; align-self: start; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   #lobby-maps .map-card { padding: 5px 4px; gap: 3px; min-width: 0; }
   #lobby-maps .map-name { font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }

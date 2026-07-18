@@ -7,6 +7,7 @@ import {
   HAT_W, HAT_H, HAT_PX, HAT_FACE_ROWS, HAT_CHARS, HAT_PALETTE, sanitizeHat,
 } from './profile.js';
 import { MAPS, MAP_SIZES, mapsOfSize } from './game.js';
+import { BOX_X, BOX_Y, BOX_W, BOX_H } from './hat.js';
 import { SFX } from './sfx.js';
 import { settings, KEY_ACTIONS, PAD_ACTIONS, padBtnLabel } from './settings.js';
 
@@ -312,6 +313,158 @@ function fighterThumb(color, hat) {
   return c;
 }
 
+// ---------- animated lobby fighters ----------
+// The lobby roster shows everyone at full in-game detail — true body
+// proportions, the worn weapon from their build, their hat on the real
+// in-game anchor — idling with the same blink-and-glance life as the Hat
+// Studio fighter. One shared rAF loop drives every visible canvas, and
+// canvases persist across roster re-renders so the gaze never pops.
+const lobbyFighters = new Map();       // peerId -> canvas + eye state
+let lobbyFighterRaf = 0;
+
+// Local units match render.js fighter space (body 46x64 centered on 0,0;
+// hat box from hat.js). The view frames hat top through feet: 80 wide,
+// 100 tall, with the body center 66 units down.
+const LF_VIEW_W = 80, LF_VIEW_H = 100, LF_CY = 66;
+const LF_SCALE = 1.4;                  // backing pixels per unit
+
+function lobbyFighter(m) {
+  let s = lobbyFighters.get(m.peerId);
+  if (!s) {
+    const canvas = document.createElement('canvas');
+    canvas.width = LF_VIEW_W * LF_SCALE;
+    canvas.height = LF_VIEW_H * LF_SCALE;
+    canvas.className = 'r-fighter-live';
+    s = {
+      canvas, ctx: canvas.getContext('2d'),
+      blink: 0, nextBlink: 1 + Math.random() * 3,
+      pupil: { x: 0, y: 0 }, pupilTgt: { x: 0, y: 0 },
+      nextGlance: Math.random() * 2, lastT: 0,
+    };
+    lobbyFighters.set(m.peerId, s);
+  }
+  s.color = m.color || '#f5f5f5';
+  s.hat = m.hat || null;
+  s.weapon = m.build?.weapon || null;
+  s.asleep = !!m.idle || m.status === 'away';
+  if (!lobbyFighterRaf) lobbyFighterRaf = requestAnimationFrame(lobbyFighterStep);
+  return s.canvas;
+}
+
+function lobbyFighterStep(t) {
+  lobbyFighterRaf = 0;
+  for (const [id, s] of lobbyFighters) {
+    if (!s.canvas.isConnected) { lobbyFighters.delete(id); continue; }
+    const dt = Math.min(0.05, (t - s.lastT) / 1000);
+    s.lastT = t;
+    if (!s.canvas.offsetParent) continue;    // lobby hidden — keep state, skip draw
+    // idle life: blink every few seconds, glance somewhere now and then
+    s.nextBlink -= dt;
+    if (s.nextBlink <= 0) { s.blink = 0.13; s.nextBlink = 2 + Math.random() * 2.5; }
+    s.blink = Math.max(0, s.blink - dt);
+    s.nextGlance -= dt;
+    if (s.nextGlance <= 0) {
+      s.pupilTgt = Math.random() < 0.3
+        ? { x: 0, y: 0 }                     // back to center
+        : { x: (Math.random() * 6 - 3) | 0, y: (Math.random() * 3 - 1.5) | 0 };
+      s.nextGlance = 1.2 + Math.random() * 2.4;
+    }
+    const k = 1 - Math.pow(0.0005, dt);
+    s.pupil.x += (s.pupilTgt.x - s.pupil.x) * k;
+    s.pupil.y += (s.pupilTgt.y - s.pupil.y) * k;
+    drawLobbyFighter(s);
+  }
+  if (lobbyFighters.size) lobbyFighterRaf = requestAnimationFrame(lobbyFighterStep);
+}
+
+function drawLobbyFighter(s) {
+  const { ctx, canvas } = s;
+  const bw = 46, bh = 64, bTop = -bh / 2;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(canvas.width / 2, LF_CY * LF_SCALE);
+  ctx.scale(LF_SCALE, LF_SCALE);
+
+  // worn weapon at rest, slung behind the body (same art as render.js)
+  if (s.weapon === 'sword') {
+    ctx.save();
+    ctx.translate(-bw / 2 + 9, bTop + 6);
+    ctx.rotate(-0.55);
+    ctx.fillStyle = '#cfd8ea';                       // blade stub
+    ctx.fillRect(-2, -14, 4, 16);
+    ctx.fillStyle = '#ffd23e';                       // crossguard
+    ctx.fillRect(-6.5, -16, 13, 3.5);
+    ctx.fillStyle = '#8a6a48';                       // grip
+    ctx.fillRect(-1.8, -26, 3.6, 10);
+    ctx.fillStyle = '#ffd23e';                       // pommel
+    ctx.beginPath(); ctx.arc(0, -27.5, 2.8, 0, 7); ctx.fill();
+    ctx.restore();
+  } else if (s.weapon === 'boomerang') {
+    ctx.save();
+    ctx.translate(-bw / 2 + 7, bTop + 12);
+    ctx.rotate(-0.5);
+    ctx.fillStyle = '#8fd3ff';
+    rr(ctx, -10, -3.5, 20, 7, 3.5); ctx.fill();
+    rr(ctx, -3.5, -10, 7, 20, 3.5); ctx.fill();
+    ctx.fillStyle = '#eaf7ff';
+    ctx.beginPath(); ctx.arc(0, 0, 3, 0, 7); ctx.fill();
+    ctx.restore();
+  } else if (s.weapon === 'shield') {
+    ctx.save();
+    ctx.translate(-bw / 2 + 3, bTop + bh / 2);
+    ctx.fillStyle = '#9aa3c7';
+    ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 16, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.35)';
+    ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = '#eaf7ff';
+    ctx.beginPath(); ctx.ellipse(0, 0, 2.6, 6, 0, 0, 7); ctx.fill();
+    ctx.restore();
+  } else if (s.weapon === 'spear') {
+    ctx.save();
+    ctx.translate(-bw / 2 + 8, bTop + 4);
+    ctx.rotate(-0.62);
+    ctx.strokeStyle = '#8a6a48';                     // wood shaft
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 30); ctx.stroke();
+    ctx.fillStyle = '#cfd8ea';                       // leaf-shaped head
+    ctx.beginPath();
+    ctx.moveTo(0, -18); ctx.lineTo(-3.4, -9); ctx.lineTo(3.4, -9);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // body (same proportions as the in-game fighter, facing right)
+  ctx.fillStyle = s.color;
+  rr(ctx, -bw / 2, bTop, bw, bh, 14); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.35)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.14)';
+  rr(ctx, -bw / 2 + 5, bTop + 5, bw - 10, bh / 2, 10); ctx.fill();
+
+  // eyes: dark dots that glance around and blink shut; idle/away
+  // players doze with their eyes closed
+  const ex = 8, ey = -bh / 6;
+  ctx.fillStyle = '#10122a';
+  for (const off of [-6, 6]) {
+    if (s.asleep || s.blink > 0) {
+      ctx.fillRect(ex + off - 3.6, ey - 1, 7.2, 2.2);
+    } else {
+      ctx.beginPath();
+      ctx.arc(ex + off + s.pupil.x, ey + s.pupil.y, 3.4, 0, 7);
+      ctx.fill();
+    }
+  }
+
+  // pixel hat on the true in-game anchor
+  const img = hatImage(s.hat);
+  if (img) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, BOX_X, BOX_Y, BOX_W, BOX_H);
+  }
+  ctx.restore();
+}
+
 // ---------- menu card ----------
 
 export function renderMenuCard(profile) {
@@ -418,7 +571,7 @@ export function renderLobby(net, onVote = null, fightOn = false) {
         <span class="r-build">${esc(build)}</span>
       </span>
       <span class="r-meta">${m.ready ? '<div class="r-ready">READY</div>' : ''}${doing ? `<div class="r-act">${doing}</div>` : ''}${idleTag ? `<div class="r-act">${idleTag}</div>` : ''}${!isMe && m.ping ? m.ping + 'ms' : ''}</span>`;
-    li.querySelector('.r-fig').appendChild(fighterThumb(m.color, m.hat));
+    li.querySelector('.r-fig').appendChild(lobbyFighter(m));
     list.appendChild(li);
   }
 
