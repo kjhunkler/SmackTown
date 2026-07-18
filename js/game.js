@@ -490,6 +490,19 @@ const ENEMY_MIN_SPAWN = 0.9;         // fastest spawn cadence at high difficulty
 const ENEMY_SPAWN_RAMP = 0.12;       // cadence seconds shaved per difficulty tier
 const ENEMY_CAP_PER_LEVEL = 2;       // additional living creeps per difficulty tier
 const DIFF_STEP = 24;                // run seconds per difficulty tier
+// Creeps themselves sharpen with the clock, not just the swarm: every
+// strike, shot and boss set piece scales by the damage ramp, hp climbs
+// with a higher ceiling, and common creeps chase a touch faster. All of
+// it is capped so a deep run turns brutal without becoming one-shot city.
+const ENEMY_DMG_RAMP = 0.06;         // +6% damage per difficulty tier
+const ENEMY_DMG_CAP = 2.5;           // damage multiplier ceiling (~tier 25)
+const ENEMY_HP_RAMP = 0.08;          // +8% hp per difficulty tier
+const ENEMY_HP_CAP = 2.0;            // hp ramp ceiling (~tier 25)
+const ENEMY_SPD_RAMP = 0.015;        // +1.5% chase speed per tier (commons only)
+const ENEMY_SPD_CAP = 1.35;          // speed ceiling — always outrunnable
+const ENEMY_ELITE_LEVEL = 6;         // random elites join the mix at this tier
+const ENEMY_ELITE_CHANCE = 0.05;     // per-spawn elite odds past that tier
+const ELITE_DMG_BONUS = 1.25;        // elites hit a quarter harder
 const PARK_SPAWN_GRACE = 1.5;        // spawn breather after the whole party returns from the lobby
 // Percent-keyed augments have no percent to read in co-op, so they retarget
 // onto HP: Berserker rages while the striker is badly hurt, Executioner
@@ -2649,9 +2662,19 @@ export class Game {
   // ---------- co-op enemies ----------
 
   // Difficulty tier from fought time: creeps come faster, in greater numbers,
-  // and from a nastier mix as the tier climbs. Kept gentle so it never spikes,
-  // and clocked on runT so time parked in the workshop doesn't count.
+  // and from a nastier mix as the tier climbs — and each creep hits harder,
+  // carries more hp, and closes faster (see the ramp constants). Kept gentle
+  // so it never spikes, and clocked on runT so parked time doesn't count.
   _difficulty() { return Math.floor(this.runT / DIFF_STEP); }
+
+  // Damage every hostile hit funnels through scales with the tier (elites
+  // stack a flat bonus on top); applied exactly once per damage path —
+  // melee strikes, straight shots, and the boss-only hit/shot helpers.
+  _enemyDmgMult(e = null) {
+    const ramp = Math.min(ENEMY_DMG_CAP, 1 + this._difficulty() * ENEMY_DMG_RAMP);
+    return ramp * (e?.elite ? ELITE_DMG_BONUS : 1);
+  }
+  _enemySpdMult() { return Math.min(ENEMY_SPD_CAP, 1 + this._difficulty() * ENEMY_SPD_RAMP); }
 
   _stepEnemies() {
     const live = this._liveFighters;
@@ -2758,7 +2781,7 @@ export class Game {
         // flyer: home straight in at altitude, ignoring gravity, holding at
         // the edge of its strike arc instead of parking inside the target
         if (tgt) {
-          const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1) * (t.boss ? this._bossVar(e).spd : 1);
+          const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1) * (t.boss ? this._bossVar(e).spd : this._enemySpdMult());
           const hold = Math.abs(tgt.x - e.x) < (t.reach + e.hw) * 0.85;
           let want = hold ? 0 : Math.sign(tgt.x - e.x) * speed;
           if (want !== 0 && !t.boss && this._enemyBlocked(e, t, Math.sign(want))) want = 0;
@@ -2768,7 +2791,7 @@ export class Game {
       } else {
         // ground types: chase under gravity
         e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
-        const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1) * (t.boss ? this._bossVar(e).spd : 1);
+        const speed = t.speed * (e.temperament === 'bold' ? 1.15 : 1) * (t.boss ? this._bossVar(e).spd : this._enemySpdMult());
         let desired = tgt ? Math.sign(tgt.x - e.x) * speed : 0;
         // melee creeps stop at the edge of their strike arc: the swarm forms
         // a fightable front line rather than a pile standing inside its prey
@@ -2937,7 +2960,9 @@ export class Game {
     const biome = expanseBiomeAt(this.seed, cx).id;
     const kind = forcedKind || this._pickEnemyKind(level, biome);
     const t = ENEMY_TYPES[kind];
-    const hp = Math.round(t.hp * (1 + Math.min(1.2, level * 0.08)) * (elite ? 1.65 : 1));
+    // deep runs sprinkle random elites into the mix on top of patrol champions
+    elite = elite || (level >= ENEMY_ELITE_LEVEL && this.rng() < ENEMY_ELITE_CHANCE);
+    const hp = Math.round(t.hp * (1 + Math.min(ENEMY_HP_CAP, level * ENEMY_HP_RAMP)) * (elite ? 1.65 : 1));
     const cr = Math.floor((1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0) + (elite ? 3 : 0)) * 5 / 2);
     const hh = t.h / 2, hw = t.w / 2;
     const formationOffset = (slot - (count - 1) / 2) * 72;
@@ -3027,7 +3052,7 @@ export class Game {
       eid: nextEid++, kind: 'foeshot', owner: 'e' + e.eid, foe: true,
       x: e.x + dx * (e.hw + 8), y: e.y - 4 + dy * 8,
       vx: dx * spd, vy: dy * spd, ttl: 2.4,
-      dmg: t.shotDmg || 7, kb: 260, ks: 4, r: 12,
+      dmg: (t.shotDmg || 7) * this._enemyDmgMult(e), kb: 260, ks: 4, r: 12,
     });
     this.events.push({ e: 'foefire', x: e.x, y: e.y, kind: e.kind });
   }
@@ -3039,11 +3064,12 @@ export class Game {
   _enemyStrike(e, t, live, dmgMult = 1) {
     const half = (t.reach || 50) / 2;
     const sx = e.x + e.facing * (e.hw + half);
+    const power = t.dmg * dmgMult * this._enemyDmgMult(e);
     for (const f of live) {
       if (f.invuln > 0) continue;
       const ob = hurtBox(f);
       if (Math.abs(f.x - sx) < half + F_W / 2 && Math.abs((f.y + ob.dy) - e.y) < e.hh + 26 + ob.hh) {
-        const dmg = this._shielded(f, t.dmg * dmgMult);
+        const dmg = this._shielded(f, power);
         const dir = Math.sign(f.x - e.x) || e.facing;
         f.vx += dir * t.touchKb;
         f.vy = Math.min(f.vy, -150);
@@ -3060,11 +3086,11 @@ export class Game {
     for (const o of this.enemies) {
       if (!o.ally || o.hp <= 0) continue;
       if (Math.abs(o.x - sx) < half + o.hw && Math.abs(o.y - e.y) < e.hh + 26 + o.hh) {
-        o.hp -= t.dmg * dmgMult;
+        o.hp -= power;
         o.hurt = 0.14;
         o.vx += (Math.sign(o.x - e.x) || e.facing) * t.touchKb;
         if (!(ENEMY_TYPES[o.kind] || ENEMY_TYPES.grunt).fly) { o.vy = Math.min(o.vy, -150); o.grounded = false; }
-        this.events.push({ e: 'hit', x: o.x, y: o.y, dmg: Math.round(t.dmg * dmgMult), heavy: false, vic: 'e' + o.eid, att: 'e' + e.eid });
+        this.events.push({ e: 'hit', x: o.x, y: o.y, dmg: Math.round(power), heavy: false, vic: 'e' + o.eid, att: 'e' + e.eid });
         if (o.hp <= 0) this._enemyDied(o, null);
       }
     }
@@ -3272,7 +3298,7 @@ export class Game {
   // knock victims away from where the blow actually landed rather than from
   // the boss itself, which may be standing well clear of it.
   _bossHit(e, t, f, dmg, kb, pop, originX = e.x) {
-    dmg = this._shielded(f, dmg);
+    dmg = this._shielded(f, dmg * this._enemyDmgMult(e));
     const dir = Math.sign(f.x - originX) || e.facing;
     f.vx += dir * kb;
     f.vy = Math.min(f.vy, pop);
@@ -3433,7 +3459,7 @@ export class Game {
         eid: nextEid++, kind: 'foeshot', owner: 'e' + e.eid, foe: true,
         x: e.x + Math.cos(ang) * (e.hw + 10), y: e.y - 6 + Math.sin(ang) * 12,
         vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
-        ttl: 2.6, dmg: (t.shotDmg || 4) * dmgMult, kb: 300, ks: 4, r: 13,
+        ttl: 2.6, dmg: (t.shotDmg || 4) * dmgMult * this._enemyDmgMult(e), kb: 300, ks: 4, r: 13,
       });
     }
     this.events.push({ e: 'foefire', x: e.x, y: e.y, kind: e.kind });
@@ -3447,7 +3473,7 @@ export class Game {
         eid: nextEid++, kind: 'foeshot', owner: 'e' + e.eid, foe: true,
         x: e.x + Math.cos(ang) * (e.hw + 10), y: e.y - 6 + Math.sin(ang) * (e.hh * 0.5),
         vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
-        ttl: 2.2, dmg: (t.shotDmg || 4) * dmgMult, kb: 280, ks: 4, r: 13,
+        ttl: 2.2, dmg: (t.shotDmg || 4) * dmgMult * this._enemyDmgMult(e), kb: 280, ks: 4, r: 13,
       });
     }
     this.events.push({ e: 'foefire', x: e.x, y: e.y, kind: e.kind });
@@ -3718,6 +3744,7 @@ export class Game {
       over: this.over,
       win: this.winner ? this.winner.id : null,
       map: this.map,
+      rt: r1(this.runT),               // difficulty clock survives host handoff
       f: this.fighters.map(f => {
         const hb = this.hitboxFor(f);
         return [
@@ -3780,6 +3807,7 @@ export function gameFromSnapshot(players, snap, seed = 2) {
   const g = new Game(players, seed, snap?.map || DEFAULT_MAP);
   if (!snap) return g;
   g.tick = snap.tk || 0;
+  g.runT = +snap.rt || 0;             // resume the difficulty ramp where it stood
   for (const row of snap.f || []) {
     const f = g.fighters.find(x => x.id === row[0]);
     if (!f) continue;
