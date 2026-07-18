@@ -534,8 +534,9 @@ const ATTACKS = {
   // carves a dead zone out of the near end, so the point only connects at
   // real distance (rx = tip reach, gap = blind spot, both from the body's
   // edge; ry = half-thickness of the head). Whiffs up close, rewards
-  // spacing with the biggest hit in the game.
-  thrust: { dmg: 17, kb: 170, ks: 16, startup: .11, active: .08, rec: .22, rx: 150, gap: 50, ry: 8, ang: -20, spear: true },
+  // spacing with the biggest hit in the game, and its recovery was
+  // trimmed so a spaced whiff isn't as punishable.
+  thrust: { dmg: 19, kb: 174, ks: 17, startup: .11, active: .08, rec: .19, rx: 150, gap: 50, ry: 8, ang: -20, spear: true },
   // spear grounded down-smash: a haft SWEEP whirled low around the body,
   // both sides at once with no dead zone — the spear's answer to being
   // crowded. Everything hugging the wielder gets swept up and away; at
@@ -581,7 +582,7 @@ const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 const FIST_LUNGE = 0.45;             // smash-kit lunge, fraction of the sword's
 const FIST_LUNGE_UP = 1.8;           // up & diagonal-up smashes climb extra hard (recovery)
 const SPEAR_LUNGE = 0.5;             // thrust lunge, fraction of the sword's
-const SPEAR_LUNGE_UP = 1.6;          // up-thrusts carry extra upward momentum
+const SPEAR_LUNGE_UP = 3.2;          // up-thrusts carry extra upward momentum (doubled)
 // Magic movement: big casts kick. A charged release shoves the caster
 // slightly backward, and a charged DOWN-cast rocket-jumps them skyward.
 const CAST_RECOIL_MIN = 0.45;        // charge fraction where recoil starts
