@@ -26,7 +26,7 @@ const players = [
     && m.main.w < MAPS.frostspire.main.w && m.main.w < MAPS.temple.main.w);
   check('medium tier is comparable to ruins/garden, not the tiny stages',
     m.main.w > MAPS.skyline.main.w && m.main.w > MAPS.foundry.main.w);
-  check('main floor spans ±380 at y=0', m.main.x === -380 && m.main.w === 760 && m.main.y === 0);
+  check('main floor spans ±500 at y=0', m.main.x === -500 && m.main.w === 1000 && m.main.y === 0);
   check('three platforms, exactly one mover (the crane)',
     m.plats.length === 3 && m.plats.filter(p => p.move).length === 1);
   check('every platform floats over the boardwalk', m.plats.every(p =>

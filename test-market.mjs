@@ -26,7 +26,7 @@ const players = [
     && m.main.w < MAPS.frostspire.main.w && m.main.w < MAPS.temple.main.w);
   check('medium tier is comparable to the other medium maps',
     m.main.w > MAPS.skyline.main.w && m.main.w > MAPS.foundry.main.w);
-  check('main floor spans ±370 at y=0', m.main.x === -370 && m.main.w === 740 && m.main.y === 0);
+  check('main floor spans ±490 at y=0', m.main.x === -490 && m.main.w === 980 && m.main.y === 0);
   check('three platforms, exactly one mover (the banner walk)',
     m.plats.length === 3 && m.plats.filter(p => p.move).length === 1);
   check('every platform floats over the plaza', m.plats.every(p =>

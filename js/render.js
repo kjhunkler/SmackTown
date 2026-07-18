@@ -109,6 +109,7 @@ const THEMES = {
     sky: ['#160f24', '#2c1c3a', '#4a2c3a'],
     motif: 'moon',
     stars: 0.5,
+    ambient: 'lanternmotes',
     deck: '#4a3626', lip: '#6a4c34', trim: '#ffb84a',
     plat: '#5c4230', platTop: '#8a6440',
   },
@@ -2963,8 +2964,34 @@ export class Renderer {
   // Sunken Docks: a foggy boardwalk over black harbor water, pilings
   // driven into a faint rippling reflection, amber lantern glow, and a
   // dockside crane swinging its cargo hook back and forth over center.
+  // A far lighthouse sweeps its beam through the fog, a moored skiff and
+  // a blinking buoy ride the swell, and lamp posts pool light on the deck.
   _docksStage(ctx, plats, tickF, t) {
     const th = this.theme, m = this.stage.main;
+
+    // lighthouse on a far rock, its beam sweeping through the fog
+    const lhx = m.x + m.w + 430 - this.cam.x * 0.1;
+    const lhy = m.y + 46;
+    ctx.fillStyle = 'rgba(22, 32, 42, .9)';
+    ctx.beginPath();
+    ctx.moveTo(lhx - 80, lhy + 70);
+    ctx.quadraticCurveTo(lhx, lhy - 16, lhx + 80, lhy + 70);
+    ctx.closePath(); ctx.fill();
+    roundRect(ctx, lhx - 15, lhy - 150, 30, 156, 4); ctx.fill();
+    ctx.fillRect(lhx - 21, lhy - 166, 42, 18);
+    const ang = Math.PI + Math.sin(t * 0.35) * 0.45;     // beam wanders the harbor
+    const beamLen = 640;
+    const bg2 = ctx.createLinearGradient(lhx, lhy - 158, lhx + Math.cos(ang) * beamLen, lhy - 158 + Math.sin(ang) * beamLen);
+    bg2.addColorStop(0, 'rgba(255, 218, 130, .26)');
+    bg2.addColorStop(1, 'rgba(255, 218, 130, 0)');
+    ctx.fillStyle = bg2;
+    ctx.beginPath();
+    ctx.moveTo(lhx, lhy - 158);
+    ctx.lineTo(lhx + Math.cos(ang - 0.07) * beamLen, lhy - 158 + Math.sin(ang - 0.07) * beamLen);
+    ctx.lineTo(lhx + Math.cos(ang + 0.07) * beamLen, lhy - 158 + Math.sin(ang + 0.07) * beamLen);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffda82';
+    ctx.fillRect(lhx - 5, lhy - 162, 10, 8);
 
     // black water reflection under the boardwalk, rippling gently
     const wy = m.y + 90;
@@ -2984,10 +3011,45 @@ export class Renderer {
       ctx.stroke();
     }
 
+    // moored skiff riding the swell off the west end
+    const skx = m.x - 260;
+    const sky2 = wy - 6 + Math.sin(t * 0.8) * 4;
+    ctx.save();
+    ctx.translate(skx, sky2);
+    ctx.rotate(Math.sin(t * 0.8 + 1.2) * 0.045);
+    ctx.fillStyle = '#241c14';
+    ctx.beginPath();
+    ctx.moveTo(-56, -8); ctx.lineTo(56, -8); ctx.lineTo(38, 10); ctx.lineTo(-38, 10);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#33281c';
+    ctx.fillRect(-3, -52, 5, 44);                        // stub mast
+    const skg = ctx.createRadialGradient(14, -18, 1, 14, -18, 18);
+    skg.addColorStop(0, 'rgba(255, 179, 71, .45)');
+    skg.addColorStop(1, 'rgba(255, 179, 71, 0)');
+    ctx.fillStyle = skg;
+    ctx.fillRect(-4, -36, 36, 36);                       // stern lantern glow
+    ctx.restore();
+
+    // channel buoy bobbing east of the pier, light blinking slow
+    const bx2 = m.x + m.w + 220;
+    const by2 = wy + 2 + Math.sin(t * 0.9 + 2) * 5;
+    ctx.fillStyle = '#4a2e20';
+    ctx.beginPath();
+    ctx.moveTo(bx2 - 14, by2 + 8); ctx.lineTo(bx2 + 14, by2 + 8); ctx.lineTo(bx2 + 8, by2 - 18);
+    ctx.lineTo(bx2 - 8, by2 - 18);
+    ctx.closePath(); ctx.fill();
+    ctx.fillRect(bx2 - 2, by2 - 30, 4, 12);
+    const blink = Math.max(0, Math.sin(t * 1.4));
+    const bl = ctx.createRadialGradient(bx2, by2 - 32, 1, bx2, by2 - 32, 18 * (0.4 + blink));
+    bl.addColorStop(0, `rgba(255, 90, 70, ${(0.7 * blink * blink).toFixed(3)})`);
+    bl.addColorStop(1, 'rgba(255, 90, 70, 0)');
+    ctx.fillStyle = bl;
+    ctx.fillRect(bx2 - 26, by2 - 58, 52, 52);
+
     // pilings driven down from the boardwalk into the water
     ctx.fillStyle = '#2a2018';
-    for (let i = 0; i < 7; i++) {
-      const px = m.x + 40 + i * (m.w - 80) / 6;
+    for (let i = 0; i < 9; i++) {
+      const px = m.x + 40 + i * (m.w - 80) / 8;
       ctx.fillRect(px - 6, m.y + m.h, 12, 140);
     }
 
@@ -3008,6 +3070,33 @@ export class Renderer {
     ctx.globalAlpha = glow;
     ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
     ctx.globalAlpha = 1;
+
+    // dock lamps at each end of the boardwalk, pooling warm light
+    for (const px of [m.x + 60, m.x + m.w - 60]) {
+      ctx.fillStyle = '#2e2418';
+      ctx.fillRect(px - 3, m.y - 84, 6, 84);
+      ctx.fillRect(px - 12, m.y - 84, 24, 5);
+      const flick = 0.75 + 0.25 * Math.sin(t * 3.1 + px);
+      const lg2 = ctx.createRadialGradient(px, m.y - 68, 2, px, m.y - 68, 42 * flick);
+      lg2.addColorStop(0, 'rgba(255, 179, 71, .5)');
+      lg2.addColorStop(1, 'rgba(255, 179, 71, 0)');
+      ctx.fillStyle = lg2;
+      ctx.fillRect(px - 44, m.y - 112, 88, 88);
+      ctx.fillStyle = '#3a2f22';
+      roundRect(ctx, px - 7, m.y - 76, 14, 16, 3); ctx.fill();
+    }
+
+    // mooring bollards with coiled rope along the deck
+    for (const px of [m.x + 150, m.x + m.w - 150]) {
+      ctx.fillStyle = '#241c14';
+      roundRect(ctx, px - 7, m.y - 18, 14, 18, 4); ctx.fill();
+      ctx.strokeStyle = '#7a6b52';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(px, m.y - 10, 11, 5, 0, 0, 7);
+      ctx.ellipse(px + 24, m.y - 3, 13, 5, 0, 0, 7);     // coil dropped beside it
+      ctx.stroke();
+    }
 
     // pier-stack platforms: crates and a hanging lantern
     for (const [i, p] of plats.entries()) {
@@ -3038,16 +3127,32 @@ export class Renderer {
         roundRect(ctx, hx - 8, hy - 6, 16, 14, 3); ctx.fill();
       }
     }
+
+    // fog banks rolling slowly through the harbor
+    ctx.fillStyle = '#aac3d0';
+    const span = m.w + 1200;
+    for (let i = 0; i < 4; i++) {
+      const prog = ((t * (14 + i * 5) + i * 470) % span) / span;
+      const drift = prog * span - span / 2;
+      const fy = m.y - 40 - i * 75 + Math.sin(t * 0.5 + i * 2) * 12;
+      ctx.globalAlpha = (0.07 + (i % 2) * 0.04) * Math.sin(prog * Math.PI);
+      ctx.beginPath();
+      ctx.ellipse(m.x + m.w / 2 + drift, fy, 220 + i * 40, 22 + i * 5, 0, 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   // Canyon Pass: sun-baked red rock under a blazing noon sky. Layered
   // parallax canyon walls, cracked-earth floor, and a swaying rope bridge
-  // lashed together from planks and frayed cord.
+  // lashed together from planks and frayed cord. Vultures ride the
+  // thermals overhead; saguaros, scrub, and boulders line the pass, and
+  // heat shimmer ripples low over the baked earth.
   _canyonStage(ctx, plats, tickF, t) {
     const th = this.theme, m = this.stage.main;
 
     // distant canyon walls: two parallax layers, warm and hazy
-    const back = [[-1300, 480, 0.10], [-450, 600, 0.14], [500, 560, 0.13], [1250, 500, 0.10]];
+    const back = [[-1600, 460, 0.09], [-1300, 480, 0.10], [-450, 600, 0.14], [500, 560, 0.13], [1250, 500, 0.10], [1600, 470, 0.09]];
     ctx.fillStyle = 'rgba(90, 44, 24, .8)';
     for (const [px, ph, sc] of back) {
       const bx = px - this.cam.x * sc;
@@ -3064,13 +3169,28 @@ export class Renderer {
       ctx.fillRect(bx - ph * 0.3 - 3, m.y + 40 - ph, 6, ph * 0.35);
     }
 
+    // vultures riding the thermals high over the pass
+    ctx.strokeStyle = 'rgba(40, 18, 10, .7)';
+    ctx.lineWidth = 2.5;
+    for (let i = 0; i < 3; i++) {
+      const circ = t * 0.3 + i * 2.1;
+      const vx = -140 + i * 170 + Math.cos(circ) * (100 + i * 26) - this.cam.x * 0.15;
+      const vy = m.y - 430 - i * 48 + Math.sin(circ) * 28;
+      const flap = Math.sin(t * 2 + i * 1.7) * 4;
+      ctx.beginPath();
+      ctx.moveTo(vx - 11, vy + flap);
+      ctx.quadraticCurveTo(vx - 4, vy - 4, vx, vy);
+      ctx.quadraticCurveTo(vx + 4, vy - 4, vx + 11, vy + flap);
+      ctx.stroke();
+    }
+
     // canyon floor: cracked, sun-baked earth
     ctx.fillStyle = th.deck;
     roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
     ctx.strokeStyle = 'rgba(60, 28, 14, .5)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 11; i++) {
       const cx = m.x + 50 + ((i * 293) % (m.w - 100));
       const cy = m.y + 6 + (i % 3) * 10;
       ctx.moveTo(cx, cy);
@@ -3082,6 +3202,46 @@ export class Renderer {
     roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
     ctx.fillStyle = th.trim;
     ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+
+    // saguaros rooted at each end of the pass
+    ctx.fillStyle = '#3f6b34';
+    for (const [cx, ch] of [[m.x + 52, 58], [m.x + m.w - 64, 68]]) {
+      roundRect(ctx, cx - 7, m.y - ch, 14, ch, 6); ctx.fill();
+      ctx.fillRect(cx - 22, m.y - ch + 20, 16, 9);       // west arm out + up
+      roundRect(ctx, cx - 23, m.y - ch + 4, 9, 25, 4); ctx.fill();
+      ctx.fillRect(cx + 6, m.y - ch + 32, 17, 9);        // east arm out + up
+      roundRect(ctx, cx + 14, m.y - ch + 16, 9, 25, 4); ctx.fill();
+    }
+
+    // weathered boulders and dry scrub scattered along the floor
+    ctx.fillStyle = '#7a3e24';
+    for (const [bx, br] of [[m.x + 165, 15], [m.x + m.w - 180, 18], [m.x + m.w * 0.36, 9]]) {
+      ctx.beginPath(); ctx.arc(bx, m.y + 2, br, Math.PI, 0); ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(150, 112, 58, .8)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const gx = m.x + 90 + ((i * 431) % (m.w - 180));
+      for (let b = -2; b <= 2; b++) {
+        ctx.moveTo(gx, m.y + 2);
+        ctx.lineTo(gx + b * 4 + Math.sin(t * 1.3 + i + b) * 1.5, m.y - 11 - Math.abs(b));
+      }
+    }
+    ctx.stroke();
+
+    // heat shimmer rippling low over the baked earth
+    ctx.strokeStyle = 'rgba(255, 214, 150, .10)';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 4; i++) {
+      const wy2 = m.y - 4 - i * 14 - (t * 30 % 14);
+      ctx.beginPath();
+      for (let wx = m.x; wx <= m.x + m.w; wx += 30) {
+        const yy = wy2 + Math.sin(wx * 0.03 + t * 2 + i) * 3;
+        wx === m.x ? ctx.moveTo(wx, yy) : ctx.lineTo(wx, yy);
+      }
+      ctx.stroke();
+    }
 
     // ledge/bridge platforms: sun-bleached rock, rope-bridge planks
     for (const [i, p] of plats.entries()) {
@@ -3115,7 +3275,9 @@ export class Renderer {
 
   // Midnight Market: a paved night bazaar under a crescent moon, strung
   // with warm paper lanterns between stalls and a drifting banner walk
-  // trailing lit lanterns of its own.
+  // trailing lit lanterns of its own. A row of shuttered stalls crowds
+  // the back of the plaza — one still smoking from the dinner rush —
+  // under crisscrossed pennant bunting, with goods crated at the edges.
   _marketStage(ctx, plats, tickF, t) {
     const th = this.theme, m = this.stage.main;
 
@@ -3133,6 +3295,55 @@ export class Renderer {
       ctx.closePath(); ctx.fill();
     }
 
+    // bazaar stalls crowding the back of the plaza, shuttered for the night
+    for (let i = 0; i < 4; i++) {
+      const sx = m.x + 110 + i * (m.w - 220) / 3;
+      ctx.fillStyle = 'rgba(30, 20, 44, .9)';
+      ctx.fillRect(sx - 36, m.y - 72, 72, 72);
+      ctx.fillStyle = i % 2 ? 'rgba(150, 62, 74, .85)' : 'rgba(64, 74, 140, .85)';
+      ctx.beginPath();                                   // sloped canvas awning
+      ctx.moveTo(sx - 47, m.y - 68);
+      ctx.lineTo(sx, m.y - 92);
+      ctx.lineTo(sx + 47, m.y - 68);
+      ctx.closePath(); ctx.fill();
+      const cg = ctx.createRadialGradient(sx, m.y - 34, 2, sx, m.y - 34, 30);
+      cg.addColorStop(0, 'rgba(255, 184, 74, .28)');     // counter lamp left burning
+      cg.addColorStop(1, 'rgba(255, 184, 74, 0)');
+      ctx.fillStyle = cg;
+      ctx.fillRect(sx - 30, m.y - 64, 60, 60);
+    }
+
+    // skewer-stand smoke still curling up from the second stall
+    const smx = m.x + 110 + (m.w - 220) / 3;
+    ctx.fillStyle = 'rgba(180, 170, 190, .14)';
+    for (let i = 0; i < 5; i++) {
+      const rise = ((t * 26 + i * 34) % 170);
+      ctx.beginPath();
+      ctx.ellipse(smx + 20 + Math.sin(t * 0.9 + i * 1.9) * (6 + rise * 0.12),
+        m.y - 92 - rise, 6 + rise * 0.09, 5 + rise * 0.06, 0, 0, 7);
+      ctx.fill();
+    }
+
+    // pennant bunting strung high over the lantern line
+    ctx.strokeStyle = 'rgba(120, 90, 60, .4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(m.x - 40, m.y - 265);
+    ctx.quadraticCurveTo(m.x + m.w / 2, m.y - 218, m.x + m.w + 40, m.y - 265);
+    ctx.stroke();
+    for (let i = 0; i <= 12; i++) {
+      const k = i / 12;
+      const fx = m.x - 40 + (m.w + 80) * k;
+      const fy = m.y - 265 + Math.sin(k * Math.PI) * 46;
+      const sway = Math.sin(t * 1.2 + i) * 3;
+      ctx.fillStyle = ['rgba(217, 92, 92, .75)', 'rgba(240, 190, 90, .75)', 'rgba(110, 160, 220, .75)'][i % 3];
+      ctx.beginPath();
+      ctx.moveTo(fx - 7, fy);
+      ctx.lineTo(fx + 7, fy);
+      ctx.lineTo(fx + sway, fy + 16);
+      ctx.closePath(); ctx.fill();
+    }
+
     // strung lantern line sagging across the plaza
     ctx.strokeStyle = 'rgba(120, 90, 60, .5)';
     ctx.lineWidth = 2;
@@ -3140,8 +3351,8 @@ export class Renderer {
     ctx.moveTo(m.x - 20, m.y - 190);
     ctx.quadraticCurveTo(m.x + m.w / 2, m.y - 140, m.x + m.w + 20, m.y - 190);
     ctx.stroke();
-    for (let i = 0; i <= 8; i++) {
-      const k = i / 8;
+    for (let i = 0; i <= 10; i++) {
+      const k = i / 10;
       const lx = m.x - 20 + (m.w + 40) * k;
       const ly = m.y - 190 + Math.sin(k * Math.PI) * 50;
       const pulse = 0.6 + 0.4 * Math.sin(t * 1.8 + i * 0.8);
@@ -3173,6 +3384,26 @@ export class Renderer {
     roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
     ctx.fillStyle = th.trim;
     ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+
+    // goods stacked at the plaza edges: crates west, a laden basket east
+    ctx.fillStyle = '#5c4230';
+    ctx.fillRect(m.x + 34, m.y - 24, 26, 24);
+    ctx.fillRect(m.x + 44, m.y - 44, 22, 20);
+    ctx.strokeStyle = 'rgba(20, 14, 10, .5)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(m.x + 37, m.y - 21, 20, 18);
+    ctx.strokeRect(m.x + 47, m.y - 41, 16, 14);
+    ctx.fillStyle = '#6a4c34';
+    ctx.beginPath();                                     // woven basket
+    ctx.moveTo(m.x + m.w - 66, m.y - 22);
+    ctx.lineTo(m.x + m.w - 30, m.y - 22);
+    ctx.lineTo(m.x + m.w - 36, m.y);
+    ctx.lineTo(m.x + m.w - 60, m.y);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#c9683c';                            // heaped fruit
+    for (const [fx2, fy2] of [[-58, -26], [-48, -30], [-38, -26], [-53, -22], [-43, -22]]) {
+      ctx.beginPath(); ctx.arc(m.x + m.w + fx2, m.y + fy2, 5, 0, 7); ctx.fill();
+    }
 
     // stall-roof / banner-walk platforms, each with its own paper lantern
     for (const [i, p] of plats.entries()) {
@@ -3589,6 +3820,39 @@ export class Renderer {
         ctx.globalAlpha = Math.min(1, a * 1.6);
         ctx.fillStyle = '#eaffbe';
         ctx.fillRect(x - 1.2, y - 1.2, 2.4, 2.4);
+      }
+      ctx.globalAlpha = 1;
+      this.ambient = this.ambient.filter(f => f.t < f.life);
+      return;
+    }
+    if (this.theme.ambient === 'lanternmotes') {
+      // warm motes rising off the lantern glow, wandering moth-like
+      while (this.ambient.length < 30) {
+        this.ambient.push({
+          x: this.cam.x + (Math.random() - 0.5) * 2200,
+          y: this.cam.y + (Math.random() - 0.2) * 700,
+          vy: -(10 + Math.random() * 18),
+          sx: 20 + Math.random() * 40, ph: Math.random() * 7,
+          blink: 0.8 + Math.random() * 1.6,
+          life: 6 + Math.random() * 5, t: 0,
+        });
+      }
+      for (const f of this.ambient) {
+        f.t += dt;
+        f.y += f.vy * dt;
+        const k = f.t / f.life;
+        if (k >= 1) continue;
+        const x = f.x + Math.sin(t * 0.7 + f.ph) * f.sx;
+        const pulse = 0.5 + 0.5 * Math.sin(t * f.blink + f.ph);
+        const a = Math.sin(k * Math.PI) * (0.12 + 0.5 * pulse);
+        const g = ctx.createRadialGradient(x, f.y, 0, x, f.y, 7);
+        g.addColorStop(0, `rgba(255, 200, 110, ${a.toFixed(3)})`);
+        g.addColorStop(1, 'rgba(255, 200, 110, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x - 7, f.y - 7, 14, 14);
+        ctx.globalAlpha = Math.min(1, a * 1.5);
+        ctx.fillStyle = '#ffe2ae';
+        ctx.fillRect(x - 1, f.y - 1, 2, 2);
       }
       ctx.globalAlpha = 1;
       this.ambient = this.ambient.filter(f => f.t < f.life);

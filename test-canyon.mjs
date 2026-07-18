@@ -26,7 +26,7 @@ const players = [
     && m.main.w < MAPS.frostspire.main.w && m.main.w < MAPS.temple.main.w);
   check('medium tier is comparable to the other medium maps',
     m.main.w > MAPS.skyline.main.w && m.main.w > MAPS.foundry.main.w);
-  check('main floor spans ±360 at y=0', m.main.x === -360 && m.main.w === 720 && m.main.y === 0);
+  check('main floor spans ±480 at y=0', m.main.x === -480 && m.main.w === 960 && m.main.y === 0);
   check('three platforms, exactly one mover (the rope bridge)',
     m.plats.length === 3 && m.plats.filter(p => p.move).length === 1);
   check('every platform floats over the canyon floor', m.plats.every(p =>

@@ -162,15 +162,15 @@ export const MAPS = {
   // enough over center to need a double jump straight off the deck.
   docks: {
     name: 'Sunken Docks',
-    main: { x: -380, y: 0, w: 760, h: 46 },              // boardwalk over the harbor
+    main: { x: -500, y: 0, w: 1000, h: 46 },             // boardwalk over the harbor
     plats: [
-      { x: -320, y: -140, w: 150 },                      // west pier stack
-      { x: 170,  y: -140, w: 150 },                      // east pier stack
+      { x: -430, y: -140, w: 170 },                      // west pier stack
+      { x: 260,  y: -140, w: 170 },                      // east pier stack
       // dockside crane: swings its load back and forth over the water
-      { x: -75,  y: -255, w: 160, move: { dx: 170, period: 8 } },
+      { x: -80,  y: -255, w: 160, move: { dx: 230, period: 8 } },
     ],
-    blast: { l: -1180, r: 1180, t: -960, b: 500 },
-    spawns: [ -260, 260, -90, 90 ],
+    blast: { l: -1320, r: 1320, t: -960, b: 500 },
+    spawns: [ -340, 340, -120, 120 ],
     respawnY: -300,
   },
   // Red-rock canyon pass, medium-sized. West/east ledges are a clean
@@ -178,15 +178,15 @@ export const MAPS = {
   // enough over the gap to need a double jump straight off the ground.
   canyon: {
     name: 'Canyon Pass',
-    main: { x: -360, y: 0, w: 720, h: 46 },              // sun-baked canyon floor
+    main: { x: -480, y: 0, w: 960, h: 46 },              // sun-baked canyon floor
     plats: [
-      { x: -300, y: -140, w: 140 },                      // west ledge
-      { x: 160,  y: -140, w: 140 },                      // east ledge
+      { x: -410, y: -140, w: 160 },                      // west ledge
+      { x: 250,  y: -140, w: 160 },                      // east ledge
       // rope bridge: sags and sways gently between the canyon walls
-      { x: -70,  y: -250, w: 150, move: { dy: 40, period: 6 } },
+      { x: -80,  y: -250, w: 160, move: { dy: 40, period: 6 } },
     ],
-    blast: { l: -1160, r: 1160, t: -950, b: 500 },
-    spawns: [ -245, 245, -85, 85 ],
+    blast: { l: -1290, r: 1290, t: -950, b: 500 },
+    spawns: [ -330, 330, -115, 115 ],
     respawnY: -290,
   },
   // Lantern-lit night bazaar, medium-sized. West/east stall roofs are a
@@ -194,15 +194,15 @@ export const MAPS = {
   // enough over center to need a double jump straight off the ground.
   market: {
     name: 'Midnight Market',
-    main: { x: -370, y: 0, w: 740, h: 46 },              // paved bazaar plaza
+    main: { x: -490, y: 0, w: 980, h: 46 },              // paved bazaar plaza
     plats: [
-      { x: -310, y: -140, w: 140 },                      // west stall roof
-      { x: 170,  y: -140, w: 140 },                      // east stall roof
+      { x: -420, y: -140, w: 160 },                      // west stall roof
+      { x: 260,  y: -140, w: 160 },                      // east stall roof
       // banner walk: strung lanterns and cloth drifting on the night air
-      { x: -70,  y: -250, w: 150, move: { dx: 150, period: 7 } },
+      { x: -80,  y: -250, w: 160, move: { dx: 200, period: 7 } },
     ],
-    blast: { l: -1170, r: 1170, t: -950, b: 500 },
-    spawns: [ -250, 250, -90, 90 ],
+    blast: { l: -1310, r: 1310, t: -950, b: 500 },
+    spawns: [ -335, 335, -118, 118 ],
     respawnY: -290,
   },
   training: {
