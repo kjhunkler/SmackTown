@@ -503,6 +503,19 @@ const ENEMY_SPD_CAP = 1.35;          // speed ceiling — always outrunnable
 const ENEMY_ELITE_LEVEL = 6;         // random elites join the mix at this tier
 const ENEMY_ELITE_CHANCE = 0.05;     // per-spawn elite odds past that tier
 const ELITE_DMG_BONUS = 1.25;        // elites hit a quarter harder
+// Campaign structure: every felled boss clears an act, and felling
+// EXPEDITION_ACTS of them wins the run ("Road Cleared"). Each downed boss
+// leaves an extraction beacon burning for BEACON_LIFE seconds — if every
+// standing fighter holds inside it for BEACON_CHANNEL seconds, the party
+// banks the run and the podium rolls. Letting the final beacon gutter out
+// starts a victory lap where elites flood the mix. Wiping — every
+// non-parked fighter down at once, nobody left to rally around — ends the
+// run in defeat instead of the old silent infinite respawn.
+export const EXPEDITION_ACTS = 3;
+const BEACON_LIFE = 20;              // seconds an extraction beacon burns
+const BEACON_RADIUS = 120;           // stand-this-close to channel it
+const BEACON_CHANNEL = 2.5;          // seconds everyone must hold the light
+const VICTORY_ELITE_CHANCE = 0.15;   // elite odds on the victory lap
 const PARK_SPAWN_GRACE = 1.5;        // spawn breather after the whole party returns from the lobby
 // Percent-keyed augments have no percent to read in co-op, so they retarget
 // onto HP: Berserker rages while the striker is badly hurt, Executioner
@@ -848,6 +861,10 @@ export class Game {
     this.enemySpawnT = 2.0;        // grace before the first creep wanders in
     this.recoveryT = 0;            // heart-drop breather; spawns hold while it runs
     this.runT = 0;                 // fought seconds: the difficulty clock, paused while everyone is parked
+    this.bossesDown = 0;           // campaign acts cleared (bosses felled this run)
+    this.won = false;              // the act-EXPEDITION_ACTS boss fell: Road Cleared
+    this.beacon = null;            // extraction beacon {x, y, t, charge} or null
+    this.endReason = null;         // co-op ending: 'cleared' | 'extracted' | 'wiped'
     this.hitPause = 0;
     this.rng = mulberry32(seed);
     this.fighters = players.map((p, i) => this._spawnFighter(p, i));
@@ -1098,7 +1115,7 @@ export class Game {
     this._resolveAttacks();
     this._stepHazards();
     this._checkBlast();
-    if (this.coop) { this._stepCoop(); this._stepEnemies(); }
+    if (this.coop) { this._stepCoop(); if (!this.over) this._stepEnemies(); }
     this._stepAllies();   // summoned allies fight in both modes
 
     // Co-op runs never resolve to a winner — the expedition just keeps going.
@@ -2629,11 +2646,47 @@ export class Game {
   }
 
   _stepCoop() {
+    // Full party wipe: everyone still on the road is down at once — nobody
+    // left to rally around, so the run ends here instead of silently
+    // respawning. Checked before revive timers tick so a wipe can't be
+    // undone by the auto-respawn on the same frame. Parked players are in
+    // the workshop, not on the field, so they neither cause nor block it.
+    const active = this.fighters.filter(f => !f.parked);
+    if (active.length && active.every(f => f.dead)) { this._endRun('wiped'); return; }
     for (const f of this.fighters) {
       if (!f.dead || f.parked || f.downT <= 0) continue;
       f.downT -= TICK;
       if (f.downT <= 0) this._respawnCoop(f);
     }
+  }
+
+  // End a co-op run. The sim freezes exactly like a PvP GAME! — main.js
+  // sees `over` (host directly, clients via the snapshot) and rolls the
+  // results podium with the reason.
+  _endRun(reason) {
+    if (this.over) return;
+    this.over = true;
+    this.endReason = reason;
+    this.events.push({ e: 'runend', reason, won: this.won ? 1 : 0 });
+  }
+
+  // Extraction beacon: burns down on its own clock; while every standing
+  // fighter holds inside the light the charge builds, and a full channel
+  // banks the run — 'cleared' if the campaign is already won, otherwise
+  // 'extracted'. Anyone stepping out drains it faster than it fills.
+  _stepBeacon(live) {
+    const b = this.beacon;
+    if (!b || this.over) return;
+    b.t -= TICK;
+    if (b.t <= 0) {
+      this.beacon = null;
+      this.events.push({ e: 'beaconout', x: b.x, y: b.y });
+      return;
+    }
+    const inside = live.length > 0 && live.every(f =>
+      Math.abs(f.x - b.x) < BEACON_RADIUS && Math.abs(f.y - b.y) < 260);
+    b.charge = clamp(b.charge + (inside ? TICK / BEACON_CHANNEL : -TICK * 1.5 / BEACON_CHANNEL), 0, 1);
+    if (b.charge >= 1) this._endRun(this.won ? 'cleared' : 'extracted');
   }
 
   // Revive a downed fighter above the surviving group (or where they fell if
@@ -2680,6 +2733,8 @@ export class Game {
     const live = this._liveFighters;
     live.length = 0;
     for (const f of this.fighters) if (!f.dead && !f.parked) live.push(f);
+    this._stepBeacon(live);
+    if (this.over) return;               // the beacon banked the run this tick
     const level = this._difficulty();
     const plats = this.platsNow();
 
@@ -2960,8 +3015,10 @@ export class Game {
     const biome = expanseBiomeAt(this.seed, cx).id;
     const kind = forcedKind || this._pickEnemyKind(level, biome);
     const t = ENEMY_TYPES[kind];
-    // deep runs sprinkle random elites into the mix on top of patrol champions
-    elite = elite || (level >= ENEMY_ELITE_LEVEL && this.rng() < ENEMY_ELITE_CHANCE);
+    // deep runs sprinkle random elites into the mix on top of patrol
+    // champions; on the victory lap the gate opens and elites flood in
+    elite = elite || ((this.won || level >= ENEMY_ELITE_LEVEL)
+      && this.rng() < (this.won ? VICTORY_ELITE_CHANCE : ENEMY_ELITE_CHANCE));
     const hp = Math.round(t.hp * (1 + Math.min(ENEMY_HP_CAP, level * ENEMY_HP_RAMP)) * (elite ? 1.65 : 1));
     const cr = Math.floor((1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0) + (elite ? 3 : 0)) * 5 / 2);
     const hh = t.h / 2, hw = t.w / 2;
@@ -2983,11 +3040,12 @@ export class Game {
   }
 
   // A boss bars the road ahead of the party. Type rolls on the run rng; the
-  // variation tier climbs with the difficulty level, so late runs meet the
-  // nastier cousins of each boss.
+  // variation tier follows the campaign act — the first boss is always the
+  // base cousin, the second the mid tier, and the act-3 capstone (and every
+  // victory-lap boss after it) the nastiest of the three.
   _spawnBoss(live, level) {
     const kind = BOSS_KINDS[Math.floor(this.rng() * BOSS_KINDS.length)];
-    const variant = Math.min(2, Math.floor(level / 4));
+    const variant = Math.min(2, this.bossesDown);
     const t = ENEMY_TYPES[kind];
     const v = BOSS_VARIANTS[kind][variant];
     const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
@@ -3659,6 +3717,16 @@ export class Game {
         this._spawnHeart(e.x, e.y, Math.cos(a) * spd, Math.sin(a) * spd - 340);
       }
       this.events.push({ e: 'bossdown', x: e.x, y: e.y, kind: e.kind, variant: e.variant || 0, name: this._bossVar(e).name });
+      // campaign beat: the act is cleared; the third boss wins the run
+      this.bossesDown++;
+      if (!this.won && this.bossesDown >= EXPEDITION_ACTS) {
+        this.won = true;
+        this.events.push({ e: 'roadclear', x: e.x, y: e.y });
+      }
+      // the way home opens: an extraction beacon burns where the boss fell
+      const bx = e.x, by = this.stage.main.y;
+      this.beacon = { x: bx, y: by, t: BEACON_LIFE, charge: 0 };
+      this.events.push({ e: 'beacon', x: bx, y: by, won: this.won ? 1 : 0, life: BEACON_LIFE });
     } else if (this.rng() < HEART_DROP_CHANCE) this._spawnHeart(e.x, e.y);
   }
 
@@ -3745,6 +3813,13 @@ export class Game {
       win: this.winner ? this.winner.id : null,
       map: this.map,
       rt: r1(this.runT),               // difficulty clock survives host handoff
+      // campaign state rides along too: acts cleared, the win flag, how the
+      // run ended, and any live extraction beacon — so clients can draw it
+      // and a successor host resumes the exact same campaign
+      bd: this.bossesDown,
+      wn: this.won ? 1 : 0,
+      end: this.endReason || 0,
+      bc: this.beacon ? [r1(this.beacon.x), r1(this.beacon.y), r2(this.beacon.t), r2(this.beacon.charge)] : 0,
       f: this.fighters.map(f => {
         const hb = this.hitboxFor(f);
         return [
@@ -3808,6 +3883,11 @@ export function gameFromSnapshot(players, snap, seed = 2) {
   if (!snap) return g;
   g.tick = snap.tk || 0;
   g.runT = +snap.rt || 0;             // resume the difficulty ramp where it stood
+  g.bossesDown = snap.bd | 0;         // …and the campaign exactly where it stood
+  g.won = !!snap.wn;
+  g.endReason = snap.end || null;
+  g.over = !!snap.over;
+  g.beacon = snap.bc ? { x: +snap.bc[0] || 0, y: +snap.bc[1] || 0, t: +snap.bc[2] || 0, charge: +snap.bc[3] || 0 } : null;
   for (const row of snap.f || []) {
     const f = g.fighters.find(x => x.id === row[0]);
     if (!f) continue;

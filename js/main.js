@@ -9,7 +9,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, LOOT_CR_BONUS } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, LOOT_CR_BONUS, EXPEDITION_ACTS } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -1598,9 +1598,11 @@ class Session {
         ally: !!e.ally,
       })),
       hearts: this.game.hearts.map(h => ({ hid: h.hid, x: h.x, y: h.y, tLeft: HEART_LIFE - h.t })),
+      beacon: this.game.beacon ? { ...this.game.beacon } : null,
+      campaign: this.coop ? { acts: this.game.bossesDown, won: this.game.won } : null,
     };
     this.renderView(view, dt);
-    if (this.game.over && !this.ended) this.finish(this.game.winner?.id ?? null, view.fighters);
+    if (this.game.over && !this.ended) this.finish(this.game.winner?.id ?? null, view.fighters, this.game.endReason);
   }
 
   // ----- predicted loop (client) -----
@@ -1647,7 +1649,7 @@ class Session {
 
     const s = this.lastSnap;
     if (s && s.over && !this.ended) {
-      this.finish(s.win, this.rowsToFighters(s.f));
+      this.finish(s.win, this.rowsToFighters(s.f), s.end || null);
     }
   }
 
@@ -1665,7 +1667,9 @@ class Session {
       const biome = expanseBiomeAt(this.seed, mine?.x || 0);
       $('#game-expedition').classList.remove('hidden');
       $('#expedition-biome').textContent = MAPS[biome.id].name;
-      $('#expedition-progress').textContent = `${Math.max(0, Math.floor((mine?.x || 0) / 100)) * 100}m · Tier ${Math.floor((view.tick || 0) / 900) + 1}`;
+      const camp = view.campaign;
+      const actTag = camp?.won ? '🏆 Cleared' : `Act ${Math.min(EXPEDITION_ACTS, (camp?.acts || 0) + 1)}/${EXPEDITION_ACTS}`;
+      $('#expedition-progress').textContent = `${Math.max(0, Math.floor((mine?.x || 0) / 100)) * 100}m · Tier ${Math.floor((view.tick || 0) / 900) + 1} · ${actTag}`;
       this.lootFrame(cr);
     } else {
       $('#game-expedition').classList.add('hidden');
@@ -1936,7 +1940,10 @@ class Session {
         fighters[i].y += drawn.y - simmed.y;
       }
     }
-    return { fighters, projectiles, tick, enemies, hearts };
+    // campaign extras ride the latest snapshot as-is (no interpolation needed)
+    const beacon = b.s.bc ? { x: +b.s.bc[0] || 0, y: +b.s.bc[1] || 0, t: +b.s.bc[2] || 0, charge: +b.s.bc[3] || 0 } : null;
+    const campaign = this.coop ? { acts: b.s.bd | 0, won: !!b.s.wn } : null;
+    return { fighters, projectiles, tick, enemies, hearts, beacon, campaign };
   }
 
   // ----- events & endgame -----
@@ -1965,19 +1972,27 @@ class Session {
         if (this.mode === 'host' && net) this.broadcastPlayers();
       }
       if (ev.e === 'boss') UI.toast(`⚠️ ${ev.name} bars the road!`, 2600);
-      if (ev.e === 'bossdown') UI.toast(`🏆 ${ev.name || 'Boss'} defeated!`, 2600);
+      if (ev.e === 'bossdown') UI.toast(`🏆 ${ev.name || 'Boss'} defeated — act cleared!`, 2600);
+      if (ev.e === 'roadclear') UI.toast('🏆 THE ROAD IS CLEARED!', 3400);
+      if (ev.e === 'beacon') UI.toast(ev.won
+        ? '⛺ The way home is lit — stand in the beacon to end the run, or fight on into the dark!'
+        : '⛺ Extraction beacon lit — everyone into the light to bank the run, or push deeper!', 3400);
+      if (ev.e === 'beaconout') UI.toast('The beacon gutters out — onward!', 2200);
+      if (ev.e === 'runend' && ev.reason === 'wiped') UI.toast('💀 The party has fallen…', 2400);
       if (ev.e === 'bosssig') UI.toast(`⚡ ${ev.name} unleashes ${ev.atk}!`, 2400);
       if (ev.e === 'gameover') UI.toast('GAME!', 2000);
     }
   }
 
-  finish(winnerId, finalFighters) {
+  finish(winnerId, finalFighters, outcome = null) {
     this.ended = true;
     const mine = finalFighters.find(f => f.id === this.myId);
+    const acts = Math.min(EXPEDITION_ACTS, this.game?.bossesDown ?? this.lastSnap?.bd ?? 0);
     const runSummary = this.coop && mine ? {
       distance: Math.max(0, Math.floor(mine.x / 100)) * 100,
       tier: Math.floor((this.game?.tick || this.lastSnap?.tk || 0) / 900) + 1,
       biomes: Math.max(1, Math.floor(Math.max(0, mine.x) / 3600) + 1),
+      acts,
       defeats: mine.score?.ko || 0,
       elites: mine.score?.elite || 0,
       credits: earnedCredits(mine.score),
@@ -1987,8 +2002,8 @@ class Session {
       this.stop();
       const summary = $('#results-expedition');
       summary.classList.toggle('hidden', !runSummary);
-      if (runSummary) summary.innerHTML = `<b>Expedition Report</b><span>${runSummary.distance}m · Tier ${runSummary.tier} · ${runSummary.biomes} biome${runSummary.biomes === 1 ? '' : 's'}</span><span>${runSummary.defeats} defeated · ${runSummary.elites} elite${runSummary.elites === 1 ? '' : 's'} · 💰 ${runSummary.credits} CR</span>`;
-      UI.renderResults(this.players, winnerId, finalFighters, { myId: this.myId, onCopy: copyCharacter });
+      if (runSummary) summary.innerHTML = `<b>Expedition Report</b><span>${runSummary.distance}m · Tier ${runSummary.tier} · ${runSummary.biomes} biome${runSummary.biomes === 1 ? '' : 's'} · Act ${runSummary.acts}/${EXPEDITION_ACTS}</span><span>${runSummary.defeats} defeated · ${runSummary.elites} elite${runSummary.elites === 1 ? '' : 's'} · 💰 ${runSummary.credits} CR</span>`;
+      UI.renderResults(this.players, winnerId, finalFighters, { myId: this.myId, onCopy: copyCharacter, coop: this.coop, outcome });
       $('#results-again').textContent = this.mode === 'solo' ? 'Rematch' : 'Back to Lobby';
       UI.showScreen('results');
       session = null;

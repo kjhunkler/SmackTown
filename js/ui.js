@@ -811,18 +811,29 @@ function buildDetailHtml(build) {
   return groups.join('');
 }
 
-export function renderResults(players, winnerId, finalFighters, { myId = null, onCopy = null } = {}) {
-  $('#results-title').textContent = winnerId
+// How a co-op run ended, as podium headlines.
+const RUN_OUTCOMES = {
+  cleared: '🏆 Road Cleared!',
+  extracted: '⛺ Party Extracted!',
+  wiped: '💀 The Road Wins',
+};
+
+export function renderResults(players, winnerId, finalFighters, { myId = null, onCopy = null, coop = false, outcome = null } = {}) {
+  $('#results-title').textContent = coop
+    ? RUN_OUTCOMES[outcome] || 'Expedition Over'
+    : winnerId
     ? `${esc(players.find(p => p.id === winnerId)?.name || '???')} wins!`
     : players.length === 1 ? 'Practice complete!'
     : 'Draw!';
   const list = $('#results-list');
   list.innerHTML = '';
-  const blank = { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0 };
+  const blank = { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: 0, elite: 0 };
   const rows = [...players].map(p => {
     const f = finalFighters.find(x => x.id === p.id) || null;
     return { p, f, s: f?.score || blank };
   }).sort((a, b) => {
+    // Expedition podium ranks the run's contribution; stocks mean nothing
+    if (coop) return (b.s.ko - a.s.ko) || ((b.s.cr || 0) - (a.s.cr || 0)) || (b.s.dmg - a.s.dmg);
     const fa = a.f || { stocks: 0, pct: 999 };
     const fb = b.f || { stocks: 0, pct: 999 };
     return (fb.stocks - fa.stocks) || (b.s.ko - a.s.ko) || (fa.pct - fb.pct);
@@ -832,17 +843,23 @@ export function renderResults(players, winnerId, finalFighters, { myId = null, o
     const chips = (awards.get(p.id) || [])
       .map(a => `<span class="r-award">${a.icon} ${esc(a.name)}</span>`).join('');
     const li = document.createElement('li');
+    // Co-op stat lines: wallet + elite hunting up top, then the fight line
+    // with downs where a PvP row would show stocks.
+    const meta = coop ? `
+          <span>💰 ${s.cr || 0} CR · ⭐ ${s.elite || 0} elite${s.elite === 1 ? '' : 's'}</span>
+          <span>👊 ${s.ko} KO${s.ko === 1 ? '' : 's'} · 💥 ${Math.round(s.dmg)} dmg · 💀 ${s.fall || 0} down${s.fall === 1 ? '' : 's'}</span>`
+    : `
+          <span>${f ? (f.stocks > 0 ? f.stocks + (f.stocks === 1 ? ' stock' : ' stocks') + ' left' : 'KO’d') : ''}</span>
+          <span>👊 ${s.ko} KO${s.ko === 1 ? '' : 's'} · 💥 ${Math.round(s.dmg)} dmg</span>`;
     li.innerHTML = `
       <div class="r-top">
-        <span class="r-score">${p.id === winnerId ? '🏆' : '#' + (i + 1)}</span>
+        <span class="r-score">${p.id === winnerId || (coop && i === 0) ? '🏆' : '#' + (i + 1)}</span>
         <span class="r-fig"></span>
         <span class="r-col">
           <span class="r-name">${esc(p.name)}</span>
           ${chips ? `<span class="r-awards">${chips}</span>` : ''}
         </span>
-        <span class="r-meta">
-          <span>${f ? (f.stocks > 0 ? f.stocks + (f.stocks === 1 ? ' stock' : ' stocks') + ' left' : 'KO’d') : ''}</span>
-          <span>👊 ${s.ko} KO${s.ko === 1 ? '' : 's'} · 💥 ${Math.round(s.dmg)} dmg</span>
+        <span class="r-meta">${meta}
         </span>
       </div>
       <div class="r-build-detail">${buildDetailHtml(p.build)}</div>`;

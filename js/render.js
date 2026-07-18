@@ -740,6 +740,7 @@ export class Renderer {
       if (h.x < left || h.x > right || h.y < top || h.y > bottom) continue;
       this._heart(ctx, h, t);
     }
+    if (view.beacon) this._beacon(ctx, view.beacon, t);
 
     for (const f of view.fighters) if (!f.dead) this._fighter(ctx, f, f.id === myId, t);
 
@@ -1576,6 +1577,60 @@ export class Renderer {
     ctx.fillStyle = 'rgba(255,255,255,.7)';
     ctx.beginPath(); ctx.arc(-4, -4, 2.4, 0, 7); ctx.fill();
     ctx.restore();
+  }
+
+  // Extraction beacon: a pillar of gold light where a boss fell. The ground
+  // ring marks the stand-inside radius the sim tests, the arc riding it is
+  // the channel charge, and the countdown reads out the burn time left.
+  _beacon(ctx, b, t) {
+    const R = 120;                                     // mirrors BEACON_RADIUS
+    const flick = 0.85 + 0.15 * Math.sin(t * 6);
+    // light pillar reaching for the sky
+    const pg = ctx.createLinearGradient(0, b.y - 460, 0, b.y);
+    pg.addColorStop(0, 'rgba(255, 210, 62, 0)');
+    pg.addColorStop(1, `rgba(255, 210, 62, ${(0.22 * flick).toFixed(3)})`);
+    ctx.fillStyle = pg;
+    const w = 70 + Math.sin(t * 2.2) * 8;
+    ctx.beginPath();
+    ctx.moveTo(b.x - w / 2, b.y);
+    ctx.lineTo(b.x - w * 0.32, b.y - 460);
+    ctx.lineTo(b.x + w * 0.32, b.y - 460);
+    ctx.lineTo(b.x + w / 2, b.y);
+    ctx.closePath(); ctx.fill();
+    // glow pooled at the base
+    const gg = ctx.createRadialGradient(b.x, b.y, 4, b.x, b.y, R);
+    gg.addColorStop(0, `rgba(255, 210, 62, ${(0.4 * flick).toFixed(3)})`);
+    gg.addColorStop(1, 'rgba(255, 210, 62, 0)');
+    ctx.fillStyle = gg;
+    ctx.fillRect(b.x - R, b.y - R, R * 2, R * 2);
+    // stand-here ring, with the charge arc riding on top
+    ctx.strokeStyle = 'rgba(255, 210, 62, .5)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 8]);
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, R, 22, 0, 0, 7);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (b.charge > 0) {
+      ctx.strokeStyle = '#ffd23e';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.ellipse(b.x, b.y, R, 22, 0, -Math.PI / 2, -Math.PI / 2 + b.charge * Math.PI * 2);
+      ctx.stroke();
+    }
+    // motes drifting up the pillar
+    ctx.fillStyle = '#ffe2ae';
+    for (let i = 0; i < 6; i++) {
+      const ph = ((t * 0.35 + i / 6) % 1);
+      ctx.globalAlpha = Math.sin(ph * Math.PI) * 0.8;
+      ctx.fillRect(b.x + Math.sin(t * 1.3 + i * 2.4) * 34, b.y - ph * 380, 3, 3);
+    }
+    ctx.globalAlpha = 1;
+    // burn-down countdown floating over the light
+    ctx.fillStyle = `rgba(255, 226, 174, ${b.t < 5 ? (0.55 + 0.45 * Math.sin(t * 10)).toFixed(2) : '.9'})`;
+    ctx.font = 'bold 22px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`⛺ ${Math.ceil(b.t)}`, b.x, b.y - 150);
   }
 
   // Lighten (>0) or darken (<0) a #rrggbb color by a fraction.
