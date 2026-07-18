@@ -136,6 +136,27 @@ export const MAPS = {
     spawns: [ -580, 580, -200, 200 ],
     respawnY: -400,
   },
+  // Sun-scorched gladiator pit with tiered stone stands climbing to a
+  // royal box overhead. West/east stands reach west/east upper terraces
+  // (each a clean single jump), both terraces reach the royal box, and a
+  // swinging banner platform drifts back and forth over center — only
+  // reachable off the sand with a double jump, like frostspire's floe.
+  coliseum: {
+    name: 'Coliseum Sands',
+    main: { x: -750, y: 0, w: 1500, h: 46 },             // sunken arena floor
+    plats: [
+      { x: -660, y: -140, w: 240 },                      // west stand
+      { x: 420,  y: -140, w: 240 },                      // east stand
+      { x: -420, y: -280, w: 190 },                       // west terrace
+      { x: 230,  y: -280, w: 190 },                       // east terrace
+      // banner platform: a hanging gladiator banner, swept on the wind
+      { x: -60,  y: -250, w: 160, move: { dx: 220, period: 9 } },
+      { x: -190, y: -410, w: 380 },                       // royal box
+    ],
+    blast: { l: -1500, r: 1500, t: -1200, b: 520 },
+    spawns: [ -540, 540, -180, 180 ],
+    respawnY: -390,
+  },
   training: {
     name: 'Training Room',
     hidden: true,                     // never in the vote grid or random rotation

@@ -81,6 +81,14 @@ const THEMES = {
     deck: '#3d4f5c', lip: '#5a7186', trim: '#8fe3ff',
     plat: '#4a6272', platTop: '#6a8fa0',
   },
+  coliseum: {
+    sky: ['#3a1f12', '#8a4a24', '#e8a24a'],
+    motif: 'sun',
+    stars: 0,
+    ambient: 'dust',
+    deck: '#8a6a42', lip: '#a8875a', trim: '#d94a2e',
+    plat: '#8a6a42', platTop: '#c9985c',
+  },
   training: {
     sky: ['#0d1126', '#1a2142', '#0e1524'],
     motif: 'moon',
@@ -1115,6 +1123,7 @@ export class Renderer {
     if (this.mapId === 'foundry') { this._crucibleStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'temple') { this._templeStage(ctx, plats, t); return; }
     if (this.mapId === 'frostspire') { this._frostspireStage(ctx, plats, tickF, t); return; }
+    if (this.mapId === 'coliseum') { this._coliseumStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'training') { this._trainingStage(ctx, plats, t); return; }
     if (this.mapId === 'expanse') { this._expanseStage(ctx, t); return; }
     const th = this.theme;
@@ -2806,6 +2815,122 @@ export class Renderer {
       mg.addColorStop(1, 'rgba(143, 227, 255, 0)');
       ctx.fillStyle = mg;
       ctx.fillRect(mx - 140, my - 140, 280, 280);
+    }
+  }
+
+  // Coliseum Sands: a sunken gladiator pit ringed by broken stone stands,
+  // climbing to a royal box under a low, blazing desert sun. Banner poles
+  // flank the arena floor, cloth snapping in the heat-haze wind, and a
+  // swinging banner platform drifts back and forth over center.
+  _coliseumStage(ctx, plats, tickF, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // distant outer wall: broken arches marching off into the haze
+    ctx.fillStyle = 'rgba(58, 31, 18, .7)';
+    for (let i = -6; i <= 6; i++) {
+      const ax = i * 260 - this.cam.x * 0.15;
+      const ah = 260 + (Math.abs(i) % 2) * 40;
+      ctx.beginPath();
+      ctx.moveTo(ax - 90, m.y + 30);
+      ctx.lineTo(ax - 90, m.y + 30 - ah);
+      ctx.arc(ax, m.y + 30 - ah, 90, Math.PI, 0);
+      ctx.lineTo(ax + 90, m.y + 30);
+      ctx.lineTo(ax + 60, m.y + 30);
+      ctx.lineTo(ax + 60, m.y + 44 - ah);
+      ctx.arc(ax, m.y + 44 - ah, 60, 0, Math.PI, true);
+      ctx.lineTo(ax - 60, m.y + 30);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // sunken arena floor: cracked sandstone with staggered block joints
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(58, 40, 22, .4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let row = 0; row < 2; row++) {
+      const jy = m.y + 22 + row * 26;
+      ctx.moveTo(m.x + 6, jy); ctx.lineTo(m.x + m.w - 6, jy);
+      const off = row % 2 ? 55 : 0;
+      for (let jx = m.x + 55 + off; jx < m.x + m.w - 20; jx += 110) {
+        ctx.moveTo(jx, jy - (row ? 26 : 22) + 4); ctx.lineTo(jx, jy);
+      }
+    }
+    ctx.stroke();
+    ctx.fillStyle = th.lip;
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.fillStyle = th.trim;
+    ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+
+    // banner poles flanking the floor, cloth snapping in the wind
+    for (const [bx, ph] of [[m.x + m.w * 0.10, 0], [m.x + m.w * 0.90, 2.2]]) {
+      ctx.fillStyle = '#5c4224';
+      ctx.fillRect(bx - 4, m.y - 130, 8, 130);
+      const flap = Math.sin(t * 1.4 + ph) * 10;
+      ctx.fillStyle = th.trim;
+      ctx.beginPath();
+      ctx.moveTo(bx, m.y - 128);
+      ctx.lineTo(bx + 46 + flap, m.y - 118);
+      ctx.lineTo(bx + 40 + flap * 0.6, m.y - 90);
+      ctx.lineTo(bx, m.y - 96);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // arena-floor platforms: sun-bleached stone, sandy tops, block joints
+    for (const [i, p] of plats.entries()) {
+      const banner = !!p.move;
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 14, 5); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      ctx.strokeStyle = 'rgba(58, 40, 22, .4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let jx = p.x + 55; jx < p.x + p.w - 12; jx += 55) {
+        ctx.moveTo(jx, p.y + 4); ctx.lineTo(jx, p.y + 12);
+      }
+      ctx.stroke();
+      if (banner) {                                     // cloth ribbons underneath
+        ctx.fillStyle = th.trim;
+        for (let r = 0; r < 3; r++) {
+          const rx = p.x + p.w * (0.2 + r * 0.3);
+          const sway = Math.sin(t * 1.6 + i + r) * 6;
+          ctx.beginPath();
+          ctx.moveTo(rx - 6, p.y + 13);
+          ctx.lineTo(rx + 6, p.y + 13);
+          ctx.lineTo(rx + sway, p.y + 13 + 28);
+          ctx.closePath(); ctx.fill();
+        }
+      }
+    }
+
+    // royal box: shaded overhang and a low brazier flanking each side
+    const apex = plats.reduce((a, p) => (p.y < a.y ? p : a), plats[0]);
+    if (apex) {
+      ctx.fillStyle = 'rgba(20, 8, 4, .4)';
+      roundRect(ctx, apex.x + 14, apex.y - 34, apex.w - 28, 30, 8); ctx.fill();
+      for (const bx of [apex.x + 26, apex.x + apex.w - 26]) {
+        const breathe = 0.75 + 0.25 * Math.sin(t * 2.1 + bx);
+        const fg = ctx.createRadialGradient(bx, apex.y - 10, 1, bx, apex.y - 10, 22 * breathe);
+        fg.addColorStop(0, 'rgba(255, 150, 60, .55)');
+        fg.addColorStop(1, 'rgba(255, 150, 60, 0)');
+        ctx.fillStyle = fg;
+        ctx.fillRect(bx - 22, apex.y - 32, 44, 44);
+      }
+    }
+
+    // heat shimmer rippling low over the sand
+    const hy = m.y - 4;
+    ctx.strokeStyle = 'rgba(255, 220, 160, .10)';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 4; i++) {
+      const wy = hy - i * 14 - (t * 30 % 14);
+      ctx.beginPath();
+      for (let wx = m.x; wx <= m.x + m.w; wx += 30) {
+        const yy = wy + Math.sin(wx * 0.03 + t * 2 + i) * 3;
+        wx === m.x ? ctx.moveTo(wx, yy) : ctx.lineTo(wx, yy);
+      }
+      ctx.stroke();
     }
   }
 

@@ -790,6 +790,17 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(143, 211, 255, .8) 70% 100%);
   box-shadow: 0 -7px 0 -1px rgba(143, 211, 255, .55);
 }
+.map-thumb-coliseum { background: linear-gradient(#3a1f12, #e8a24a); }
+.map-thumb-coliseum::after { left: 6%; right: 6%; background: #8a6a42; }
+/* tiered stands climbing to a royal box overhead */
+.map-thumb-coliseum::before {
+  left: 6%; right: 6%; top: 12px;
+  background: linear-gradient(90deg,
+    rgba(217, 74, 46, .7) 0 20%, transparent 20% 42%,
+    rgba(217, 74, 46, .7) 42% 58%, transparent 58% 80%,
+    rgba(217, 74, 46, .7) 80% 100%);
+  box-shadow: 0 -8px 0 -1px rgba(217, 74, 46, .5);
+}
 .map-thumb-flatlands { background: linear-gradient(#5fb0dc, #e8cf9a); }
 .map-thumb-flatlands::after { left: 8%; right: 8%; background: #b5854f; }
 .map-thumb-flatlands::before { display: none; }
