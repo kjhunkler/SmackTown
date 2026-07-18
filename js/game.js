@@ -189,6 +189,22 @@ export const MAPS = {
     spawns: [ -245, 245, -85, 85 ],
     respawnY: -290,
   },
+  // Lantern-lit night bazaar, medium-sized. West/east stall roofs are a
+  // clean single jump off the plaza; the drifting banner walk hangs low
+  // enough over center to need a double jump straight off the ground.
+  market: {
+    name: 'Midnight Market',
+    main: { x: -370, y: 0, w: 740, h: 46 },              // paved bazaar plaza
+    plats: [
+      { x: -310, y: -140, w: 140 },                      // west stall roof
+      { x: 170,  y: -140, w: 140 },                      // east stall roof
+      // banner walk: strung lanterns and cloth drifting on the night air
+      { x: -70,  y: -250, w: 150, move: { dx: 150, period: 7 } },
+    ],
+    blast: { l: -1170, r: 1170, t: -950, b: 500 },
+    spawns: [ -250, 250, -90, 90 ],
+    respawnY: -290,
+  },
   training: {
     name: 'Training Room',
     hidden: true,                     // never in the vote grid or random rotation

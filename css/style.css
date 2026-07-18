@@ -860,6 +860,16 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(217, 162, 62, .6) 44% 56%, transparent 56% 74%,
     rgba(217, 162, 62, .6) 74% 100%);
 }
+.map-thumb-market { background: linear-gradient(#160f24, #4a2c3a); }
+.map-thumb-market::after { left: 10%; right: 10%; background: #4a3626; box-shadow: 0 -4px 6px rgba(255, 184, 74, .5); }
+/* two stall roofs flanking a low central banner walk */
+.map-thumb-market::before {
+  left: 12%; right: 12%; top: 16px;
+  background: linear-gradient(90deg,
+    rgba(255, 184, 74, .55) 0 26%, transparent 26% 44%,
+    rgba(255, 184, 74, .55) 44% 56%, transparent 56% 74%,
+    rgba(255, 184, 74, .55) 74% 100%);
+}
 .map-thumb-garden { background: linear-gradient(#3c2b5c, #14251a); }
 .map-thumb-garden::after { left: 10%; right: 10%; background: #5fae4e; }
 /* log bridge centered, two flower pads at the edges */

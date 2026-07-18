@@ -105,6 +105,13 @@ const THEMES = {
     deck: '#8a4a2e', lip: '#a8623c', trim: '#d9a23e',
     plat: '#8a4a2e', platTop: '#c98a52',
   },
+  market: {
+    sky: ['#160f24', '#2c1c3a', '#4a2c3a'],
+    motif: 'moon',
+    stars: 0.5,
+    deck: '#4a3626', lip: '#6a4c34', trim: '#ffb84a',
+    plat: '#5c4230', platTop: '#8a6440',
+  },
   training: {
     sky: ['#0d1126', '#1a2142', '#0e1524'],
     motif: 'moon',
@@ -1142,6 +1149,7 @@ export class Renderer {
     if (this.mapId === 'coliseum') { this._coliseumStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'docks') { this._docksStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'canyon') { this._canyonStage(ctx, plats, tickF, t); return; }
+    if (this.mapId === 'market') { this._marketStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'training') { this._trainingStage(ctx, plats, t); return; }
     if (this.mapId === 'expanse') { this._expanseStage(ctx, t); return; }
     const th = this.theme;
@@ -3101,6 +3109,103 @@ export class Renderer {
           ctx.moveTo(jx, p.y + 4); ctx.lineTo(jx, p.y + 12);
         }
         ctx.stroke();
+      }
+    }
+  }
+
+  // Midnight Market: a paved night bazaar under a crescent moon, strung
+  // with warm paper lanterns between stalls and a drifting banner walk
+  // trailing lit lanterns of its own.
+  _marketStage(ctx, plats, tickF, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // rooftop skyline silhouette behind the stalls
+    ctx.fillStyle = 'rgba(22, 15, 36, .85)';
+    for (let i = -5; i <= 5; i++) {
+      const rx = i * 220 - this.cam.x * 0.12;
+      const rh = 140 + (Math.abs(i * 37) % 60);
+      ctx.fillRect(rx - 60, m.y + 30 - rh, 120, rh);
+      ctx.fillStyle = 'rgba(22, 15, 36, .85)';
+      ctx.beginPath();
+      ctx.moveTo(rx - 66, m.y + 30 - rh);
+      ctx.lineTo(rx, m.y + 30 - rh - 26);
+      ctx.lineTo(rx + 66, m.y + 30 - rh);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // strung lantern line sagging across the plaza
+    ctx.strokeStyle = 'rgba(120, 90, 60, .5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(m.x - 20, m.y - 190);
+    ctx.quadraticCurveTo(m.x + m.w / 2, m.y - 140, m.x + m.w + 20, m.y - 190);
+    ctx.stroke();
+    for (let i = 0; i <= 8; i++) {
+      const k = i / 8;
+      const lx = m.x - 20 + (m.w + 40) * k;
+      const ly = m.y - 190 + Math.sin(k * Math.PI) * 50;
+      const pulse = 0.6 + 0.4 * Math.sin(t * 1.8 + i * 0.8);
+      const lg = ctx.createRadialGradient(lx, ly + 8, 1, lx, ly + 8, 16 * pulse);
+      lg.addColorStop(0, `rgba(255, 184, 74, ${(0.5 * pulse).toFixed(3)})`);
+      lg.addColorStop(1, 'rgba(255, 184, 74, 0)');
+      ctx.fillStyle = lg;
+      ctx.fillRect(lx - 16, ly - 8, 32, 32);
+      ctx.fillStyle = th.trim;
+      roundRect(ctx, lx - 4, ly + 4, 8, 10, 3); ctx.fill();
+    }
+
+    // bazaar plaza: worn paving stones
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(20, 14, 10, .4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let row = 0; row < 2; row++) {
+      const jy = m.y + 22 + row * 26;
+      ctx.moveTo(m.x + 6, jy); ctx.lineTo(m.x + m.w - 6, jy);
+      const off = row % 2 ? 45 : 0;
+      for (let jx = m.x + 45 + off; jx < m.x + m.w - 20; jx += 90) {
+        ctx.moveTo(jx, jy - (row ? 26 : 22) + 4); ctx.lineTo(jx, jy);
+      }
+    }
+    ctx.stroke();
+    ctx.fillStyle = th.lip;
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.fillStyle = th.trim;
+    ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+
+    // stall-roof / banner-walk platforms, each with its own paper lantern
+    for (const [i, p] of plats.entries()) {
+      const banner = !!p.move;
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 14, 5); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      if (!banner) {                                     // striped stall awning
+        ctx.fillStyle = th.trim;
+        for (let s = 0; s < 4; s++) {
+          ctx.globalAlpha = s % 2 ? 0.85 : 0.5;
+          ctx.beginPath();
+          ctx.moveTo(p.x + s * (p.w / 4), p.y - 12);
+          ctx.lineTo(p.x + (s + 1) * (p.w / 4), p.y - 12);
+          ctx.lineTo(p.x + (s + 1) * (p.w / 4), p.y);
+          ctx.lineTo(p.x + s * (p.w / 4), p.y);
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      } else {                                            // trailing hung lanterns
+        for (let r = 0; r < 3; r++) {
+          const rx = p.x + p.w * (0.2 + r * 0.3);
+          const sway = Math.sin(t * 1.4 + i + r) * 6;
+          const pulse = 0.6 + 0.4 * Math.sin(t * 2 + r);
+          const lg = ctx.createRadialGradient(rx + sway, p.y + 24, 1, rx + sway, p.y + 24, 14 * pulse);
+          lg.addColorStop(0, `rgba(255, 184, 74, ${(0.5 * pulse).toFixed(3)})`);
+          lg.addColorStop(1, 'rgba(255, 184, 74, 0)');
+          ctx.fillStyle = lg;
+          ctx.fillRect(rx + sway - 14, p.y + 12, 28, 28);
+          ctx.fillStyle = th.trim;
+          roundRect(ctx, rx + sway - 4, p.y + 20, 8, 10, 3); ctx.fill();
+        }
       }
     }
   }
