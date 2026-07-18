@@ -157,6 +157,22 @@ export const MAPS = {
     spawns: [ -540, 540, -180, 180 ],
     respawnY: -390,
   },
+  // Foggy harbor pier, medium-sized. West/east pier stacks are a clean
+  // single jump off the boardwalk; the swinging dockside crane hangs low
+  // enough over center to need a double jump straight off the deck.
+  docks: {
+    name: 'Sunken Docks',
+    main: { x: -380, y: 0, w: 760, h: 46 },              // boardwalk over the harbor
+    plats: [
+      { x: -320, y: -140, w: 150 },                      // west pier stack
+      { x: 170,  y: -140, w: 150 },                      // east pier stack
+      // dockside crane: swings its load back and forth over the water
+      { x: -75,  y: -255, w: 160, move: { dx: 170, period: 8 } },
+    ],
+    blast: { l: -1180, r: 1180, t: -960, b: 500 },
+    spawns: [ -260, 260, -90, 90 ],
+    respawnY: -300,
+  },
   training: {
     name: 'Training Room',
     hidden: true,                     // never in the vote grid or random rotation

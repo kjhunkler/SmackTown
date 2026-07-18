@@ -840,6 +840,16 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(230, 245, 255, .55) 78% 100%);
   box-shadow: 0 -8px 0 -1px rgba(230, 245, 255, .4);
 }
+.map-thumb-docks { background: linear-gradient(#0c1420, #2e4450); }
+.map-thumb-docks::after { left: 10%; right: 10%; background: #3a4652; box-shadow: 0 -4px 6px rgba(255, 179, 71, .4); }
+/* pier stacks flanking a low central crane */
+.map-thumb-docks::before {
+  left: 12%; right: 12%; top: 16px;
+  background: linear-gradient(90deg,
+    rgba(255, 179, 71, .5) 0 26%, transparent 26% 44%,
+    rgba(255, 179, 71, .5) 44% 56%, transparent 56% 74%,
+    rgba(255, 179, 71, .5) 74% 100%);
+}
 .map-thumb-garden { background: linear-gradient(#3c2b5c, #14251a); }
 .map-thumb-garden::after { left: 10%; right: 10%; background: #5fae4e; }
 /* log bridge centered, two flower pads at the edges */

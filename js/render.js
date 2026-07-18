@@ -89,6 +89,14 @@ const THEMES = {
     deck: '#8a6a42', lip: '#a8875a', trim: '#d94a2e',
     plat: '#8a6a42', platTop: '#c9985c',
   },
+  docks: {
+    sky: ['#0c1420', '#1c2c3a', '#2e4450'],
+    motif: 'moon',
+    stars: 0.4,
+    ambient: 'rain',
+    deck: '#3a4652', lip: '#54626e', trim: '#ffb347',
+    plat: '#46545f', platTop: '#63737f',
+  },
   training: {
     sky: ['#0d1126', '#1a2142', '#0e1524'],
     motif: 'moon',
@@ -1124,6 +1132,7 @@ export class Renderer {
     if (this.mapId === 'temple') { this._templeStage(ctx, plats, t); return; }
     if (this.mapId === 'frostspire') { this._frostspireStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'coliseum') { this._coliseumStage(ctx, plats, tickF, t); return; }
+    if (this.mapId === 'docks') { this._docksStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'training') { this._trainingStage(ctx, plats, t); return; }
     if (this.mapId === 'expanse') { this._expanseStage(ctx, t); return; }
     const th = this.theme;
@@ -2931,6 +2940,86 @@ export class Renderer {
         wx === m.x ? ctx.moveTo(wx, yy) : ctx.lineTo(wx, yy);
       }
       ctx.stroke();
+    }
+  }
+
+  // Sunken Docks: a foggy boardwalk over black harbor water, pilings
+  // driven into a faint rippling reflection, amber lantern glow, and a
+  // dockside crane swinging its cargo hook back and forth over center.
+  _docksStage(ctx, plats, tickF, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // black water reflection under the boardwalk, rippling gently
+    const wy = m.y + 90;
+    const wg = ctx.createLinearGradient(0, wy - 20, 0, wy + 200);
+    wg.addColorStop(0, 'rgba(30, 46, 58, .8)');
+    wg.addColorStop(1, 'rgba(8, 14, 20, .9)');
+    ctx.fillStyle = wg;
+    ctx.fillRect(m.x - 700, wy - 20, m.w + 1400, 220);
+    ctx.strokeStyle = 'rgba(255, 179, 71, .12)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      const ry = wy + 20 + i * 30;
+      ctx.beginPath();
+      for (let wx = m.x - 600; wx <= m.x + m.w + 600; wx += 30) {
+        ctx.lineTo(wx, ry + Math.sin(wx * 0.02 + t * 1.3 + i) * 4);
+      }
+      ctx.stroke();
+    }
+
+    // pilings driven down from the boardwalk into the water
+    ctx.fillStyle = '#2a2018';
+    for (let i = 0; i < 7; i++) {
+      const px = m.x + 40 + i * (m.w - 80) / 6;
+      ctx.fillRect(px - 6, m.y + m.h, 12, 140);
+    }
+
+    // boardwalk deck: weathered planks
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(20, 28, 34, .5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let jx = m.x + 40; jx < m.x + m.w - 20; jx += 46) {
+      ctx.moveTo(jx, m.y + 6); ctx.lineTo(jx, m.y + m.h + 22);
+    }
+    ctx.stroke();
+    ctx.fillStyle = th.lip;
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.fillStyle = th.trim;
+    const glow = 0.55 + 0.45 * Math.sin(t * 1.5);
+    ctx.globalAlpha = glow;
+    ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+    ctx.globalAlpha = 1;
+
+    // pier-stack platforms: crates and a hanging lantern
+    for (const [i, p] of plats.entries()) {
+      const crane = !!p.move;
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 14, 5); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      if (!crane) {                                     // stacked cargo crate
+        ctx.fillStyle = '#6b5236';
+        ctx.fillRect(p.x + p.w * 0.62, p.y - 20, 26, 20);
+        ctx.strokeStyle = 'rgba(20, 28, 34, .5)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(p.x + p.w * 0.62 + 3, p.y - 17, 20, 14);
+      } else {                                          // crane's cargo hook + lantern
+        const swing = Math.sin(t * 0.9 + i) * 0.15;
+        const hx = p.x + p.w / 2 + Math.sin(swing) * 30;
+        const hy = p.y + 20 + Math.cos(swing) * 30;
+        ctx.strokeStyle = '#7a6b52';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(p.x + p.w / 2, p.y + 13); ctx.lineTo(hx, hy); ctx.stroke();
+        const lg = ctx.createRadialGradient(hx, hy, 1, hx, hy, 26);
+        lg.addColorStop(0, 'rgba(255, 179, 71, .6)');
+        lg.addColorStop(1, 'rgba(255, 179, 71, 0)');
+        ctx.fillStyle = lg;
+        ctx.fillRect(hx - 26, hy - 26, 52, 52);
+        ctx.fillStyle = '#3a2f22';
+        roundRect(ctx, hx - 8, hy - 6, 16, 14, 3); ctx.fill();
+      }
     }
   }
 
