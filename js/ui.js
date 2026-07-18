@@ -641,7 +641,9 @@ export function buildHud(players, { myId = null, onTry = null, onTrySelf = null,
   hud.dataset.coop = coop ? '1' : '';
   hud.classList.toggle('coop', !!coop);
   for (const p of players) {
-    const canTry = onTry && p.id !== myId;
+    // Expedition tiles have no Try button — trying a build mid-run would
+    // sidestep the CR wallet, so co-op shows everyone's credits instead.
+    const canTry = !coop && onTry && p.id !== myId;
     const isTrying = canTry && p.id === tryingId;
     const tile = document.createElement('div');
     tile.className = 'hud-tile';
@@ -652,7 +654,7 @@ export function buildHud(players, { myId = null, onTry = null, onTrySelf = null,
       <div class="h-name">${esc(p.name)}</div>
       <div class="h-hp"><div class="h-hp-fill" style="background:${p.color}"></div></div>
       <div class="h-hp-txt"></div>
-      ${canTry ? `<button class="h-try${isTrying ? ' h-trying' : ''}">${isTrying ? 'Trying' : 'Try'}</button>` : ''}`
+      <div class="h-cr">💰 —</div>`
     : `
       <div class="h-name">${esc(p.name)}</div>
       <div class="h-pct" style="color:${p.color}">0%</div>
@@ -685,6 +687,10 @@ export function updateHud(fighters) {
         tile.classList.remove('h-hp-hit'); void tile.offsetWidth; tile.classList.add('h-hp-hit');
       }
       tile.dataset.hp = hp;
+      // everyone's expedition wallet, straight from the authoritative score
+      const crEl = tile.querySelector('.h-cr');
+      const crTxt = `💰 ${f.score?.cr || 0}`;
+      if (crEl && crEl.textContent !== crTxt) crEl.textContent = crTxt;
       tile.classList.toggle('dead', !!f.dead);
       continue;
     }

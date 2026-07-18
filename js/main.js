@@ -1300,8 +1300,10 @@ class Session {
   buildHud() {
     UI.buildHud(this.players, {
       myId: this.myId,
-      onTry: id => this.requestTry(id),
-      onTrySelf: () => this.requestTrySelf(),
+      // no Try in co-op: expedition builds are bought with run CR, and
+      // borrowing someone's kit would walk straight around the wallet
+      onTry: this.coop ? null : id => this.requestTry(id),
+      onTrySelf: this.coop ? null : () => this.requestTrySelf(),
       tryingId: this.trying.get(this.myId)?.targetId || null,
       infiniteStocks: this.map === 'training' || !!MAPS[this.map]?.coop,
       coop: !!MAPS[this.map]?.coop,
@@ -1309,6 +1311,7 @@ class Session {
   }
 
   requestTry(targetId) {
+    if (this.coop) return;
     if (!targetId || targetId === this.myId || !this.meta.has(targetId)) return;
     if (this.mode === 'host') this.applyTry(this.myId, targetId);
     else net?.sendToHost({ t: 'try', target: targetId });
@@ -1329,6 +1332,7 @@ class Session {
   }
 
   applyTry(pid, targetId) {
+    if (this.coop) return;              // host-side guard: no trying in expeditions
     if (!this.game || this.ended) return;
     const me = this.meta.get(pid);
     const target = this.meta.get(targetId);
