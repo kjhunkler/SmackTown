@@ -73,6 +73,14 @@ const THEMES = {
     deck: '#8a8168', lip: '#a89f83', trim: '#d8b45a',
     plat: '#8f8670', platTop: '#9fb06a',
   },
+  frostspire: {
+    sky: ['#0a1626', '#16283c', '#1f3a44'],
+    motif: 'aurora',
+    stars: 0.6,
+    ambient: 'cloudwisp',
+    deck: '#3d4f5c', lip: '#5a7186', trim: '#8fe3ff',
+    plat: '#4a6272', platTop: '#6a8fa0',
+  },
   training: {
     sky: ['#0d1126', '#1a2142', '#0e1524'],
     motif: 'moon',
@@ -1106,6 +1114,7 @@ export class Renderer {
     if (this.mapId === 'garden') { this._gardenStage(ctx, plats, t); return; }
     if (this.mapId === 'foundry') { this._crucibleStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'temple') { this._templeStage(ctx, plats, t); return; }
+    if (this.mapId === 'frostspire') { this._frostspireStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'training') { this._trainingStage(ctx, plats, t); return; }
     if (this.mapId === 'expanse') { this._expanseStage(ctx, t); return; }
     const th = this.theme;
@@ -2704,6 +2713,99 @@ export class Renderer {
         ctx.quadraticCurveTo(vx + drift * 0.4, p.y + 13 + len * 0.6, vx + drift, p.y + 13 + len);
         ctx.stroke();
       }
+    }
+  }
+
+  // Frostspire Reach: twin glacier summits over a frozen basin under a
+  // shifting aurora. Parallax mountain wall behind everything, icicles
+  // hanging off every ledge, a faint frost-glow rim on the ice itself, and
+  // the drifting floe crackling with a slow-pulsing cold-blue seam.
+  _frostspireStage(ctx, plats, tickF, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // distant peaks: two parallax layers so the range drifts with the camera
+    const back = [[-1400, 520, 0.10], [-500, 700, 0.14], [500, 640, 0.12], [1300, 560, 0.10]];
+    ctx.fillStyle = '#16222c';
+    for (const [px, ph, sc] of back) {
+      const bx = px - this.cam.x * sc;
+      ctx.beginPath();
+      ctx.moveTo(bx - ph * 0.7, m.y + 40);
+      ctx.lineTo(bx, m.y + 40 - ph);
+      ctx.lineTo(bx + ph * 0.7, m.y + 40);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(230, 245, 255, .5)';           // snowcaps
+    for (const [px, ph, sc] of back) {
+      const bx = px - this.cam.x * sc;
+      ctx.beginPath();
+      ctx.moveTo(bx - ph * 0.18, m.y + 40 - ph * 0.72);
+      ctx.lineTo(bx, m.y + 40 - ph);
+      ctx.lineTo(bx + ph * 0.18, m.y + 40 - ph * 0.72);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // basin floor: packed ice with frost cracks, glowing cyan rim
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(200, 235, 250, .22)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const cx = m.x + 60 + ((i * 337) % (m.w - 120));
+      const cy = m.y + 8 + (i % 3) * 12;
+      ctx.moveTo(cx, cy); ctx.lineTo(cx + 30 + (i % 4) * 8, cy + 12 + (i % 2) * 6);
+    }
+    ctx.stroke();
+    ctx.fillStyle = th.lip;
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.fillStyle = th.trim;
+    const glow = 0.55 + 0.45 * Math.sin(t * 1.3);
+    ctx.globalAlpha = glow;
+    ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+    ctx.globalAlpha = 1;
+
+    // icicles hanging off the basin lip
+    ctx.fillStyle = 'rgba(210, 240, 255, .65)';
+    for (let i = 0; i < 16; i++) {
+      const ix = m.x + 30 + ((i * 211) % (m.w - 60));
+      const len = 10 + (i % 5) * 5;
+      ctx.beginPath();
+      ctx.moveTo(ix - 5, m.y + m.h + 30); ctx.lineTo(ix + 5, m.y + m.h + 30); ctx.lineTo(ix, m.y + m.h + 30 + len);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // ice-slab platforms: pale caps, frosted undersides, hanging icicles
+    for (const [i, p] of plats.entries()) {
+      const floe = !!p.move;
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 14, 5); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      if (floe) {                                        // pulsing cold seam
+        const pulse = 0.4 + 0.3 * Math.sin(t * 2 + i);
+        ctx.strokeStyle = `rgba(143, 227, 255, ${pulse.toFixed(3)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(p.x + 10, p.y + 7); ctx.lineTo(p.x + p.w - 10, p.y + 7); ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(210, 240, 255, .55)';
+      for (let ii = 0; ii < 1 + (i % 3); ii++) {
+        const ix = p.x + p.w * (0.25 + ii * 0.28);
+        const len = 8 + ((i * 5 + ii * 11) % 3) * 5;
+        ctx.beginPath();
+        ctx.moveTo(ix - 4, p.y + 13); ctx.lineTo(ix + 4, p.y + 13); ctx.lineTo(ix, p.y + 13 + len);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+
+    // aurora-lit mist wafting low over the apex bridge
+    const apex = plats.reduce((a, p) => (p.y < a.y ? p : a), plats[0]);
+    if (apex) {
+      const mx = apex.x + apex.w / 2, my = apex.y - 20;
+      const mg = ctx.createRadialGradient(mx, my, 4, mx, my, 140);
+      mg.addColorStop(0, `rgba(143, 227, 255, ${(0.14 + 0.06 * Math.sin(t * 0.9)).toFixed(3)})`);
+      mg.addColorStop(1, 'rgba(143, 227, 255, 0)');
+      ctx.fillStyle = mg;
+      ctx.fillRect(mx - 140, my - 140, 280, 280);
     }
   }
 

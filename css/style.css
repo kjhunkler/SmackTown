@@ -818,6 +818,17 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(255, 255, 255, .6) 60% 90%, transparent 90% 100%);
   box-shadow: 0 -7px 0 -1px rgba(255, 255, 255, .5);
 }
+.map-thumb-frostspire { background: linear-gradient(#0a1626, #1f3a44); }
+.map-thumb-frostspire::after { left: 6%; right: 6%; background: #3d4f5c; box-shadow: 0 -4px 6px rgba(143, 227, 255, .5); }
+/* twin summit shelves flanking a high center bridge */
+.map-thumb-frostspire::before {
+  left: 6%; right: 6%; top: 12px;
+  background: linear-gradient(90deg,
+    rgba(230, 245, 255, .55) 0 22%, transparent 22% 40%,
+    rgba(230, 245, 255, .55) 40% 60%, transparent 60% 78%,
+    rgba(230, 245, 255, .55) 78% 100%);
+  box-shadow: 0 -8px 0 -1px rgba(230, 245, 255, .4);
+}
 .map-thumb-garden { background: linear-gradient(#3c2b5c, #14251a); }
 .map-thumb-garden::after { left: 10%; right: 10%; background: #5fae4e; }
 /* log bridge centered, two flower pads at the edges */

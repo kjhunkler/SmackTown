@@ -115,6 +115,27 @@ export const MAPS = {
     spawns: [ -640, 640, -220, 220 ],
     respawnY: -360,
   },
+  // Twin glacier summits over a frozen basin, linked by one high ice bridge.
+  // West/east shelves lead to west/east summits (each a clean single jump,
+  // ~140u), the summits both reach the apex bridge (140u), and a drifting
+  // ice floe hangs low over center — only reachable off the floor with a
+  // double jump, so it plays as a commitment platform, not a safe landing.
+  frostspire: {
+    name: 'Frostspire Reach',
+    main: { x: -800, y: 0, w: 1600, h: 46 },             // frozen basin floor
+    plats: [
+      { x: -680, y: -140, w: 260 },                      // west shelf
+      { x: 420,  y: -140, w: 260 },                      // east shelf
+      { x: -480, y: -280, w: 200 },                       // west summit
+      { x: 280,  y: -280, w: 200 },                       // east summit
+      // drifting ice floe: bobs slowly on the wind, no fixed keel
+      { x: -85,  y: -255, w: 170, move: { dy: 80, period: 8 } },
+      { x: -230, y: -420, w: 460 },                       // apex ice bridge
+    ],
+    blast: { l: -1550, r: 1550, t: -1200, b: 520 },
+    spawns: [ -580, 580, -200, 200 ],
+    respawnY: -400,
+  },
   training: {
     name: 'Training Room',
     hidden: true,                     // never in the vote grid or random rotation
