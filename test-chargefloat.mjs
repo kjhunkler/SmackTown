@@ -113,7 +113,16 @@ const vyAt = (weapon, dx, dy, ticks = 26) => charging(weapon, dx, dy, ticks).f.v
   check('a grounded down-charge release stays on the boardwalk', f.vy >= -300);
 }
 
-// --- 4. charge floats only apply while actually charging ---
+// --- 4. fists: the diagonal-up charge release is a real recovery ---
+{
+  const { g, f } = charging('unarmed', 1, -1, 30);
+  g.setInput('A', blankInput());       // let go: release fires next tick
+  g.step();
+  check('diagonal-up fist release carries hard sideways', f.vx > 220);
+  check('…and climbs hard at the same time', f.vy < -450);
+}
+
+// --- 5. charge floats only apply while actually charging ---
 {
   const g = new Game(players('spear'), 3, 'battlefield');
   const f = g.fighters[0];

@@ -650,8 +650,10 @@ const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 // Every weapon now carries a taste of the sword's movement: the bare-fist
 // smash kit and the spear thrust ride a small lunge along their 8-way aim
 // (scaled-down sword lunge), and the spear's up-thrust climbs extra hard.
-const FIST_LUNGE = 0.45;             // smash-kit lunge, fraction of the sword's
-const FIST_LUNGE_UP = 2.2;           // up & diagonal-up smashes climb extra hard (recovery)
+const FIST_LUNGE = 0.62;             // smash-kit lunge, fraction of the sword's
+const FIST_LUNGE_UP = 1.6;           // up & diagonal-up smashes climb extra hard (recovery)
+// (0.62 x 1.6 keeps the vertical climb where it was tuned while the whole
+// kit — and especially the diagonal-up's sideways carry — thrusts harder)
 const SPEAR_LUNGE = 0.5;             // thrust lunge, fraction of the sword's
 const SPEAR_LUNGE_UP = 2.4;          // up-thrusts carry extra upward momentum
 // Magic movement: big casts kick. A charged release shoves the caster
