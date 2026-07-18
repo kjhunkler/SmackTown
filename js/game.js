@@ -173,6 +173,22 @@ export const MAPS = {
     spawns: [ -260, 260, -90, 90 ],
     respawnY: -300,
   },
+  // Red-rock canyon pass, medium-sized. West/east ledges are a clean
+  // single jump off the canyon floor; the swaying rope bridge hangs low
+  // enough over the gap to need a double jump straight off the ground.
+  canyon: {
+    name: 'Canyon Pass',
+    main: { x: -360, y: 0, w: 720, h: 46 },              // sun-baked canyon floor
+    plats: [
+      { x: -300, y: -140, w: 140 },                      // west ledge
+      { x: 160,  y: -140, w: 140 },                      // east ledge
+      // rope bridge: sags and sways gently between the canyon walls
+      { x: -70,  y: -250, w: 150, move: { dy: 40, period: 6 } },
+    ],
+    blast: { l: -1160, r: 1160, t: -950, b: 500 },
+    spawns: [ -245, 245, -85, 85 ],
+    respawnY: -290,
+  },
   training: {
     name: 'Training Room',
     hidden: true,                     // never in the vote grid or random rotation

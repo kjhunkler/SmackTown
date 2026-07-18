@@ -850,6 +850,16 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(255, 179, 71, .5) 44% 56%, transparent 56% 74%,
     rgba(255, 179, 71, .5) 74% 100%);
 }
+.map-thumb-canyon { background: linear-gradient(#7a3620, #e8b46a); }
+.map-thumb-canyon::after { left: 10%; right: 10%; background: #8a4a2e; }
+/* two ledges flanking a low central rope bridge */
+.map-thumb-canyon::before {
+  left: 12%; right: 12%; top: 16px;
+  background: linear-gradient(90deg,
+    rgba(217, 162, 62, .6) 0 26%, transparent 26% 44%,
+    rgba(217, 162, 62, .6) 44% 56%, transparent 56% 74%,
+    rgba(217, 162, 62, .6) 74% 100%);
+}
 .map-thumb-garden { background: linear-gradient(#3c2b5c, #14251a); }
 .map-thumb-garden::after { left: 10%; right: 10%; background: #5fae4e; }
 /* log bridge centered, two flower pads at the edges */

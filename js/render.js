@@ -97,6 +97,14 @@ const THEMES = {
     deck: '#3a4652', lip: '#54626e', trim: '#ffb347',
     plat: '#46545f', platTop: '#63737f',
   },
+  canyon: {
+    sky: ['#7a3620', '#c8703c', '#e8b46a'],
+    motif: 'noon',
+    stars: 0,
+    ambient: 'dust',
+    deck: '#8a4a2e', lip: '#a8623c', trim: '#d9a23e',
+    plat: '#8a4a2e', platTop: '#c98a52',
+  },
   training: {
     sky: ['#0d1126', '#1a2142', '#0e1524'],
     motif: 'moon',
@@ -1133,6 +1141,7 @@ export class Renderer {
     if (this.mapId === 'frostspire') { this._frostspireStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'coliseum') { this._coliseumStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'docks') { this._docksStage(ctx, plats, tickF, t); return; }
+    if (this.mapId === 'canyon') { this._canyonStage(ctx, plats, tickF, t); return; }
     if (this.mapId === 'training') { this._trainingStage(ctx, plats, t); return; }
     if (this.mapId === 'expanse') { this._expanseStage(ctx, t); return; }
     const th = this.theme;
@@ -3019,6 +3028,79 @@ export class Renderer {
         ctx.fillRect(hx - 26, hy - 26, 52, 52);
         ctx.fillStyle = '#3a2f22';
         roundRect(ctx, hx - 8, hy - 6, 16, 14, 3); ctx.fill();
+      }
+    }
+  }
+
+  // Canyon Pass: sun-baked red rock under a blazing noon sky. Layered
+  // parallax canyon walls, cracked-earth floor, and a swaying rope bridge
+  // lashed together from planks and frayed cord.
+  _canyonStage(ctx, plats, tickF, t) {
+    const th = this.theme, m = this.stage.main;
+
+    // distant canyon walls: two parallax layers, warm and hazy
+    const back = [[-1300, 480, 0.10], [-450, 600, 0.14], [500, 560, 0.13], [1250, 500, 0.10]];
+    ctx.fillStyle = 'rgba(90, 44, 24, .8)';
+    for (const [px, ph, sc] of back) {
+      const bx = px - this.cam.x * sc;
+      ctx.beginPath();
+      ctx.moveTo(bx - ph * 0.55, m.y + 40);
+      ctx.lineTo(bx - ph * 0.3, m.y + 40 - ph);
+      ctx.lineTo(bx + ph * 0.1, m.y + 40 - ph * 0.8);
+      ctx.lineTo(bx + ph * 0.5, m.y + 40);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(200, 120, 60, .5)';                // sunlit rim light
+    for (const [px, ph, sc] of back) {
+      const bx = px - this.cam.x * sc;
+      ctx.fillRect(bx - ph * 0.3 - 3, m.y + 40 - ph, 6, ph * 0.35);
+    }
+
+    // canyon floor: cracked, sun-baked earth
+    ctx.fillStyle = th.deck;
+    roundRect(ctx, m.x, m.y, m.w, m.h + 30, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(60, 28, 14, .5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const cx = m.x + 50 + ((i * 293) % (m.w - 100));
+      const cy = m.y + 6 + (i % 3) * 10;
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + 24 + (i % 4) * 6, cy + 14);
+      ctx.lineTo(cx + 8, cy + 22);
+    }
+    ctx.stroke();
+    ctx.fillStyle = th.lip;
+    roundRect(ctx, m.x, m.y, m.w, 12, 6); ctx.fill();
+    ctx.fillStyle = th.trim;
+    ctx.fillRect(m.x + 8, m.y + 1, m.w - 16, 3);
+
+    // ledge/bridge platforms: sun-bleached rock, rope-bridge planks
+    for (const [i, p] of plats.entries()) {
+      const bridge = !!p.move;
+      if (bridge) {                                     // planked rope bridge
+        ctx.strokeStyle = '#5c4228';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y + 10); ctx.lineTo(p.x + p.w, p.y + 10); ctx.stroke();
+        ctx.fillStyle = '#8a6a42';
+        for (let px2 = p.x + 6; px2 < p.x + p.w - 4; px2 += 16) {
+          ctx.fillRect(px2, p.y - 2, 11, 14);
+        }
+        ctx.strokeStyle = 'rgba(90, 60, 30, .8)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y - 4); ctx.lineTo(p.x + p.w, p.y - 4); ctx.stroke();
+      } else {                                           // rocky ledge
+        ctx.fillStyle = th.plat;
+        roundRect(ctx, p.x, p.y, p.w, 14, 5); ctx.fill();
+        ctx.fillStyle = th.platTop;
+        ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+        ctx.strokeStyle = 'rgba(60, 28, 14, .4)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let jx = p.x + 40; jx < p.x + p.w - 12; jx += 40) {
+          ctx.moveTo(jx, p.y + 4); ctx.lineTo(jx, p.y + 12);
+        }
+        ctx.stroke();
       }
     }
   }
