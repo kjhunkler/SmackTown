@@ -631,8 +631,21 @@ const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
 const SWORD_LUNGE_H = 0.7;           // horizontal lunge component trimmed 30%
 const SWORD_LUNGE_V = 1.3;           // upward lunge boosted 30% (up & diagonals)
-const SWORD_CHG_FALL = 0.6;          // charging midair: fall at 60% speed (40% slow fall)
-const MAGIC_CHG_FALL = 0.2;          // charging caster hovers: fall at 20% speed (80% slow fall)
+// Charge floats: winding a heavy midair changes how the fighter falls,
+// per weapon and per charge aim (up / down / side). The value multiplies
+// gravity AND the fall cap: 1 is normal physics, 0.4 is a 60% slow, and
+// a negative value falls UPWARD — the spear's aerial down-thrust charge
+// gently lifts its wielder into position. Weapons missing from the table
+// (shield) keep normal physics.
+const CHG_FALL = {
+  sword:     { up: 0.4, down: 0.4,  side: 0.4 },  // 60% slow on every aim
+  magic:     { up: 0.2, down: 0.2,  side: 0.2 },  // the caster's near-hover
+  spear:     { up: 0.6, down: -0.2, side: 0.6 },  // down-thrust rises at 20%
+  unarmed:   { up: 0.6, down: 0.8,  side: 0.8 },  // fists: 40% up, 20% else
+  boomerang: { up: 1,   down: 0.2,  side: 1 },    // down-charge hangs 80% slow…
+};
+const RANG_CHG_POP = 780;            // …then release vaults the thrower upward
+const RANG_CHG_POP_CHG = 0.5;        // +50% pop speed at full charge
 const SWORD_DASH_T0 = 0.16, SWORD_DASH_T1 = 0.28; // lunge slide time vs charge
 // Every weapon now carries a taste of the sword's movement: the bare-fist
 // smash kit and the spear thrust ride a small lunge along their 8-way aim
@@ -1297,10 +1310,12 @@ export class Game {
 
     // --- gravity & integration ---
     if (!f.grounded) {
-      // charge floats: a winding sword falls 40% slower, a charging caster
-      // hangs at 80% slow — the levitating mage lines up the big burst
-      const slow = inCharge && f.st.weapon === 'sword' ? SWORD_CHG_FALL
-        : inCharge && f.st.weapon === 'magic' ? MAGIC_CHG_FALL : 1;
+      // charge floats: per-weapon, per-aim fall physics from CHG_FALL —
+      // the sword winds slow-falling, the caster hovers, fists soften the
+      // drop, the rang's down-charge hangs, the spear's down-thrust lifts
+      const chgTable = inCharge ? CHG_FALL[f.st.weapon] : null;
+      const aimY = f.chgAim ? f.chgAim.dy : 0;
+      const slow = chgTable ? (aimY < 0 ? chgTable.up : aimY > 0 ? chgTable.down : chgTable.side) : 1;
       // apex hang: gravity eases through the top of the arc so aerials are
       // easier to place. Off in hitstun/crush (launch KOs keep their exact
       // physics) and while fast-falling.
@@ -1309,7 +1324,9 @@ export class Game {
       // knockback keeps its exact physics, like the apex hang above
       const fall = !inHitstun && !inCrush && f.vy > 0 ? FALL_GRAV : 1;
       const cap = (f.fastfall ? FASTFALL : MAX_FALL) * slow;
-      f.vy = Math.min(cap, f.vy + GRAV * slow * apex * fall * TICK);
+      const next = f.vy + GRAV * slow * apex * fall * TICK;
+      // a negative float's cap limits how fast it may RISE, not fall
+      f.vy = slow < 0 ? Math.max(cap, next) : Math.min(cap, next);
     }
     f.x += f.vx * TICK;
     f.y += f.vy * TICK;
@@ -1820,6 +1837,15 @@ export class Game {
     const k = clamp(f.stateT / this._chargeMax(f), 0, this._chargeKMax(f));
     const aim = f.chgAim || { dx: 0, dy: 0 };
     f.chgAim = null;
+    // rang down-charge: the release slings the thrower skyward off the
+    // stored spin, harder the longer it wound. Shares the aerial-rise
+    // cooldown with the sword lunge so chained pops can't climb forever.
+    if (f.st.weapon === 'boomerang' && aim.dy > 0 && !f.grounded && f.riseT <= 0) {
+      f.vy = Math.min(f.vy, -RANG_CHG_POP * (1 + RANG_CHG_POP_CHG * Math.min(1, k)));
+      f.fastfall = false;
+      f.riseT = AIR_RISE_CD;
+      this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
+    }
     // charge scales damage/knockback (and burst range) when the hit resolves
     this._startAttack(f, { kind: 'swipe', dx: aim.dx, dy: aim.dy }, false, k);
   }
