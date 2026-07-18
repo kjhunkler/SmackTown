@@ -37,7 +37,7 @@ const fellBoss = (g, att = null) => {
   const b1 = fellBoss(g, g.fighters[0]);
   check('act 1 boss is always the base variant', b1.variant === 0);
   check('felling it clears the act and lights a beacon', g.bossesDown === 1 && !!g.beacon && !g.won);
-  check('the beacon burns where the boss fell', g.beacon.x === b1.x && g.beacon.charge === 0);
+  check('the beacon burns up the road, clear of the heart burst', g.beacon.x === b1.x + 340 && g.beacon.charge === 0);
   g.beacon = null;
   const b2 = fellBoss(g);
   check('act 2 boss is the mid variant', b2.variant === 1);
@@ -59,11 +59,11 @@ const fellBoss = (g, att = null) => {
   const b = g.beacon;
   for (const f of g.fighters) { f.x = b.x; f.y = b.y - 30; }
   let steps = 0;
-  while (!g.over && steps++ < 60 * 6) {
+  while (!g.over && steps++ < 60 * 8) {
     for (const f of g.fighters) { f.x = b.x; f.y = b.y - 30; }   // hold the light
     g.step();
   }
-  check('everyone holding the beacon banks the run in a few seconds', g.over && steps < 60 * 5);
+  check('everyone holding the beacon banks the run in ~5 seconds', g.over && steps >= 60 * 4.5 && steps < 60 * 7);
   check('an unwon run extracts', g.endReason === 'extracted');
   check('the podium event fired', !!g.endReason);
 }
@@ -76,7 +76,7 @@ const fellBoss = (g, att = null) => {
   const b = g.beacon;
   g.fighters[0].x = b.x; g.fighters[0].y = b.y - 30;
   g.fighters[1].x = b.x + 2000;                     // one straggler far away
-  for (let i = 0; i < 60 * 22 && !g.over; i++) {   // outlive the 20s burn
+  for (let i = 0; i < 60 * 27 && !g.over; i++) {   // outlive the 25s burn
     g.fighters[0].x = b.x; g.fighters[1].x = b.x + 2000;
     g.step();
     if (!g.beacon) break;
@@ -93,7 +93,7 @@ const fellBoss = (g, att = null) => {
   fellBoss(g);
   const b = g.beacon;
   g.fighters[1].parked = true;
-  for (let i = 0; i < 60 * 4 && !g.over; i++) {
+  for (let i = 0; i < 60 * 8 && !g.over; i++) {
     g.fighters[0].x = b.x; g.fighters[0].y = b.y - 30;
     g.step();
   }
@@ -108,7 +108,7 @@ const fellBoss = (g, att = null) => {
   fellBoss(g);
   check('the staged capstone won the run', g.won);
   const b = g.beacon;
-  for (let i = 0; i < 60 * 4 && !g.over; i++) {
+  for (let i = 0; i < 60 * 8 && !g.over; i++) {
     for (const f of g.fighters) { f.x = b.x; f.y = b.y - 30; }
     g.step();
   }

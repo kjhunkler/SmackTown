@@ -740,7 +740,7 @@ export class Renderer {
       if (h.x < left || h.x > right || h.y < top || h.y > bottom) continue;
       this._heart(ctx, h, t);
     }
-    if (view.beacon) this._beacon(ctx, view.beacon, t);
+    if (view.beacon) this._beacon(ctx, view.beacon, t, view.fighters);
 
     for (const f of view.fighters) if (!f.dead) this._fighter(ctx, f, f.id === myId, t);
 
@@ -1579,10 +1579,12 @@ export class Renderer {
     ctx.restore();
   }
 
-  // Extraction beacon: a pillar of gold light where a boss fell. The ground
-  // ring marks the stand-inside radius the sim tests, the arc riding it is
-  // the channel charge, and the countdown reads out the burn time left.
-  _beacon(ctx, b, t) {
+  // Extraction beacon: a pillar of gold light up the road from a fallen
+  // boss. The ground ring marks the stand-inside radius the sim tests, the
+  // arc riding it is the channel charge, and the floating label spells out
+  // the deal: EXTRACT HERE, the channel progress, how many of the standing
+  // party are in the light, and the burn time left.
+  _beacon(ctx, b, t, fighters = []) {
     const R = 120;                                     // mirrors BEACON_RADIUS
     const flick = 0.85 + 0.15 * Math.sin(t * 6);
     // light pillar reaching for the sky
@@ -1626,11 +1628,29 @@ export class Renderer {
       ctx.fillRect(b.x + Math.sin(t * 1.3 + i * 2.4) * 34, b.y - ph * 380, 3, 3);
     }
     ctx.globalAlpha = 1;
-    // burn-down countdown floating over the light
-    ctx.fillStyle = `rgba(255, 226, 174, ${b.t < 5 ? (0.55 + 0.45 * Math.sin(t * 10)).toFixed(2) : '.9'})`;
-    ctx.font = 'bold 22px system-ui, sans-serif';
+
+    // floating label: EXTRACT HERE over a channel-progress bar, with the
+    // standing-party headcount the sim requires and the burn time left
+    const standing = fighters.filter(f => !f.dead && !f.parked);
+    const inside = standing.filter(f => Math.abs(f.x - b.x) < R && Math.abs(f.y - b.y) < 260).length;
+    const urgency = b.t < 5 ? (0.55 + 0.45 * Math.sin(t * 10)).toFixed(2) : '.95';
     ctx.textAlign = 'center';
-    ctx.fillText(`⛺ ${Math.ceil(b.t)}`, b.x, b.y - 150);
+    ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.fillStyle = `rgba(255, 226, 174, ${urgency})`;
+    ctx.fillText('⛺ EXTRACT HERE', b.x, b.y - 208);
+    const bw = 170, bh = 11, bx = b.x - bw / 2, by = b.y - 198;
+    ctx.fillStyle = 'rgba(10, 12, 30, .65)';
+    roundRect(ctx, bx, by, bw, bh, 5); ctx.fill();
+    if (b.charge > 0) {
+      ctx.fillStyle = '#ffd23e';
+      roundRect(ctx, bx, by, Math.max(6, bw * b.charge), bh, 5); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(255, 210, 62, .55)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, bx, by, bw, bh, 5); ctx.stroke();
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillStyle = inside >= standing.length && standing.length ? '#b8ffc9' : '#ffe2ae';
+    ctx.fillText(`${inside}/${standing.length || 1} in the light · ${Math.ceil(b.t)}s`, b.x, b.y - 170);
   }
 
   // Lighten (>0) or darken (<0) a #rrggbb color by a fraction.

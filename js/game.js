@@ -512,9 +512,10 @@ const ELITE_DMG_BONUS = 1.25;        // elites hit a quarter harder
 // non-parked fighter down at once, nobody left to rally around — ends the
 // run in defeat instead of the old silent infinite respawn.
 export const EXPEDITION_ACTS = 3;
-const BEACON_LIFE = 20;              // seconds an extraction beacon burns
+const BEACON_LIFE = 25;              // seconds an extraction beacon burns
 const BEACON_RADIUS = 120;           // stand-this-close to channel it
-const BEACON_CHANNEL = 2.5;          // seconds everyone must hold the light
+const BEACON_CHANNEL = 5;            // seconds everyone must hold the light
+const BEACON_OFFSET = 340;           // lit up the road from the boss corpse, clear of its heart burst
 const VICTORY_ELITE_CHANCE = 0.15;   // elite odds on the victory lap
 const PARK_SPAWN_GRACE = 1.5;        // spawn breather after the whole party returns from the lobby
 // Percent-keyed augments have no percent to read in co-op, so they retarget
@@ -3751,8 +3752,10 @@ export class Game {
         this.won = true;
         this.events.push({ e: 'roadclear', x: e.x, y: e.y });
       }
-      // the way home opens: an extraction beacon burns where the boss fell
-      const bx = e.x, by = this.stage.main.y;
+      // the way home opens: an extraction beacon burns up the road from
+      // where the boss fell — offset so grabbing its heart burst never
+      // accidentally channels the way out
+      const bx = e.x + BEACON_OFFSET, by = this.stage.main.y;
       this.beacon = { x: bx, y: by, t: BEACON_LIFE, charge: 0 };
       this.events.push({ e: 'beacon', x: bx, y: by, won: this.won ? 1 : 0, life: BEACON_LIFE });
     } else if (this.rng() < HEART_DROP_CHANCE) this._spawnHeart(e.x, e.y);
