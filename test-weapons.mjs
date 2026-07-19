@@ -676,12 +676,38 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('charging a pinned hex drains mana into its life', ca.mana < manaBeforeCharge && ca.hammerCatch);
   const ttlBeforeCharge = chex.ttl;
   for (let i = 0; i < 140; i++) cg._stepFighter(ca, chg);
-  check('charging pours mana into the hex life', chex.ttl > ttlBeforeCharge && ca.mana < manaBeforeCharge - 30);
-  check('the inflated hex is capped in size', chex.r > baseR && chex.r <= 150);
+  check('charging fills hex life without spending past its cap',
+    chex.ttl > ttlBeforeCharge && chex.ttl <= 6 && ca.mana > manaBeforeCharge - 30);
+  check('the inflated hex has a medium-large size cap', chex.r > baseR && chex.r <= 120);
+  check('the inflated hex has a life cap', chex.ttl <= 6 && chex.life <= 6);
   const rel = blankInput(); rel.my = -1;
   cg._stepFighter(ca, rel);
-  check('a fully charged hex launch is very powerful (hex persists)',
-    !ca.hammerCatch && ca.vy < -1800 && ca.hammerFlight && chex.ttl > 0);
+  check('a fully charged hex launch reaches but does not exceed its power cap',
+    !ca.hammerCatch && ca.vy <= -1750 && ca.vy >= -1800 && ca.hammerFlight && chex.ttl > 0);
+
+  // A maxed hex remains chargeable, but can only consume the mana required to
+  // replace ongoing decay. It must not bank extra life or auto-release.
+  const capped = mkGame('hammer');
+  const cappedFighter = capped.fighters[0];
+  capped._startAttack(cappedFighter, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  const cappedHex = capped.projectiles.find(p => p.kind === 'hammerwave');
+  cappedFighter.x = cappedHex.x + cappedHex.r + 100; capped._resolveAttacks();
+  cappedFighter.x = cappedHex.x; cappedFighter.y = cappedHex.y;
+  cappedFighter.moveIntent = { x: 0, y: 0 }; capped._resolveAttacks();
+  cappedHex.r = cappedHex.r0 = 120; cappedHex.ttl = cappedHex.life = 6;
+  cappedFighter.mana = 100;
+  const cappedCharge = blankInput();
+  cappedCharge.chg = { dx: 0, dy: -1 }; cappedCharge.chgArm = true; cappedCharge.my = -1;
+  capped._stepFighter(cappedFighter, cappedCharge); cappedCharge.chgArm = false;
+  check('a full hex does not waste mana on overcharge',
+    cappedFighter.mana === 100 && cappedHex.ttl === 6 && cappedFighter.hammerCatch?.charging);
+  for (let i = 0; i < 60; i++) {
+    capped._stepProjectiles();
+    capped._stepFighter(cappedFighter, cappedCharge);
+  }
+  check('holding a maxed charge only pays maintenance',
+    cappedFighter.hammerCatch?.charging && cappedHex.ttl <= 6
+      && cappedHex.ttl > 5.9 && cappedFighter.mana > 99);
 
   // Regression: aging happens in _stepProjectiles, so a real frame ages the
   // hex. A nearly-expired hex must NOT vanish once you start charging — the
