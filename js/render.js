@@ -287,6 +287,11 @@ export class Renderer {
           this.burst(ev.x, ev.y, 12, spark, 320);
           break;
         }
+        case 'bombboom':
+          this.rings.push({ x: ev.x, y: ev.y, r0: 16, r1: ev.r || 100, t: 0, life: 0.34, color: '#ff5470', w: 8 });
+          this.burst(ev.x, ev.y, 28, '#ffb02e', 560);
+          this.shake = Math.max(this.shake, 12);
+          break;
         case 'fizzle':
           // a release with nothing to give — a dry mana tank, or a rang
           // still out on its flight: a sad little puff and the reason why
@@ -597,11 +602,31 @@ export class Renderer {
       if ((s.t -= dt) <= 0) this.squash.delete(id);
     }
 
+    // The prospective bomb arc is private information: only the thrower
+    // sees it while charging. It uses the same launch equation as the sim.
+    const thrower = (view.fighters || []).find(f => f.id === myId);
+    if (thrower?.weapon === 'bombs' && thrower.state === 'charge' && thrower.atk === 'bomb') {
+      this._bombTrajectory(ctx, thrower, t);
+    }
+
     // projectiles
     for (const p of view.projectiles || []) {
       ctx.save();
       ctx.translate(p.x, p.y);
-      if (p.kind === 'hammerwave') {
+      if (p.kind === 'bomb') {
+        const blast = p.bombR || 75;
+        const pulse = .55 + .25 * Math.sin(t * 10 + p.eid);
+        // Once released, the danger radius is public to every player.
+        ctx.strokeStyle = `rgba(255,84,112,${pulse.toFixed(2)})`;
+        ctx.lineWidth = 4; ctx.setLineDash([12, 8]); ctx.lineDashOffset = -t * 55;
+        ctx.beginPath(); ctx.arc(0, 0, blast, 0, 7); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#202536';
+        ctx.beginPath(); ctx.arc(0, 0, p.r || 13, 0, 7); ctx.fill();
+        ctx.strokeStyle = '#ffb02e'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(5, -10); ctx.quadraticCurveTo(12, -20, 16, -13); ctx.stroke();
+        ctx.fillStyle = '#ffd23e'; ctx.beginPath(); ctx.arc(16, -13, 3 + pulse * 2, 0, 7); ctx.fill();
+      } else if (p.kind === 'hammerwave') {
         const r = p.r || 40;
         const armed = !(p.arm > 0);
         const pulse = .65 + .35 * Math.sin(t * 18 + p.eid);
@@ -4333,6 +4358,24 @@ export class Renderer {
         roundRect(ctx, x, y, Math.max(3, w * k), h, 2); ctx.fill();
       }
     }
+  }
+
+  _bombTrajectory(ctx, f, t) {
+    const k = clamp(f.hb?.chg || 0, 0, 1);
+    let dx = f.aim?.x || f.facing || 1, dy = f.aim?.y || 0;
+    if (dy > 0 && Math.abs(f.vy || 0) < 1) dy = 0;
+    const n = Math.hypot(dx, dy) || 1;
+    const speed = 360 + (850 - 360) * k;
+    const lift = 260 + (520 - 260) * k;
+    const vx = dx / n * speed, vy = dy / n * speed - lift;
+    const x0 = f.x + dx / n * 34, y0 = f.y - 16 + dy / n * 16;
+    ctx.save();
+    ctx.fillStyle = `rgba(255,210,62,${(.65 + .25 * Math.sin(t * 8)).toFixed(2)})`;
+    for (let s = 0; s <= 1.35; s += .09) {
+      const x = x0 + vx * s, y = y0 + vy * s + .5 * 1050 * s * s;
+      ctx.beginPath(); ctx.arc(x, y, 2.5 + 1.5 * s / 1.35, 0, 7); ctx.fill();
+    }
+    ctx.restore();
   }
 
   // Attack hitbox: dashed outline while winding up (telegraph), then a hot

@@ -616,6 +616,7 @@ const ATTACKS = {
   bash:   { dmg: 7, kb: 340, ks: 22, startup: .09, active: .20, rec: .30, rx: 46, ry: 42, ang: -28, bounce: true },
   hslam:  { dmg: 0, kb: 0, ks: 0, startup: .18, active: .02, rec: .48, rx: 44, ry: 34, ang: 0, cast: true },
   hupp:   { dmg: 17, kb: 300, ks: 25, startup: .20, active: .13, rec: .38, rx: 58, ry: 74, ang: -88, up: true },
+  bomb:   { dmg: 0, kb: 0, ks: 0, startup: .08, active: .02, rec: .24, rx: 30, ry: 24, ang: 0, cast: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -634,6 +635,7 @@ const WEAPON_DEFS = {
   boomerang: { chargeMax: 0.9 },     // brisk wind-up; charge buys range and bite
   shield:  { chargeMax: 1.2 },       // regular wind-up; the shield guards while held
   hammer:  { chargeMax: 2.4, overcharge: 1.5 }, // slow wind-up, long potential charge
+  bombs:   { chargeMax: 1.5 },       // charge buys throw distance and blast power
 };
 const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
@@ -702,6 +704,12 @@ const HAMMER_WAVES = [
   { off: 170, r: 50, delay: .23, dmg: 11, kb: 310, ks: 21 },
   { off: 248, r: 34, delay: .43, dmg: 7,  kb: 220, ks: 15 },
 ];
+const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
+const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
+const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1050;
+const BOMB_RADIUS0 = 75, BOMB_RADIUS1 = 150;
+const BOMB_DMG0 = 8, BOMB_DMG1 = 18;
+const BOMB_KB0 = 420, BOMB_KB1 = 760;
 // In co-op only, a landed (unblocked) bash turns its victim into a body-slam
 // hazard for the rest of their flight: creeps they collide with while this
 // window is live take a hit too. PvP victims do not gain a hitbox. Piggybacks
@@ -1652,6 +1660,7 @@ export class Game {
     }
     if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
     if (name === 'rang' && !this._throwRang(f, dx, dy, chg)) return;  // rang still out: no throw
+    if (name === 'bomb') this._throwBomb(f, dx, dy, chg);
     if (name === 'hslam') this._hammerShockwaves(f, dx, dy, chg);
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
   }
@@ -1675,6 +1684,25 @@ export class Game {
     this.events.push({ e: 'hammerslam', id: f.id, x: f.x, y: groundY });
   }
 
+  _throwBomb(f, dx, dy, k) {
+    // Bombs always get an upward arc. Aim changes its initial direction;
+    // charge stretches that same arc rather than shortening the fuse.
+    if (f.grounded && dy > 0) dy = 0;
+    const n = Math.hypot(dx, dy) || 1;
+    const nx = dx / n, ny = dy / n;
+    const speed = BOMB_SPEED0 + (BOMB_SPEED1 - BOMB_SPEED0) * k;
+    const lift = BOMB_LIFT0 + (BOMB_LIFT1 - BOMB_LIFT0) * k;
+    this.projectiles.push({
+      eid: nextEid++, kind: 'bomb', owner: f.id,
+      x: f.x + nx * 34, y: f.y - 16 + ny * 16,
+      vx: nx * speed, vy: ny * speed - lift,
+      grav: BOMB_GRAVITY, ttl: BOMB_FUSE, arm: BOMB_FUSE,
+      r: 13, bombR: BOMB_RADIUS0 + (BOMB_RADIUS1 - BOMB_RADIUS0) * k,
+      dmg: BOMB_DMG0 + (BOMB_DMG1 - BOMB_DMG0) * k,
+      kb: BOMB_KB0 + (BOMB_KB1 - BOMB_KB0) * k, ks: 18,
+    });
+  }
+
   // Which strong attack a swipe/charge becomes: the equipped weapon's
   // strike, or the classic smash kit for bare fists.
   _weaponAttack(f, dx, dy) {
@@ -1685,6 +1713,7 @@ export class Game {
     if (w === 'boomerang') return 'rang';
     if (w === 'shield') return 'bash';
     if (w === 'hammer') return dy < 0 ? 'hupp' : 'hslam';
+    if (w === 'bombs') return 'bomb';
     if (dy < 0 && !dx) return 'usmash';
     if (dy > 0 && !dx) return f.grounded ? 'dsmash' : 'dair';
     return 'fsmash';
@@ -2549,22 +2578,62 @@ export class Game {
           this.events.push({ e: 'catch', id: own.id, x: pr.x, y: pr.y });
         }
       }
-      if (pr.grav) this._settleTrap(pr);
+      if (pr.kind === 'bomb') this._settleBomb(pr);
+      else if (pr.grav) this._settleTrap(pr);
       else if (pr.plat != null) {
         // settled on a platform: ride it (traps on the crane girder sweep too)
         const pl = this.platsNow()[pr.plat];
         if (pl) { pr.x = pl.x + pr.pox; pr.y = pl.y - 12; }
       }
       const m = this.stage.main;
-      if (pr.y > m.y && pr.x > m.x && pr.x < m.x + m.w) pr.ttl = 0;
+      if (pr.kind !== 'bomb' && pr.y > m.y && pr.x > m.x && pr.x < m.x + m.w) pr.ttl = 0;
     }
     // dying shells detonate exactly once, whatever killed them
     for (const pr of this.projectiles) {
       if (pr.ttl > 0 || pr.boomed) continue;
       if (pr.kind === 'burst' && pr.aoeR) { pr.boomed = true; this._burstBoom(pr); }
+      else if (pr.kind === 'bomb') { pr.boomed = true; this._bombBoom(pr); }
       else if (pr.fireR) { pr.boomed = true; this._fireBoom(pr); }
     }
     this.projectiles = this.projectiles.filter(p => p.ttl > 0);
+  }
+
+  _settleBomb(pr) {
+    const floor = this.stage.main;
+    if (pr.x > floor.x && pr.x < floor.x + floor.w && pr.y >= floor.y - pr.r) {
+      pr.y = floor.y - pr.r; pr.vx *= .72; pr.vy = 0; pr.grav = 0;
+    }
+  }
+
+  _bombBoom(pr) {
+    const att = this.fighters.find(f => f.id === pr.owner);
+    if (!att) return;
+    const R = pr.bombR;
+    const spec = { dmg: pr.dmg, kb: pr.kb, ks: pr.ks };
+    this.events.push({ e: 'bombboom', x: pr.x, y: pr.y, r: R });
+    for (const o of this.fighters) {
+      if (o.dead) continue;
+      const dx = o.x - pr.x, dy = o.y - pr.y;
+      if (Math.hypot(dx, dy) > R + F_W / 2) continue;
+      const dir = Math.sign(dx) || 1;
+      if (o.id === att.id) {
+        // Self blasts are movement tech only: launch without percent/HP,
+        // hitstun, hit events, or damage attribution.
+        const falloff = 1 - Math.min(.7, Math.hypot(dx, dy) / (R + F_W / 2));
+        o.vx += dir * pr.kb * .72 * falloff;
+        o.vy = Math.min(o.vy, -pr.kb * .62 * falloff);
+        o.grounded = false; o.fastfall = false;
+      } else if (!this.coop && o.invuln <= 0) {
+        this._applyHit(att, o, spec, deg(-55), dir, false);
+      }
+    }
+    for (const e of this.enemies) {
+      if (e.hp <= 0 || (e.ally && (this.coop || e.ally === att.id))) continue;
+      const dx = e.x - pr.x, dy = e.y - pr.y;
+      if (Math.hypot(dx, dy) <= R + Math.max(e.hw, e.hh)) {
+        this._hitEnemy(att, e, spec, deg(-55), Math.sign(dx) || 1, false);
+      }
+    }
   }
 
   // Snap a falling trap onto the first surface under it, then stop pulling.
@@ -3938,7 +4007,7 @@ export class Game {
           f.comboN, r2(f.comboT),           // tap combo chain state (indices 46,47)
         ];
       }),
-      p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0), r2(p.arm || 0), p.section ?? -1]),
+      p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0), r2(p.arm || 0), p.section ?? -1, r1(p.bombR || 0)]),
       en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0, e.atkKind || 0, r1(e.aimX || 0), r1(e.aimY || 0), e.ally || 0, r2(e.life || 0)]),
       ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),
