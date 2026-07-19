@@ -712,7 +712,7 @@ const HAMMER_CHAIN_MAX = 4;
 const HAMMER_FLOAT_DECAY = 1.15;      // seconds until normal gravity fully returns while held
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
-const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1050;
+const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
 const BOMB_RADIUS0 = 75, BOMB_RADIUS1 = 150;
 export function bombLaunch(x, y, facing, aimX, aimY, grounded, charge) {
   // Do not use truthiness for aimX: zero is the important straight-up case.
@@ -730,7 +730,7 @@ export function bombLaunch(x, y, facing, aimX, aimY, grounded, charge) {
   };
 }
 const BOMB_DMG0 = 8, BOMB_DMG1 = 18;
-const BOMB_KB0 = 420, BOMB_KB1 = 760;
+const BOMB_KB0 = 480, BOMB_KB1 = 860;
 // In co-op only, a landed (unblocked) bash turns its victim into a body-slam
 // hazard for the rest of their flight: creeps they collide with while this
 // window is live take a hit too. PvP victims do not gain a hitbox. Piggybacks

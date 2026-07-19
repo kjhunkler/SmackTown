@@ -26,12 +26,15 @@ weakGame._startAttack(weakThrower, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
 const weak = weakGame.projectiles[0];
 check('a bomb swipe throws a delayed bomb', weakThrower.atk === 'bomb' && weak.kind === 'bomb' && weak.arm > 1);
 check('the bomb starts on a gravity-driven arc', weak.grav > 0 && weak.vx > 0 && weak.vy < 0);
+check('bombs use the heavier fall gravity', weak.grav === 1200);
+check('uncharged bombs have stronger knockback', weak.kb === 480);
 
 const strongGame = game();
 strongGame._startAttack(strongGame.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
 const strong = strongGame.projectiles[0];
 check('charge increases throw distance', strong.vx > weak.vx && Math.abs(strong.vy) > Math.abs(weak.vy));
 check('charge increases damage and explosion radius', strong.dmg > weak.dmg && strong.bombR > weak.bombR);
+check('fully charged bombs have stronger knockback', strong.kb === 860);
 check('snapshot carries the public explosion telegraph radius', strongGame.snapshot().p[0][8] === strong.bombR);
 
 const platformGame = new Game([
