@@ -614,6 +614,8 @@ const ATTACKS = {
   // 'bounce' swaps the wielder into the victim's spot on clean hits. A modest
   // launcher with light damage — a slab of steel, not a blade.
   bash:   { dmg: 7, kb: 340, ks: 22, startup: .09, active: .20, rec: .30, rx: 46, ry: 42, ang: -28, bounce: true },
+  hslam:  { dmg: 0, kb: 0, ks: 0, startup: .18, active: .02, rec: .48, rx: 44, ry: 34, ang: 0, cast: true },
+  hupp:   { dmg: 17, kb: 300, ks: 25, startup: .20, active: .13, rec: .38, rx: 58, ry: 74, ang: -88, up: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -631,6 +633,7 @@ const WEAPON_DEFS = {
   spear:   { chargeMax: 1.2 },       // regular wind-up, same as bare fists
   boomerang: { chargeMax: 0.9 },     // brisk wind-up; charge buys range and bite
   shield:  { chargeMax: 1.2 },       // regular wind-up; the shield guards while held
+  hammer:  { chargeMax: 2.4, overcharge: 1.5 }, // slow wind-up, long potential charge
 };
 const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
@@ -694,6 +697,11 @@ const SHIELD_LUNGE = 1.1;            // bash lunge, fraction of the sword's (a c
 const SHIELD_LUNGE_UP = 1.15;        // up-bashes still climb, but less vertically than before
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
+const HAMMER_WAVES = [
+  { off: 72,  r: 68, delay: .05, dmg: 16, kb: 410, ks: 27 },
+  { off: 170, r: 50, delay: .23, dmg: 11, kb: 310, ks: 21 },
+  { off: 248, r: 34, delay: .43, dmg: 7,  kb: 220, ks: 15 },
+];
 // In co-op only, a landed (unblocked) bash turns its victim into a body-slam
 // hazard for the rest of their flight: creeps they collide with while this
 // window is live take a hit too. PvP victims do not gain a hitbox. Piggybacks
@@ -1620,6 +1628,10 @@ export class Game {
     // the bash IS a lunge: the shield rams ahead harder than any blade,
     // and up-aimed rams climb extra hard (shield users fly shieldfirst)
     if (name === 'bash') this._lunge(f, dx, dy, chg, SHIELD_LUNGE, SHIELD_LUNGE_UP);
+    if (name === 'hupp') {
+      f.vy = Math.min(f.vy, -900 * (1 + .45 * chg));
+      f.grounded = false; f.fastfall = false; f.riseT = AIR_RISE_CD;
+    }
     if (name === 'sweep') this.events.push({ e: 'sweep', id: f.id, x: f.x, y: f.y + F_H / 2 });
     // tap combo bookkeeping: a stage lunges along the held aim (harder
     // deeper into the string) only while a direction is held — see
@@ -1640,7 +1652,27 @@ export class Game {
     }
     if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
     if (name === 'rang' && !this._throwRang(f, dx, dy, chg)) return;  // rang still out: no throw
+    if (name === 'hslam') this._hammerShockwaves(f, dx, dy, chg);
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
+  }
+
+  _hammerShockwaves(f, dx, dy, k) {
+    // A down smash splits in both directions. Every other ground smash
+    // travels in the horizontal component of its aim (or the facing).
+    const dirs = dy > 0 && f.grounded ? [-1, 1] : [Math.sign(dx) || f.facing || 1];
+    const groundY = f.y + F_H / 2 - 12;
+    for (const dir of dirs) for (let section = 0; section < HAMMER_WAVES.length; section++) {
+      const wave = HAMMER_WAVES[section];
+      const power = 1 + .5 * k;
+      this.projectiles.push({
+        eid: nextEid++, kind: 'hammerwave', owner: f.id,
+        x: f.x + dir * wave.off, y: groundY, vx: 0, vy: 0,
+        r: wave.r, arm: wave.delay, ttl: wave.delay + .16,
+        dmg: wave.dmg * power, kb: wave.kb * power, ks: wave.ks,
+        ang: -38, thru: true, hit: new Set(), section, dir,
+      });
+    }
+    this.events.push({ e: 'hammerslam', id: f.id, x: f.x, y: groundY });
   }
 
   // Which strong attack a swipe/charge becomes: the equipped weapon's
@@ -1652,6 +1684,7 @@ export class Game {
     if (w === 'spear') return dy > 0 && f.grounded ? 'sweep' : 'thrust';
     if (w === 'boomerang') return 'rang';
     if (w === 'shield') return 'bash';
+    if (w === 'hammer') return dy < 0 ? 'hupp' : 'hslam';
     if (dy < 0 && !dx) return 'usmash';
     if (dy > 0 && !dx) return f.grounded ? 'dsmash' : 'dair';
     return 'fsmash';
@@ -2166,7 +2199,7 @@ export class Game {
 
     // projectiles vs fighters
     for (const pr of this.projectiles) {
-      if (pr.kind === 'anchor') continue;   // a beacon, not a weapon — no hitbox
+      if (pr.kind === 'anchor' || pr.arm > 0) continue;   // warnings are visible but harmless
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
         if (this.coop) continue;   // co-op: no friendly fire between teammates
@@ -2200,7 +2233,7 @@ export class Game {
     // friendly projectiles vs creeps (co-op) and vs rival summons (PvP)
     if (this.coop || this.enemies.length) {
       for (const pr of this.projectiles) {
-        if (pr.foe || pr.kind === 'anchor') continue;   // creeps' own shots, and beacons, don't hit creeps
+        if (pr.foe || pr.kind === 'anchor' || pr.arm > 0) continue; // telegraphs do not hit
         const att = this.fighters.find(x => x.id === pr.owner);
         if (!att) continue;
         const radius = pr.r + 80;   // pad covers the widest body (bosses)
@@ -2489,6 +2522,7 @@ export class Game {
 
   _stepProjectiles() {
     for (const pr of this.projectiles) {
+      if (pr.arm > 0) pr.arm = Math.max(0, pr.arm - TICK);
       if (pr.ret) {
         // boomerang: decelerate along the launch axis, then swing back home
         const was = pr.vx * pr.lnx + pr.vy * pr.lny;
@@ -3904,7 +3938,7 @@ export class Game {
           f.comboN, r2(f.comboT),           // tap combo chain state (indices 46,47)
         ];
       }),
-      p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0)]),
+      p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0), r2(p.arm || 0), p.section ?? -1]),
       en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0, e.atkKind || 0, r1(e.aimX || 0), r1(e.aimY || 0), e.ally || 0, r2(e.life || 0)]),
       ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),
