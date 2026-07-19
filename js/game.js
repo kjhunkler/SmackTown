@@ -716,6 +716,8 @@ const HAMMER_INFLATE_LAUNCH0 = 820;   // uncharged launch out of your own hex (f
 const HAMMER_INFLATE_LAUNCH1 = 2200;  // fully charged launch — very powerful
 const HAMMER_HEX_CHARGE_COST = 15;    // mana to begin charging a pinned hex for a stronger launch
 const HAMMER_HEX_LIFE_PER_R = 0.08;   // seconds of life banked per unit the pinned hex grows
+const HEX_TOUCH_EVERY = 0.3;          // how often the hex chips a rival standing in it
+const HEX_TOUCH_DMG0 = 3, HEX_TOUCH_DMG1 = 6;  // per-tick touch damage vs charge (no lingering burn)
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
@@ -1275,6 +1277,12 @@ export class Game {
         if (sx || sy) f.hammerCatch.aim = { x: sx, y: sy };
         else if (inp.atk && (inp.atk.dx || inp.atk.dy)) f.hammerCatch.aim = { x: inp.atk.dx, y: inp.atk.dy };
         else if (inp.chg && (inp.chg.dx || inp.chg.dy)) f.hammerCatch.aim = { x: inp.chg.dx, y: inp.chg.dy };
+        // Mirror the (re-aimable) launch direction onto the hex so the renderer
+        // can glow its rim toward where the wielder is about to launch. Unlike
+        // every other weapon, this aim keeps updating from the stick mid-charge.
+        const la = f.hammerCatch.aim || { x: f.facing, y: 0 };
+        const ln = Math.hypot(la.x, la.y) || 1;
+        gate.aimX = la.x / ln; gate.aimY = la.y / ln; gate.glow = true;
         // Begin a charge: costs mana. Too dry to pay and it just doesn't start
         // (the uncharged tap is still available for free).
         if (!f.hammerCatch.charging && inp.chg && inp.chgArm) {
@@ -1312,7 +1320,7 @@ export class Game {
         }
         // Not charging: a jump dislodges you once the brief pause has passed.
         if (f.hammerCatch.t >= HAMMER_CATCH_DELAY && inp.jump && f.jumps > 0) {
-          gate.pinned = false;
+          gate.pinned = false; gate.glow = false;
           f.hammerCatch = null;
           f.vy = -JUMP_V * f.st.jumpMult;
           f.jumps--;
@@ -1858,7 +1866,8 @@ export class Game {
     const power = .75 + 1.25 * charge;
     const life = HAMMER_HEX_LIFE0 + (HAMMER_HEX_LIFE1 - HAMMER_HEX_LIFE0) * charge;
     // Ground and air now share the same body-centered hex. It remains behind
-    // as a shrinking launch gate and burning hazard after the wielder leaves.
+    // as a shrinking launch gate and a hazard that chips whoever stands in it
+    // (touch damage only — no lingering burn once they leave).
     for (let section = 0; section < 1; section++) {
       this.projectiles.push({
         eid: nextEid++, kind: 'hammerwave', owner: f.id,
@@ -1868,7 +1877,8 @@ export class Game {
         ang: Math.atan2(ny, nx) * 180 / Math.PI, thru: true,
         hit: new Set(), section, dir: Math.sign(nx) || f.facing,
         aimX: nx, aimY: ny, boost: HAMMER_HEX_BOOST0 + (HAMMER_HEX_BOOST1 - HAMMER_HEX_BOOST0) * charge,
-        inside: new Set([f.id]), dot: { n: 4, every: .45, dmg: 1.5 + 1.5 * charge },
+        inside: new Set([f.id]),
+        touchDmg: HEX_TOUCH_DMG0 + (HEX_TOUCH_DMG1 - HEX_TOUCH_DMG0) * charge, touchCd: 0,
       });
     }
     const speed = HAMMER_LAUNCH0 + (HAMMER_LAUNCH1 - HAMMER_LAUNCH0) * charge;
@@ -2441,6 +2451,10 @@ export class Game {
       // Lingering hammer hexes always catch on entry. Direction handling is
       // deferred to fighter stepping so the catch is visible and persistent.
       if (pr.kind === 'hammerwave' && pr.inside) {
+        const att = this.fighters.find(x => x.id === pr.owner);
+        pr.touchCd = (pr.touchCd || 0) - TICK;
+        const touch = pr.touchCd <= 0;
+        if (touch) pr.touchCd = HEX_TOUCH_EVERY;
         for (const fighter of this.fighters) {
           const within = !fighter.dead && Math.abs(fighter.x - pr.x) < F_W / 2 + pr.r
             && Math.abs(fighter.y - pr.y) < F_H / 2 + pr.r;
@@ -2454,8 +2468,18 @@ export class Game {
             fighter.fastfall = false;
             this.events.push({ e: 'catch', id: fighter.id, x: pr.x, y: pr.y });
           }
+          // Touch damage: the hex only chips a rival while they are inside it,
+          // ticking directly with no burn that lingers after they step out.
+          if (touch && within && att && fighter.id !== pr.owner
+              && fighter.invuln <= 0 && !this.coop) {
+            const dmg = pr.touchDmg * fighter.st.dmgTaken;
+            fighter.pct += dmg;
+            att.score.dmg += dmg;
+            this.events.push({ e: 'burn', x: fighter.x, y: fighter.y - F_H / 2, vic: fighter.id, dmg: Math.round(dmg) });
+          }
           if (within) pr.inside.add(fighter.id); else pr.inside.delete(fighter.id);
         }
+        continue;   // the hex's fighter damage is the touch tick above, not a hit
       }
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
@@ -4276,7 +4300,7 @@ export class Game {
           f.hammerChainDir ? f.hammerChainDir.y : 0, // hammer redirects (48..51)
         ];
       }),
-      p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0), r2(p.arm || 0), p.section ?? -1, r1(p.bombR || 0)]),
+      p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0), r2(p.arm || 0), p.section ?? -1, r1(p.bombR || 0), p.glow ? 1 : 0, r2(p.aimX || 0), r2(p.aimY || 0)]),
       en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0, e.atkKind || 0, r1(e.aimX || 0), r1(e.aimY || 0), e.ally || 0, r2(e.life || 0)]),
       ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),

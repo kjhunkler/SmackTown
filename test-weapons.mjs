@@ -571,9 +571,18 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('holding charge makes the hex much larger', waves[0].r > tapRadius.projectiles[0].r * 2);
   check('full charge makes the launch substantially stronger', a.vx > 1400 && a.vy === 0);
   check('hammer release consumes charge-scaled mana', a.mana < tapRadius.fighters[0].mana);
-  const victim = g.fighters[1]; victim.x = waves[0].x; victim.y = waves[0].y;
+  const victim = g.fighters[1]; victim.x = waves[0].x; victim.y = waves[0].y; victim.invuln = 0;
+  const pctBefore = victim.pct;
   g._resolveAttacks();
-  check('passing through a hammer hex applies afterburn', !!victim.burn && victim.burn.n === 4);
+  check('standing in a hammer hex chips damage, not a lingering burn', victim.pct > pctBefore && !victim.burn);
+  const pctMid = victim.pct;
+  for (let i = 0; i < 40; i++) g._resolveAttacks();
+  check('the hex keeps damaging while the rival stays inside', victim.pct > pctMid);
+  victim.x = waves[0].x + waves[0].r + 300;   // step well clear of the hex
+  g._resolveAttacks();
+  const pctOut = victim.pct;
+  for (let i = 0; i < 40; i++) g._resolveAttacks();
+  check('the hex damage does not linger once the rival leaves', victim.pct === pctOut && !victim.burn);
   // Caught in your OWN hex: suspended and centered, no longer boosted by a
   // held direction. Re-enter after having left the hex once.
   a.x = waves[0].x + waves[0].r + 100;
@@ -652,6 +661,26 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const dryCharge = blankInput(); dryCharge.chg = { dx: 0, dy: -1 }; dryCharge.chgArm = true; dryCharge.my = -1;
   dryGame._stepFighter(da, dryCharge);
   check('a hex charge with too little mana does not start', da.hammerCatch && da.mana >= 10 && !da.hammerCatch.charging);
+
+  // Re-aiming mid-charge (unique to the hammer) steers the launch, and the hex
+  // rim glows toward the current aim so you can see where you'll go.
+  const ag = mkGame('hammer');
+  const aa = ag.fighters[0];
+  ag._startAttack(aa, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  const ahex = ag.projectiles.find(p => p.kind === 'hammerwave');
+  aa.x = ahex.x + ahex.r + 100; ag._resolveAttacks();
+  aa.x = ahex.x; aa.y = ahex.y; aa.moveIntent = { x: 0, y: 0 }; ag._resolveAttacks();
+  aa.mana = 100;
+  const upChg = blankInput(); upChg.chg = { dx: 0, dy: -1 }; upChg.chgArm = true; upChg.my = -1;
+  ag._stepFighter(aa, upChg); upChg.chgArm = false;
+  for (let i = 0; i < 20; i++) ag._stepFighter(aa, upChg);
+  check('the pinned hex glows toward the launch aim', ahex.glow && ahex.aimY < 0 && Math.abs(ahex.aimX) < 0.01);
+  const leftChg = blankInput(); leftChg.chg = { dx: 0, dy: -1 }; leftChg.mx = -1;
+  for (let i = 0; i < 20; i++) ag._stepFighter(aa, leftChg);
+  check('the launch aim can be changed mid-charge', ahex.aimX < 0 && aa.hammerCatch);
+  const relLeft = blankInput(); relLeft.mx = -1;
+  ag._stepFighter(aa, relLeft);
+  check('releasing after re-aim launches in the new direction', !aa.hammerCatch && aa.vx < 0 && aa.hammerFlight);
 
   // A jump dislodges a caught wielder naturally once the pause has passed.
   const jg = mkGame('hammer');
