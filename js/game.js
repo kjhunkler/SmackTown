@@ -702,9 +702,10 @@ const SHIELD_LUNGE = 1.1;            // bash lunge, fraction of the sword's (a c
 const SHIELD_LUNGE_UP = 1.15;        // up-bashes still climb, but less vertically than before
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
-const HAMMER_HEX_RADIUS = 38;
-const HAMMER_SPREAD0 = 58, HAMMER_SPREAD1 = 122;
+const HAMMER_HEX_RADIUS0 = 38, HAMMER_HEX_RADIUS1 = 72;
+const HAMMER_SPREAD = 92;
 const HAMMER_LAUNCH0 = 760, HAMMER_LAUNCH1 = 1180;
+const HAMMER_HEX_BOOST = 180;
 const HAMMER_HEX_LIFE = .42;
 const HAMMER_CHAIN_WINDOW = .34;
 const HAMMER_CHAIN_MAX = 4;
@@ -1706,19 +1707,22 @@ export class Game {
     const n = Math.hypot(dx, dy) || 1;
     const nx = dx / n, ny = dy / n;
     const charge = clamp(k, 0, 1);
-    const spread = HAMMER_SPREAD0 + (HAMMER_SPREAD1 - HAMMER_SPREAD0) * charge;
-    const count = chained ? 1 : 3;
-    const first = spread;
+    const airborne = !f.grounded;
+    const radius = HAMMER_HEX_RADIUS0 + (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0) * charge;
+    const count = airborne || chained ? 1 : 3;
     const power = 1 + .5 * charge;
     for (let section = 0; section < count; section++) {
-      const off = first + section * spread;
+      // An aerial release detonates the one hex wrapped around the wielder.
+      // Ground releases leave three boost gates evenly down the aimed path.
+      const off = airborne ? 0 : HAMMER_SPREAD * (section + 1);
       this.projectiles.push({
         eid: nextEid++, kind: 'hammerwave', owner: f.id,
         x: f.x + nx * off, y: f.y + ny * off, vx: 0, vy: 0,
-        r: HAMMER_HEX_RADIUS, arm: 0, ttl: HAMMER_HEX_LIFE,
+        r: radius, arm: 0, ttl: HAMMER_HEX_LIFE,
         dmg: 11 * power, kb: 300 * power, ks: 22,
         ang: Math.atan2(ny, nx) * 180 / Math.PI, thru: true,
         hit: new Set(), section, dir: Math.sign(nx) || f.facing,
+        aimX: nx, aimY: ny, boost: !airborne, boosted: false,
       });
     }
     const speed = HAMMER_LAUNCH0 + (HAMMER_LAUNCH1 - HAMMER_LAUNCH0) * charge;
@@ -2269,6 +2273,18 @@ export class Game {
     // projectiles vs fighters
     for (const pr of this.projectiles) {
       if (pr.kind === 'anchor' || pr.arm > 0) continue;   // warnings are visible but harmless
+      // Ground hammer hexes are both hazards and launch gates. Each gate can
+      // accelerate its owner once, extending the release along its locked aim.
+      if (pr.kind === 'hammerwave' && pr.boost && !pr.boosted) {
+        const owner = this.fighters.find(x => x.id === pr.owner);
+        if (owner && Math.abs(owner.x - pr.x) < F_W / 2 + pr.r
+            && Math.abs(owner.y - pr.y) < F_H / 2 + pr.r) {
+          owner.vx += pr.aimX * HAMMER_HEX_BOOST;
+          owner.vy += pr.aimY * HAMMER_HEX_BOOST;
+          owner.fastfall = false;
+          pr.boosted = true;
+        }
+      }
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
         if (this.coop) continue;   // co-op: no friendly fire between teammates
@@ -2291,7 +2307,18 @@ export class Game {
               const dist = Math.hypot(pr.x - pr.x0, pr.y - pr.y0);
               spec = { ...pr, kb: HOOK_KB0 + (HOOK_KB1 - HOOK_KB0) * Math.min(1, dist / HOOK_RANGE) };
             }
-            this._applyHit(att, o, spec, deg(pr.ang ?? -40), dirX, false, !!pr.pierce);
+            let hitAng = deg(pr.ang ?? -40), hitDir = dirX;
+            if (pr.kind === 'hammerwave') {
+              // Hammer knockback blends the wielder's aim with the radial
+              // attacker-to-target vector, so aim steers without erasing
+              // where the victim actually stood relative to the swing.
+              const tx = pos.x - att.x, ty = pos.y - att.y;
+              const tn = Math.hypot(tx, ty) || 1;
+              const kx = pr.aimX + tx / tn, ky = pr.aimY + ty / tn;
+              hitDir = Math.sign(kx) || pr.dir || 1;
+              hitAng = Math.atan2(ky, Math.abs(kx));
+            }
+            this._applyHit(att, o, spec, hitAng, hitDir, false, !!pr.pierce);
           }
           if (pr.thru) pr.hit.add(o.id);   // sail on through
           else { pr.struck = o.id; pr.ttl = 0; }   // burst AoE skips the direct victim
@@ -4038,7 +4065,7 @@ export class Game {
           f.id, r1(f.x), r1(f.y), r1(f.vx), r1(f.vy), f.facing,
           r1(f.pct), f.stocks, f.state, f.dead ? 1 : 0,
           f.invuln > 0 ? 1 : 0, f.atk || '', r1(f.cds[0]), r1(f.cds[1]),
-          hb ? [r1(hb.dx), r1(hb.dy), hb.hw, hb.hh, hb.active ? 1 : 0, r2(hb.chg || 0)] : 0,
+          hb ? [r1(hb.dx), r1(hb.dy), hb.hw, hb.hh, hb.active ? 1 : 0, r2(hb.chg || 0), hb.hammerAir ? 1 : 0] : 0,
           // Appended for client prediction/reconciliation + host handoff:
           f.grounded ? 1 : 0, f.jumps, r2(f.stateT), f.ledge,
           r2(f.regrabT), f.rollDir, r2(f.invuln), r2(f.dropT),
@@ -4251,9 +4278,11 @@ export function meleeHitbox(f, spec, aim = null) {
   if (spec.hammerThrust) {
     const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };
     const n = Math.hypot(dir.x, dir.y) || 1;
-    const spread = HAMMER_SPREAD0;
-    return { dx: dir.x / n * spread * 2, dy: dir.y / n * spread * 2,
-      hw: HAMMER_HEX_RADIUS, hh: HAMMER_HEX_RADIUS, hammerThrust: true };
+    const air = !f.grounded;
+    return { dx: air ? 0 : dir.x / n * HAMMER_SPREAD * 2,
+      dy: air ? 0 : dir.y / n * HAMMER_SPREAD * 2,
+      hw: HAMMER_HEX_RADIUS0, hh: HAMMER_HEX_RADIUS0,
+      hammerThrust: true, hammerAir: air };
   }
   if (spec.spear) {
     const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };

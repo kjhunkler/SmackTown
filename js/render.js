@@ -4485,7 +4485,8 @@ export class Renderer {
     const n = Math.hypot(aim.x, aim.y) || 1;
     const nx = aim.x / n, ny = aim.y / n;
     const charge = clamp(f.hb.chg || 0, 0, 1);
-    const spread = 58 + (122 - 58) * charge;
+    const radius = 38 + (72 - 38) * charge;
+    const spread = 92;
     const pulse = .68 + .22 * Math.sin(t * (7 + charge * 8));
     ctx.save();
     ctx.strokeStyle = `rgba(72,226,132,${pulse.toFixed(2)})`;
@@ -4493,13 +4494,14 @@ export class Renderer {
     ctx.lineWidth = 4;
     ctx.setLineDash([8, 6]);
     ctx.lineDashOffset = -t * 55;
-    for (let point = 1; point <= 3; point++) {
-      const x = f.x + nx * spread * point;
-      const y = f.y + ny * spread * point;
+    const count = f.hb.hammerAir ? 1 : 3;
+    for (let point = 1; point <= count; point++) {
+      const x = f.x + (f.hb.hammerAir ? 0 : nx * spread * point);
+      const y = f.y + (f.hb.hammerAir ? 0 : ny * spread * point);
       ctx.beginPath();
       for (let side = 0; side < 6; side++) {
         const a = Math.PI / 6 + side * Math.PI / 3;
-        const px = x + Math.cos(a) * 38, py = y + Math.sin(a) * 38;
+        const px = x + Math.cos(a) * radius, py = y + Math.sin(a) * radius;
         if (side) ctx.lineTo(px, py); else ctx.moveTo(px, py);
       }
       ctx.closePath(); ctx.fill(); ctx.stroke();

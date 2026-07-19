@@ -567,8 +567,15 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const waves = g.projectiles.filter(p => p.kind === 'hammerwave');
   check('hammer releases three simultaneous sections', waves.length === 3 && waves.every(p => p.arm === 0));
   check('all three launch hexes retain the same footprint', waves.every(p => p.r === waves[0].r));
-  check('charge spreads the three points evenly', waves[1].x - waves[0].x === waves[2].x - waves[1].x);
+  check('the three ground points are evenly spaced', waves[1].x - waves[0].x === waves[2].x - waves[1].x);
+  const tapRadius = mkGame('hammer');
+  tapRadius._startAttack(tapRadius.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  check('holding charge expands all three hexagons', waves.every(p => p.r > tapRadius.projectiles[0].r));
   check('release launches the wielder through the points', a.vx > 1000 && a.vy === 0);
+  const beforeBoost = a.vx;
+  a.x = waves[0].x;
+  g._resolveAttacks();
+  check('ground hexes boost the wielder further along the aim', a.vx > beforeBoost);
 
   const down = mkGame('hammer');
   const d = down.fighters[0]; d.grounded = true;
@@ -596,7 +603,11 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   charged._startCharge(ch, { dx: 1, dy: 0 }); ch.stateT = charged._chargeMax(ch);
   const long = charged.hitboxFor(ch);
   check('hammer charge exposes its hex telegraph', short.hammerThrust && !short.active);
+  check('aerial hammer telegraph is centered on the wielder', short.hammerAir && short.dx === 0 && short.dy === 0);
   check('hammer telegraph retains equal-size hex data', long.hw === short.hw && long.hh === short.hh);
+  charged._releaseCharge(ch);
+  const airWaves = charged.projectiles.filter(p => p.kind === 'hammerwave');
+  check('aerial hammer releases only one body-centered hex', airWaves.length === 1 && airWaves[0].x === ch.x && airWaves[0].y === ch.y);
 
   const chain = mkGame('hammer');
   const c = chain.fighters[0];
