@@ -2479,6 +2479,14 @@ export class Game {
             fighter.hammerFlight = null;
             fighter.vx = 0; fighter.vy = 0;
             fighter.fastfall = false;
+            // Cancel any strong attack the fighter was winding up (or swinging)
+            // as they entered: while pinned the charge sits frozen, and without
+            // this it would release into a whole new hex the moment they launch
+            // out. Charging a pinned hex is a separate, hammerCatch-only path.
+            if (fighter.state === 'charge' || fighter.state === 'attack') {
+              fighter.state = 'air'; fighter.atk = null; fighter.atkDir = null;
+              fighter.chg = 0; fighter.chgAim = null; fighter.atkHit.clear();
+            }
             this.events.push({ e: 'catch', id: fighter.id, x: pr.x, y: pr.y });
           }
           // Touch damage: the hex only chips a rival while they are inside it,

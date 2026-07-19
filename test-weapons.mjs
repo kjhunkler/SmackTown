@@ -621,6 +621,27 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('a launch costs no mana', ba.mana >= bMana);
   check('launch speed scales with the hex size', Math.abs(ba.vy) > 1200);
 
+  // Entering a hex while a strong attack is charging must cancel that charge —
+  // it must NOT fire a whole new hex when you later launch out.
+  const xg = mkGame('hammer');
+  const xp = xg.fighters[0];
+  xg._startAttack(xp, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);   // hex A; xp launches out
+  const hexA = xg.projectiles.find(p => p.kind === 'hammerwave');
+  xp.x = hexA.x + hexA.r + 200; xp.hammerFlight = null; xg._resolveAttacks();   // leave hex A
+  xp.mana = 100;
+  xg._startCharge(xp, { dx: 1, dy: 0 });                            // begin a new directional charge
+  check('a hammer charge is in progress before entry', xp.state === 'charge' && xp.atk === 'hthrust');
+  xp.x = hexA.x; xp.y = hexA.y; xp.moveIntent = { x: 0, y: 0 }; xg._resolveAttacks();   // enter hex A mid-charge
+  check('entering a hex cancels the in-progress charge', xp.hammerCatch && xp.state !== 'charge' && xp.atk !== 'hthrust');
+  const hexCountBefore = xg.projectiles.filter(p => p.kind === 'hammerwave').length;
+  const relX = blankInput(); relX.my = -1;
+  for (let i = 0; i < 12; i++) xg._stepFighter(xp, relX);           // held (charge button released), pinned
+  const tapX = blankInput(); tapX.atk = { kind: 'swipe', dx: 0, dy: -1 }; tapX.my = -1;
+  xg._stepFighter(xp, tapX);                                        // launch out
+  for (let i = 0; i < 10; i++) xg._stepFighter(xp, blankInput());   // let any stale charge try to fire
+  check('no phantom second hex spawns after launching out',
+    xg.projectiles.filter(p => p.kind === 'hammerwave').length === hexCountBefore);
+
   // Charging a pinned hex drains mana into its life, pumps it bigger (capped),
   // and the release is a very powerful launch scaled by the charge.
   const cg = mkGame('hammer');
