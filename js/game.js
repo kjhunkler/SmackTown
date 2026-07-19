@@ -712,9 +712,10 @@ const HAMMER_CHAIN_WINDOW = .34;
 const HAMMER_CHAIN_MAX = 4;
 const HAMMER_FLOAT_DECAY = 1.15;      // seconds until normal gravity fully returns while held
 const HAMMER_CATCH_DELAY = .08;       // suspended pause before a jump can dislodge you
-const HAMMER_INFLATE_MAX = 150;       // caught in your own hex: hard cap on how big charging pumps it
+const HAMMER_INFLATE_MAX = 120;       // caught in your own hex: medium-large size cap
 const HAMMER_INFLATE_LAUNCH0 = 820;   // uncharged launch out of your own hex (free)
-const HAMMER_INFLATE_LAUNCH1 = 2200;  // fully charged launch — very powerful
+const HAMMER_INFLATE_LAUNCH1 = 1800;  // power cap for a fully charged hex launch
+const HAMMER_INFLATE_LIFE_MAX = 6;    // charged hexes cannot bank unlimited lifetime
 // While pinned, the caster feeds the hex to offset its decay. The trickle
 // cost is set to the airborne regen rate (MANA_REGEN * 0.5) so simply holding
 // a hex is net-zero mana — you can bounce between hexes without spending.
@@ -737,8 +738,8 @@ function hammerHexStrength(radius, low, high) {
     return low * clamp((radius - HAMMER_HEX_RADIUS_MIN)
       / (HAMMER_HEX_RADIUS0 - HAMMER_HEX_RADIUS_MIN), 0, 1);
   }
-  return low + (high - low) * (radius - HAMMER_HEX_RADIUS0)
-    / (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0);
+  return low + (high - low) * clamp((radius - HAMMER_HEX_RADIUS0)
+    / (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0), 0, 1);
 }
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
@@ -1323,22 +1324,27 @@ export class Game {
           const k = clamp(f.hammerCatch.chgT / this._chargeMax(f), 0, 1);
           gate.r0 = Math.min(HAMMER_INFLATE_MAX,
             f.hammerCatch.baseR + (HAMMER_INFLATE_MAX - f.hammerCatch.baseR) * k);
-          // Pour mana into the hex's life while charging (converted at
-          // HEX_LIFE_PER_MANA). This is the only mana the hex ever costs — the
-          // launch itself is free, and an out-of-mana charge just lets the hex
-          // keep decaying naturally.
-          const spend = Math.min(f.mana, HEX_CHARGE_MANA_PER_SEC * TICK);
+          // Pour mana into the hex's life while charging, but never buy energy
+          // beyond its cap. Once full, subsequent frames only replace natural
+          // decay, so a held max charge cannot waste mana or overcharge.
+          gate.ttl = Math.min(gate.ttl, HAMMER_INFLATE_LIFE_MAX);
+          gate.life = Math.min(gate.life, HAMMER_INFLATE_LIFE_MAX);
+          const lifeRoom = Math.max(0, HAMMER_INFLATE_LIFE_MAX - gate.ttl);
+          const spend = Math.min(f.mana, HEX_CHARGE_MANA_PER_SEC * TICK,
+            lifeRoom / HEX_LIFE_PER_MANA);
           if (spend > 0) {
             f.mana -= spend;
-            gate.ttl += spend * HEX_LIFE_PER_MANA;
+            gate.ttl = Math.min(HAMMER_INFLATE_LIFE_MAX,
+              gate.ttl + spend * HEX_LIFE_PER_MANA);
             // A larger maximum radius carries a proportionally larger energy
             // capacity. Added energy is immediately reflected by its size.
             const sizeLife = HAMMER_HEX_LIFE0 + (HAMMER_HEX_LIFE1 - HAMMER_HEX_LIFE0)
               * (gate.r0 - HAMMER_HEX_RADIUS0) / (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0);
-            gate.life = Math.max(gate.life, sizeLife);
+            gate.life = Math.min(HAMMER_INFLATE_LIFE_MAX,
+              Math.max(gate.life, sizeLife));
           }
           syncHammerHexRadius(gate);
-          if (!inp.chg || k >= 1) {
+          if (!inp.chg) {
             // Releasing a smash also queues a buffered swipe edge; consume it
             // (as _releaseCharge does) so it can't fire a normal hthrust — and
             // spawn a second hex — the instant we launch out.
