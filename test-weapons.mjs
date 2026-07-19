@@ -574,14 +574,45 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const victim = g.fighters[1]; victim.x = waves[0].x; victim.y = waves[0].y;
   g._resolveAttacks();
   check('passing through a hammer hex applies afterburn', !!victim.burn && victim.burn.n === 4);
-  const beforeBoost = a.vx; a.x = waves[0].x + waves[0].r + 100;
+  a.x = waves[0].x + waves[0].r + 100;
   g._resolveAttacks();
   a.moveIntent = { x: 0, y: -1 }; a.x = waves[0].x;
   g._resolveAttacks();
-  check('re-entering with direction boosts in that direction', a.vy < -600 && a.vx === beforeBoost);
+  check('re-entering with direction catches before boosting', a.hammerCatch && a.vx === 0 && a.vy === 0);
+  const held = blankInput(); held.my = -1;
+  g._stepFighter(a, held);
+  check('a held entry direction pauses briefly before launch', a.hammerCatch && a.vy === 0);
+  for (let i = 0; i < 6; i++) g._stepFighter(a, held);
+  check('continuing to hold launches in that direction', !a.hammerCatch && a.vy < -500 && a.hammerFlight);
   a.x = waves[0].x + waves[0].r + 100; g._resolveAttacks();
   a.moveIntent = { x: 0, y: 0 }; a.x = waves[0].x; g._resolveAttacks();
   check('neutral re-entry catches and stops the wielder', a.vx === 0 && a.vy === 0);
+  const press = blankInput(); press.mx = -1;
+  g._stepFighter(a, press);
+  check('a direction pressed while caught launches immediately', !a.hammerCatch && a.vx < 0 && a.hammerFlight);
+  victim.x = a.x; victim.y = a.y; victim.invuln = 0;
+  g._resolveAttacks();
+  check('a hex-launched fighter has a body-sized projectile hitbox', a.hammerFlight.hit.has(victim.id));
+
+  const expiring = mkGame('hammer');
+  const ex = expiring.fighters[0];
+  ex.y = -200; ex.grounded = false;
+  expiring._startAttack(ex, { kind: 'swipe', dx: 1, dy: 0 });
+  const fading = expiring.projectiles[0];
+  ex.x = fading.x + fading.r + 100; expiring._resolveAttacks();
+  ex.moveIntent = { x: 0, y: 0 }; ex.x = fading.x; expiring._resolveAttacks();
+  fading.ttl = 0;
+  expiring._stepProjectiles();
+  expiring._stepFighter(ex, blankInput());
+  check('a neutral catch lasts until its hex decays', !ex.hammerCatch && ex.vy > 0);
+
+  const limited = mkGame('hammer');
+  const lm = limited.fighters[0]; lm.mana = 36;
+  const chargeInput = blankInput(); chargeInput.chg = { dx: 1, dy: 0 }; chargeInput.chgArm = false;
+  limited._startCharge(lm, chargeInput.chg);
+  for (let i = 0; i < 120 && lm.state === 'charge'; i++) limited._stepFighter(lm, chargeInput);
+  check('hammer auto-releases at its available mana', lm.state === 'attack' && limited.projectiles.some(p => p.kind === 'hammerwave'));
+  check('mana-limited auto-release does not fizzle or overdraw', lm.mana >= 0 && !limited.events.some(e => e.e === 'fizzle'));
 
   const dry = mkGame('hammer');
   dry.fighters[0].mana = 20;
