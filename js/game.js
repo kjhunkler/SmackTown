@@ -703,6 +703,7 @@ const SHIELD_LUNGE_UP = 1.15;        // up-bashes still climb, but less vertical
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
 const HAMMER_HEX_RADIUS0 = 36, HAMMER_HEX_RADIUS1 = 96;
+const HAMMER_HEX_RADIUS_MIN = 8;      // empty gates expire as a tiny, readable spark
 const HAMMER_LAUNCH0 = 620, HAMMER_LAUNCH1 = 1460;
 const HAMMER_HEX_BOOST0 = 360, HAMMER_HEX_BOOST1 = 680;
 const HAMMER_HEX_LIFE0 = 2.2, HAMMER_HEX_LIFE1 = 4.8;
@@ -723,6 +724,24 @@ const HEX_LIFE_PER_MANA = 0.12;       // seconds of hex life gained per mana spe
 const HEX_DAMAGE_LIFE_COST = 0.2;     // extra hex life lost each time it deals touch damage
 const HEX_TOUCH_EVERY = 0.3;          // how often the hex chips a rival standing in it
 const HEX_TOUCH_DMG0 = 3, HEX_TOUCH_DMG1 = 6;  // per-tick touch damage vs charge (no lingering burn)
+
+// Hex energy is its remaining lifetime. Radius is the public energy gauge:
+// every gate shrinks continuously from its charged size to a tiny spark at
+// zero, while larger starting gates also receive the larger energy reserve.
+function syncHammerHexRadius(hex) {
+  const energy = clamp(hex.ttl / Math.max(hex.life || 0, TICK), 0, 1);
+  hex.r = HAMMER_HEX_RADIUS_MIN
+    + (Math.max(hex.r0 || HAMMER_HEX_RADIUS_MIN, HAMMER_HEX_RADIUS_MIN) - HAMMER_HEX_RADIUS_MIN) * energy;
+}
+
+function hammerHexStrength(radius, low, high) {
+  if (radius <= HAMMER_HEX_RADIUS0) {
+    return low * clamp((radius - HAMMER_HEX_RADIUS_MIN)
+      / (HAMMER_HEX_RADIUS0 - HAMMER_HEX_RADIUS_MIN), 0, 1);
+  }
+  return low + (high - low) * (radius - HAMMER_HEX_RADIUS0)
+    / (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0);
+}
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
@@ -1303,14 +1322,23 @@ export class Game {
         if (f.hammerCatch.charging) {
           f.hammerCatch.chgT += TICK;
           const k = clamp(f.hammerCatch.chgT / this._chargeMax(f), 0, 1);
-          gate.r = Math.min(HAMMER_INFLATE_MAX,
+          gate.r0 = Math.min(HAMMER_INFLATE_MAX,
             f.hammerCatch.baseR + (HAMMER_INFLATE_MAX - f.hammerCatch.baseR) * k);
           // Pour mana into the hex's life while charging (converted at
           // HEX_LIFE_PER_MANA). This is the only mana the hex ever costs — the
           // launch itself is free, and an out-of-mana charge just lets the hex
           // keep decaying naturally.
           const spend = Math.min(f.mana, HEX_CHARGE_MANA_PER_SEC * TICK);
-          if (spend > 0) { f.mana -= spend; gate.ttl += spend * HEX_LIFE_PER_MANA; }
+          if (spend > 0) {
+            f.mana -= spend;
+            gate.ttl += spend * HEX_LIFE_PER_MANA;
+            // A larger maximum radius carries a proportionally larger energy
+            // capacity. Added energy is immediately reflected by its size.
+            const sizeLife = HAMMER_HEX_LIFE0 + (HAMMER_HEX_LIFE1 - HAMMER_HEX_LIFE0)
+              * (gate.r0 - HAMMER_HEX_RADIUS0) / (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0);
+            gate.life = Math.max(gate.life, sizeLife);
+          }
+          syncHammerHexRadius(gate);
           if (!inp.chg || k >= 1) {
             // Releasing a smash also queues a buffered swipe edge; consume it
             // (as _releaseCharge does) so it can't fire a normal hthrust — and
@@ -1359,8 +1387,9 @@ export class Game {
         const entered = f.hammerCatch.intent;
         const changed = n > .15 && (!entered || Math.abs(intent.x - entered.x) > .15 || Math.abs(intent.y - entered.y) > .15);
         if (n > .15 && (changed || !entered || f.hammerCatch.t >= HAMMER_CATCH_DELAY)) {
-          f.vx = intent.x / n * gate.boost;
-          f.vy = intent.y / n * gate.boost;
+          const boost = hammerHexStrength(gate.r, HAMMER_HEX_BOOST0, HAMMER_HEX_BOOST1);
+          f.vx = intent.x / n * boost;
+          f.vy = intent.y / n * boost;
           f.fastfall = false;
           f.grounded = false;
           f.dashT = Math.max(f.dashT, ATTACKS.hthrust.active);
@@ -1858,8 +1887,11 @@ export class Game {
   _hexLaunch(f, gate) {
     const aim = f.hammerCatch?.aim || { x: f.facing, y: 0 };
     const n = Math.hypot(aim.x, aim.y) || 1;
-    const grow = clamp((gate.r - HAMMER_HEX_RADIUS0) / (HAMMER_INFLATE_MAX - HAMMER_HEX_RADIUS0), 0, 1);
-    const speed = HAMMER_INFLATE_LAUNCH0 + (HAMMER_INFLATE_LAUNCH1 - HAMMER_INFLATE_LAUNCH0) * grow;
+    const speed = gate.r <= HAMMER_HEX_RADIUS0
+      ? HAMMER_INFLATE_LAUNCH0 * clamp((gate.r - HAMMER_HEX_RADIUS_MIN)
+        / (HAMMER_HEX_RADIUS0 - HAMMER_HEX_RADIUS_MIN), 0, 1)
+      : HAMMER_INFLATE_LAUNCH0 + (HAMMER_INFLATE_LAUNCH1 - HAMMER_INFLATE_LAUNCH0)
+        * clamp((gate.r - HAMMER_HEX_RADIUS0) / (HAMMER_INFLATE_MAX - HAMMER_HEX_RADIUS0), 0, 1);
     f.vx = aim.x / n * speed;
     f.vy = aim.y / n * speed;
     f.fastfall = false;
@@ -2499,7 +2531,7 @@ export class Game {
           // ticking directly with no burn that lingers after they step out.
           if (touch && within && att && fighter.id !== pr.owner
               && fighter.invuln <= 0 && !this.coop) {
-            const dmg = pr.touchDmg * fighter.st.dmgTaken;
+            const dmg = hammerHexStrength(pr.r, HEX_TOUCH_DMG0, HEX_TOUCH_DMG1) * fighter.st.dmgTaken;
             fighter.pct += dmg;
             att.score.dmg += dmg;
             pr.ttl -= HEX_DAMAGE_LIFE_COST;   // dealing damage burns a little of the hex's life
@@ -2860,9 +2892,9 @@ export class Game {
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
-      // A hammer hex keeps its size for its whole life (its size is its launch
-      // power) and simply vanishes when its life runs out; it only loses life
-      // to natural decay, to dealing damage, and gains it from the caster.
+      // Energy, life, visual radius, and force are the same readable system:
+      // decay shrinks and weakens the gate, and removal happens only at zero.
+      if (pr.kind === 'hammerwave') syncHammerHexRadius(pr);
       // a returning rang that reaches its thrower is caught — gone from the
       // air, and the hand is free to wind up the next throw early
       if (pr.ret && pr.ttl > 0 && pr.vx * pr.lnx + pr.vy * pr.lny < 0) {

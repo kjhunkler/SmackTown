@@ -753,6 +753,37 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   for (let i = 0; i < 40; i++) { ug._stepProjectiles(); if (!ug.projectiles.some(p => p.eid === uhex.eid)) uvanished = true; }
   check('an unoccupied hex decays away on its own', uvanished);
 
+  // Radius is the energy gauge: it falls continuously with life, reaches a
+  // tiny spark before removal, and the same smaller radius produces less
+  // launch force.
+  const eg = mkGame('hammer');
+  const eo = eg.fighters[0];
+  eg._startAttack(eo, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
+  const ehex = eg.projectiles.find(p => p.kind === 'hammerwave');
+  const freshR = ehex.r;
+  ehex.ttl = ehex.life / 2;
+  eg._stepProjectiles();
+  check('a half-spent hex visibly shrinks', ehex.r < freshR && ehex.r > 8);
+  eo.hammerCatch = { eid: ehex.eid, aim: { x: 0, y: -1 } };
+  eg._hexLaunch(eo, ehex);
+  const fadedLaunch = Math.abs(eo.vy);
+
+  const fg = mkGame('hammer');
+  const fo = fg.fighters[0];
+  fg._startAttack(fo, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
+  const fhex = fg.projectiles.find(p => p.kind === 'hammerwave');
+  fo.hammerCatch = { eid: fhex.eid, aim: { x: 0, y: -1 } };
+  fg._hexLaunch(fo, fhex);
+  check('a faded hex launches with less force', fadedLaunch < Math.abs(fo.vy));
+
+  ehex.ttl = 1.1 / 60;
+  eg._stepProjectiles();
+  check('a positive-energy hex remains as a tiny spark',
+    eg.projectiles.some(p => p.eid === ehex.eid) && ehex.r < 9);
+  eg._stepProjectiles();
+  check('a hex disappears only when its energy reaches zero',
+    !eg.projectiles.some(p => p.eid === ehex.eid));
+
   // Dealing damage burns a little extra hex life beyond the natural decay.
   const dg2 = mkGame('hammer');
   const dOwner = dg2.fighters[0], dVictim = dg2.fighters[1];
