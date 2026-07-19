@@ -403,9 +403,13 @@ function drawLobbyFighter(s) {
     ctx.save();
     ctx.translate(-bw / 2 + 7, bTop + 12);
     ctx.rotate(-0.5);
-    ctx.fillStyle = '#8fd3ff';
+    ctx.fillStyle = '#35a4e8';
     rr(ctx, -10, -3.5, 20, 7, 3.5); ctx.fill();
     rr(ctx, -3.5, -10, 7, 20, 3.5); ctx.fill();
+    ctx.strokeStyle = 'rgba(8, 18, 40, .7)';
+    ctx.lineWidth = 1.8;
+    rr(ctx, -10, -3.5, 20, 7, 3.5); ctx.stroke();
+    rr(ctx, -3.5, -10, 7, 20, 3.5); ctx.stroke();
     ctx.fillStyle = '#eaf7ff';
     ctx.beginPath(); ctx.arc(0, 0, 3, 0, 7); ctx.fill();
     ctx.restore();

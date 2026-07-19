@@ -584,7 +584,7 @@ const ATTACKS = {
   // run out along the aim (rx = blade length, ry = half-thickness) — reach
   // no fist can match, but a narrow band that punishes sloppy lines. Trades
   // raw damage for real launch power; the wind-up hangs in the air.
-  slash:  { dmg: 12.6, kb: 132, ks: 11.5, startup: .09, active: .11, rec: .24, rx: 96, ry: 14, ang: -25, blade: true },
+  slash:  { dmg: 13.5, kb: 132, ks: 11.5, startup: .09, active: .11, rec: .24, rx: 96, ry: 14, ang: -25, blade: true },
   // magic strong attack: the cast pose. 'cast' = no melee box ever goes
   // active — the hit is the burst projectile spawned at release.
   mcast:  { dmg: 0,  kb: 0,   ks: 0,  startup: .08, active: .02, rec: .26, rx: 30, ry: 24, ang: 0, cast: true },
@@ -677,6 +677,7 @@ const RANG_TTL0 = 1.05, RANG_TTL1 = 1.6;   // flight time vs charge
 const RANG_DMG0 = 7,   RANG_DMG1 = 13;     // damage vs charge
 const RANG_KB0  = 340, RANG_KB1  = 520;    // knockback vs charge
 const RANG_RET = 1400;               // return pull back along the launch axis
+const RANG_RET_DMG = 0.6;            // the return leg bites at 60% — the throw is the hit
 const RANG_CATCH_X = 34, RANG_CATCH_Y = 44;  // catch window around the thrower
 // Shield weapon: the bash is a body ram — a hard lunge whose impact blasts
 // the victim out of their spot and parks the wielder IN it (a position
@@ -831,7 +832,7 @@ const ABILITY_DEFS = {
   fireball:  { cd: 3.0 },
   dashstrike:{ cd: 4.0 },
   shockwave: { cd: 6.0 },
-  uppercut:  { cd: 4.0 },
+  uppercut:  { cd: 5.0 },
   counter:   { cd: 5.0 },
   blink:     { cd: 4.0 },
   volley:    { cd: 5.0 },
@@ -2303,7 +2304,7 @@ export class Game {
     let dmg = spec.dmg * att.st.dmgMult;
     // brawler: the bare tap kit (jab string, dash attack, air spin) bites harder
     if (att.st.augments.includes('brawler') && spec.tap) {
-      dmg *= 1.25;
+      dmg *= 1.4;
       this.events.push({ e: 'augment', aug: 'brawler', id: att.id, x: att.x, y: att.y });
     }
     if (att.st.augments.includes('berserker') && att.pct >= 80) {
@@ -2316,7 +2317,7 @@ export class Game {
     }
     if (att.st.augments.includes('momentum') && !spec.r
         && (att.atkSpd > 320 || Math.hypot(att.vx, att.vy) > 320)) {
-      dmg *= 1.15; // fast-moving melee hits harder
+      dmg *= 1.25; // fast-moving melee hits harder
       this.events.push({ e: 'augment', aug: 'momentum', id: att.id, x: att.x, y: att.y });
     }
     dmg *= vic.st.dmgTaken;                     // defense stat shaves incoming damage
@@ -2362,10 +2363,16 @@ export class Game {
     vic.score.taken += dmg;
     if (dmg > att.score.maxHit) att.score.maxHit = dmg;
 
-    // acrobat: connecting resets your air jumps, enabling aerial chases
+    // acrobat: connecting resets your air jumps, enabling aerial chases —
+    // and TAKING a hit refreshes them too, so a launched acrobat always
+    // has wings to recover on
     if (att.st.augments.includes('acrobat') && att.jumps < att.st.maxJumps) {
       att.jumps = att.st.maxJumps;
       this.events.push({ e: 'augment', aug: 'acrobat', id: att.id, x: att.x, y: att.y });
+    }
+    if (vic.st.augments.includes('acrobat') && vic.jumps < vic.st.maxJumps) {
+      vic.jumps = vic.st.maxJumps;
+      this.events.push({ e: 'augment', aug: 'acrobat', id: vic.id, x: vic.x, y: vic.y });
     }
 
     // vampiric heal & second wind
@@ -2477,8 +2484,12 @@ export class Game {
         const was = pr.vx * pr.lnx + pr.vy * pr.lny;
         pr.vx -= pr.ret * pr.lnx * TICK;
         pr.vy -= pr.ret * pr.lny * TICK;
-        // piercing rangs re-arm at the turnaround: out and back both connect
-        if (pr.thru && was > 0 && pr.vx * pr.lnx + pr.vy * pr.lny <= 0) pr.hit.clear();
+        // piercing rangs re-arm at the turnaround: out and back both
+        // connect, but the return leg carries only a fraction of the bite
+        if (pr.thru && was > 0 && pr.vx * pr.lnx + pr.vy * pr.lny <= 0) {
+          pr.hit.clear();
+          pr.dmg *= RANG_RET_DMG;
+        }
       }
       if (pr.grav) pr.vy = Math.min(pr.vy + pr.grav * TICK, 1150);  // traps drop until they settle
       pr.x += pr.vx * TICK;
@@ -3655,7 +3666,7 @@ export class Game {
     if (spec.r && att.st.augments.includes('sniper')) dmg *= 1.2;
     // brawler: the bare tap kit bites harder out on the road too
     if (att.st.augments.includes('brawler') && spec.tap) {
-      dmg *= 1.25;
+      dmg *= 1.4;
       this.events.push({ e: 'augment', aug: 'brawler', id: att.id, x: att.x, y: att.y });
     }
     // berserker: raging while badly hurt (co-op stand-in for high-percent fury)
@@ -3666,7 +3677,7 @@ export class Game {
     // momentum: fast-moving melee bites harder out on the road too
     if (att.st.augments.includes('momentum') && !spec.r
         && (att.atkSpd > 320 || Math.hypot(att.vx, att.vy) > 320)) {
-      dmg *= 1.15;
+      dmg *= 1.25;
       this.events.push({ e: 'augment', aug: 'momentum', id: att.id, x: att.x, y: att.y });
     }
     // executioner: extra bite finishing off a nearly-dead creep

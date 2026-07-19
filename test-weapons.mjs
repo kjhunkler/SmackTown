@@ -326,7 +326,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const fists = launch('unarmed', 'fsmash');
   const magic = launch('magic', 'mcast');
   check('sword launches weaker than fists', sword < fists);
-  check('magic launches harder than sword', magic > sword * 1.15);
+  check('magic launches harder than sword', magic > sword * 1.1);
 }
 
 // --- 7. casts never grow a melee hitbox ---
@@ -493,7 +493,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('a bystander in the flight path is not hit by the victim', c.state !== 'hitstun');
 }
 
-// --- 11. brawler augment: the tap kit hits 25% harder, weapons don't ---
+// --- 11. brawler augment: the tap kit hits 40% harder, weapons don't ---
 {
   const mk = () => new Game([
     { id: 'A', name: 'Alice', color: '#f00', build: { ...build(), augments: ['brawler'] } },
@@ -504,7 +504,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   a.x = 0; a.facing = 1; b.x = 60; b.y = a.y;
   a.state = 'attack'; a.atk = 'jab'; a.stateT = 0.06; a.atkDir = { x: 1, y: 0 };
   g._resolveAttacks();
-  check('brawler jab deals 25% extra (4 -> 5)', Math.abs(b.pct - 5) < 1e-9);
+  check('brawler jab deals 40% extra (4 -> 5.6)', Math.abs(b.pct - 5.6) < 1e-9);
   const g2 = mk();
   const [c, d] = g2.fighters;
   c.x = 0; c.facing = 1; d.x = 60; d.y = c.y;
@@ -536,6 +536,25 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   }
   const ok2 = g4.fighters.every(f => Number.isFinite(f.x) && Number.isFinite(f.y));
   check('600 rang/shield ticks stay finite', ok2);
+}
+
+// --- the rang's return leg bites softer than the throw ---
+{
+  const g = mkGame('boomerang');
+  const a = g.fighters[0];
+  a.x = 0; a.facing = 1; g.fighters[1].x = 800;
+  g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 });
+  let out = 0, back = 0;
+  for (let i = 0; i < 200; i++) {
+    const pr = g.projectiles.find(p => p.kind === 'boomerang');
+    if (pr) {
+      const outbound = pr.vx * pr.lnx + pr.vy * pr.lny > 0;
+      if (outbound) out = pr.dmg; else { back = pr.dmg; break; }
+    }
+    g.step();
+  }
+  check('rang outbound damage is the full throw', out > 0);
+  check('the return leg carries 60% of the bite', back > 0 && Math.abs(back - out * 0.6) < 1e-9);
 }
 
 console.log(`\n${n - fails}/${n} passed`);

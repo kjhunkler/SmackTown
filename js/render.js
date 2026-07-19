@@ -602,10 +602,18 @@ export class Renderer {
       ctx.save();
       ctx.translate(p.x, p.y);
       if (p.kind === 'boomerang') {
+        // spin-blur halo so the blade reads against light skies too
+        ctx.strokeStyle = 'rgba(10, 24, 46, .35)';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(0, 0, 19, 0, 7); ctx.stroke();
         ctx.rotate(t * 18 + p.eid);
-        ctx.fillStyle = '#8fd3ff';
+        ctx.fillStyle = '#35a4e8';                    // deeper than any sky
         roundRect(ctx, -17, -5, 34, 10, 5); ctx.fill();
         roundRect(ctx, -5, -17, 10, 34, 5); ctx.fill();
+        ctx.strokeStyle = 'rgba(8, 18, 40, .8)';      // dark rim on the blades
+        ctx.lineWidth = 2.5;
+        roundRect(ctx, -17, -5, 34, 10, 5); ctx.stroke();
+        roundRect(ctx, -5, -17, 10, 34, 5); ctx.stroke();
         ctx.fillStyle = '#eaf7ff';
         ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, 7); ctx.fill();
       } else if (p.kind === 'hook') {
@@ -4122,16 +4130,21 @@ export class Renderer {
       ctx.restore();
     }
 
-    // worn rang: a cross of sky-blue blades on the back at rest; it
-    // disappears while the throw pose is out (the projectile takes over)
+    // worn rang: a cross of blue blades on the back at rest; it disappears
+    // while the throw pose is out (the projectile takes over). Deep blue
+    // with a dark rim, matching the in-flight blade's sky-proof look.
     if (f.weapon === 'boomerang' && f.atk !== 'rang') {
       ctx.save();
       ctx.scale(f.facing || 1, 1);
       ctx.translate(-bw / 2 + 7, bTop + 12);
       ctx.rotate(-0.5);
-      ctx.fillStyle = '#8fd3ff';
+      ctx.fillStyle = '#35a4e8';
       roundRect(ctx, -10, -3.5, 20, 7, 3.5); ctx.fill();
       roundRect(ctx, -3.5, -10, 7, 20, 3.5); ctx.fill();
+      ctx.strokeStyle = 'rgba(8, 18, 40, .7)';
+      ctx.lineWidth = 1.8;
+      roundRect(ctx, -10, -3.5, 20, 7, 3.5); ctx.stroke();
+      roundRect(ctx, -3.5, -10, 7, 20, 3.5); ctx.stroke();
       ctx.fillStyle = '#eaf7ff';
       ctx.beginPath(); ctx.arc(0, 0, 3, 0, 7); ctx.fill();
       ctx.restore();
