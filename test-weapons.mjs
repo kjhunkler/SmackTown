@@ -601,10 +601,25 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   g._stepFighter(a, tap);
   check('an uncharged tap launches you out of your own hex', !a.hammerCatch && a.vy < 0 && a.hammerFlight);
   check('an uncharged hex launch spends no mana', a.mana >= manaBeforeTap);
-  check('an uncharged hex launch consumes the hex', waves[0].ttl === 0);
+  check('a launch leaves the hex behind (not consumed)', waves[0].ttl > 0);
   victim.x = a.x; victim.y = a.y; victim.invuln = 0;
   g._resolveAttacks();
   check('a hex-launched wielder has a body-sized projectile hitbox', a.hammerFlight.hit.has(victim.id));
+
+  // Bounce economics: launching leaves the hex behind, costs no mana, and its
+  // speed scales with the hex's size — so two hexes can be bounced between free.
+  const bg = mkGame('hammer');
+  const ba = bg.fighters[0];
+  bg._startAttack(ba, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);   // a big (charged) hex
+  const bhex = bg.projectiles.find(p => p.kind === 'hammerwave');
+  ba.x = bhex.x + bhex.r + 100; bg._resolveAttacks();
+  ba.x = bhex.x; ba.y = bhex.y; ba.moveIntent = { x: 0, y: 0 }; bg._resolveAttacks();
+  ba.mana = 60; const bMana = ba.mana;
+  const bTap = blankInput(); bTap.atk = { kind: 'swipe', dx: 0, dy: -1 }; bTap.my = -1;
+  bg._stepFighter(ba, bTap);
+  check('a launch leaves the hex behind to bounce off', bhex.ttl > 0 && !ba.hammerCatch && ba.hammerFlight);
+  check('a launch costs no mana', ba.mana >= bMana);
+  check('launch speed scales with the hex size', Math.abs(ba.vy) > 1200);
 
   // Charging a pinned hex drains mana into its life, pumps it bigger (capped),
   // and the release is a very powerful launch scaled by the charge.
@@ -621,12 +636,12 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('charging a pinned hex drains mana into its life', ca.mana < manaBeforeCharge && ca.hammerCatch);
   const ttlBeforeCharge = chex.ttl;
   for (let i = 0; i < 140; i++) cg._stepFighter(ca, chg);
-  check('charging pours mana into the hex life', chex.ttl > ttlBeforeCharge && ca.mana < 50);
+  check('charging pours mana into the hex life', chex.ttl > ttlBeforeCharge && ca.mana < manaBeforeCharge - 30);
   check('the inflated hex is capped in size', chex.r > baseR && chex.r <= 150);
   const rel = blankInput(); rel.my = -1;
   cg._stepFighter(ca, rel);
-  check('a fully charged hex launch is very powerful',
-    !ca.hammerCatch && ca.vy < -1800 && ca.hammerFlight && chex.ttl === 0);
+  check('a fully charged hex launch is very powerful (hex persists)',
+    !ca.hammerCatch && ca.vy < -1800 && ca.hammerFlight && chex.ttl > 0);
 
   // Regression: aging happens in _stepProjectiles, so a real frame ages the
   // hex. A nearly-expired hex must NOT vanish once you start charging — the
@@ -652,8 +667,8 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   vg._stepFighter(va, vrel);
   check('the rescued charge still launches strongly', !va.hammerCatch && va.hammerFlight && va.vy < -1500);
 
-  // Launching is always free: a dry wielder can still charge and launch, the
-  // charge just banks no life when there's no mana to pour in.
+  // Launching is always free, even near-empty: a low-mana wielder can still
+  // charge (regen trickles in) and launch out.
   const dryGame = mkGame('hammer');
   const da = dryGame.fighters[0];
   dryGame._startAttack(da, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
@@ -661,35 +676,51 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   da.x = dryHex.x + dryHex.r + 100; dryGame._resolveAttacks();
   da.x = dryHex.x; da.y = dryHex.y; da.moveIntent = { x: 0, y: 0 }; dryGame._resolveAttacks();
   da.mana = 0;
-  const dryTtl = dryHex.ttl;
   const dryCharge = blankInput(); dryCharge.chg = { dx: 0, dy: -1 }; dryCharge.chgArm = true; dryCharge.my = -1;
   dryGame._stepFighter(da, dryCharge); dryCharge.chgArm = false;
   for (let i = 0; i < 10; i++) dryGame._stepFighter(da, dryCharge);
-  check('an out-of-mana charge still starts but banks no life', da.hammerCatch?.charging && da.mana === 0 && dryHex.ttl <= dryTtl + 1e-9);
+  check('a charge started near-empty still runs', da.hammerCatch?.charging && da.mana < 5);
   const dryRel = blankInput(); dryRel.my = -1;
   dryGame._stepFighter(da, dryRel);
-  check('launching from the hex is free even with no mana', !da.hammerCatch && da.vy < 0 && da.hammerFlight && da.mana === 0);
+  check('launching from the hex is free', !da.hammerCatch && da.vy < 0 && da.hammerFlight && da.mana < 5);
 
-  // A trickle of mana holds a pinned hex against its natural decay; once dry,
-  // it decays and eventually vanishes. Drive whole frames so it actually ages.
+  // Holding a hex is net-zero mana (regen covers the maintenance trickle), so
+  // it stays the same size and holds against decay while you sit in it — even
+  // at empty mana, since regen keeps paying the trickle.
   const tg = mkGame('hammer');
   const ta = tg.fighters[0];
   tg._startAttack(ta, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
   const thex = tg.projectiles.find(p => p.kind === 'hammerwave');
   ta.x = thex.x + thex.r + 100; tg._resolveAttacks();
   ta.x = thex.x; ta.y = thex.y; ta.moveIntent = { x: 0, y: 0 }; tg._resolveAttacks();
-  ta.mana = 100; thex.ttl = 0.5;
+  ta.mana = 50; thex.ttl = 0.5;
   const hold = blankInput();
   const manaBeforeHold = ta.mana;
   for (let i = 0; i < 30 && ta.hammerCatch; i++) { tg._stepFighter(ta, hold); tg._stepProjectiles(); }
-  check('a held hex trickles mana to hold against decay', ta.hammerCatch && ta.mana < manaBeforeHold && thex.ttl > 0.3);
-  ta.mana = 0;   // run dry: the trickle can no longer pay, decay takes over
-  let vanished = false;
-  for (let i = 0; i < 60 && ta.hammerCatch; i++) {
-    tg._stepFighter(ta, hold); tg._stepProjectiles();
-    if (!tg.projectiles.some(p => p.eid === thex.eid)) vanished = true;
-  }
-  check('once dry, the hex decays away and drops the wielder', vanished && !ta.hammerCatch);
+  check('holding a hex is net-zero mana and keeps it alive', ta.hammerCatch && Math.abs(ta.mana - manaBeforeHold) < 2 && thex.ttl > 0.3);
+  ta.mana = 0;
+  for (let i = 0; i < 40 && ta.hammerCatch; i++) { tg._stepFighter(ta, hold); tg._stepProjectiles(); }
+  check('an occupied hex is sustained even at empty mana', ta.hammerCatch && tg.projectiles.some(p => p.eid === thex.eid));
+
+  // An unoccupied hex just decays on its own and vanishes (nobody feeding it).
+  const ug = mkGame('hammer');
+  ug._startAttack(ug.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  const uhex = ug.projectiles.find(p => p.kind === 'hammerwave');
+  uhex.ttl = 0.4;
+  let uvanished = false;
+  for (let i = 0; i < 40; i++) { ug._stepProjectiles(); if (!ug.projectiles.some(p => p.eid === uhex.eid)) uvanished = true; }
+  check('an unoccupied hex decays away on its own', uvanished);
+
+  // Dealing damage burns a little extra hex life beyond the natural decay.
+  const dg2 = mkGame('hammer');
+  const dOwner = dg2.fighters[0], dVictim = dg2.fighters[1];
+  dg2._startAttack(dOwner, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
+  const dmgHex = dg2.projectiles.find(p => p.kind === 'hammerwave');
+  dOwner.x = dmgHex.x; dOwner.y = dmgHex.y; dOwner.hammerFlight = null;
+  const ttlBeforeHit = dmgHex.ttl;
+  dVictim.x = dmgHex.x; dVictim.y = dmgHex.y; dVictim.invuln = 0; dmgHex.touchCd = 0;
+  dg2._resolveAttacks();                        // a victim inside takes a tick
+  check('dealing damage costs the hex extra life', dVictim.pct > 0 && (ttlBeforeHit - dmgHex.ttl) > 0.1);
 
   // Re-aiming mid-charge (unique to the hammer) steers the launch, and the hex
   // rim glows toward the current aim so you can see where you'll go.

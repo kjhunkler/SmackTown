@@ -714,9 +714,13 @@ const HAMMER_CATCH_DELAY = .08;       // suspended pause before a jump can dislo
 const HAMMER_INFLATE_MAX = 150;       // caught in your own hex: hard cap on how big charging pumps it
 const HAMMER_INFLATE_LAUNCH0 = 820;   // uncharged launch out of your own hex (free)
 const HAMMER_INFLATE_LAUNCH1 = 2200;  // fully charged launch — very powerful
-const HEX_TRICKLE_MANA = 12;          // mana/sec spent while pinned to offset the hex's natural decay
-const HEX_CHARGE_MANA_PER_SEC = 34;   // mana/sec poured into the hex while charging it
+// While pinned, the caster feeds the hex to offset its decay. The trickle
+// cost is set to the airborne regen rate (MANA_REGEN * 0.5) so simply holding
+// a hex is net-zero mana — you can bounce between hexes without spending.
+const HEX_TRICKLE_MANA = 13;          // = MANA_REGEN * 0.5: net-zero hold, offsets decay
+const HEX_CHARGE_MANA_PER_SEC = 34;   // mana/sec poured into the hex while charging it bigger
 const HEX_LIFE_PER_MANA = 0.12;       // seconds of hex life gained per mana spent charging
+const HEX_DAMAGE_LIFE_COST = 0.2;     // extra hex life lost each time it deals touch damage
 const HEX_TOUCH_EVERY = 0.3;          // how often the hex chips a rival standing in it
 const HEX_TOUCH_DMG0 = 3, HEX_TOUCH_DMG1 = 6;  // per-tick touch damage vs charge (no lingering burn)
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
@@ -1225,11 +1229,11 @@ export class Game {
     f.regrabT = Math.max(0, f.regrabT - TICK);
     f.standT = Math.max(0, f.standT - TICK);
     // Mana refills fully on the ground and at half speed in the air. The
-    // hammer now shares that aerial trickle (it used to get none), so airborne
-    // hex-boost chains can slowly rebuild the mana they spend. While pinned in
-    // a hex there is no passive refill — your mana feeds the hex instead.
+    // hammer shares that aerial trickle (it used to get none) so airborne
+    // hex-boost chains rebuild mana. Regen keeps flowing while pinned so it
+    // covers the hex's maintenance trickle — holding a hex is net-zero mana.
     const airRegen = 0.5;
-    if (!f.hammerCatch) f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : airRegen) * TICK);
+    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : airRegen) * TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
     // regrowth: slowly knit back together — percent bleeds off in stock
@@ -1266,16 +1270,17 @@ export class Game {
       else if (gate.owner === f.id) {
         // Caught in your OWN hex: fully suspended and snapped to its center.
         //  - A jump breaks you free after a readable pause.
-        //  - An uncharged tap launches you straight out.
+        //  - An uncharged tap launches you straight out (speed set by hex size).
         //  - Charging pours mana into the hex to pump it bigger (capped) and
-        //    longer-lived for a stronger launch.
-        // The hex always decays naturally. A mana trickle offsets that decay
-        // while you can pay it, and charging banks extra life on top — but
-        // launching is ALWAYS free and never spends mana or the hex's life.
+        //    longer-lived for a stronger launch; re-aim it freely mid-charge.
+        // The hex always decays naturally but is otherwise sustained by the
+        // caster: a maintenance trickle (covered by regen, so holding is
+        // net-zero) offsets decay, and charging banks extra life. Launching is
+        // ALWAYS free and leaves the hex behind — so two hexes can be bounced
+        // between at net-zero mana.
         f.hammerCatch.t += TICK;
         f.x = gate.x; f.y = gate.y;
         f.vx = 0; f.vy = 0; f.fastfall = false; f.grounded = false;
-        gate.pinned = true;
         const sx = Math.abs(inp.mx) > .3 ? Math.sign(inp.mx) : 0;
         const sy = Math.abs(inp.my) > .3 ? Math.sign(inp.my) : 0;
         if (sx || sy) f.hammerCatch.aim = { x: sx, y: sy };
@@ -1306,20 +1311,20 @@ export class Game {
           // keep decaying naturally.
           const spend = Math.min(f.mana, HEX_CHARGE_MANA_PER_SEC * TICK);
           if (spend > 0) { f.mana -= spend; gate.ttl += spend * HEX_LIFE_PER_MANA; }
-          if (!inp.chg || k >= 1) this._hexLaunch(f, gate, k);
+          if (!inp.chg || k >= 1) this._hexLaunch(f, gate);
           this._decayInput(inp);
           return;
         }
         // Uncharged tap: launch straight out, free.
         if (inp.atk) {
           inp.atk = null; inp.bufA = 0;
-          this._hexLaunch(f, gate, 0);
+          this._hexLaunch(f, gate);
           this._decayInput(inp);
           return;
         }
         // Not charging: a jump dislodges you once the brief pause has passed.
         if (f.hammerCatch.t >= HAMMER_CATCH_DELAY && inp.jump && f.jumps > 0) {
-          gate.pinned = false; gate.glow = false;
+          gate.glow = false;
           f.hammerCatch = null;
           f.vy = -JUMP_V * f.st.jumpMult;
           f.jumps--;
@@ -1839,20 +1844,23 @@ export class Game {
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
   }
 
-  // Launch out of the hex you're pinned in, along the aim, at a speed that
-  // scales from the free uncharged pop up to a very powerful full charge. The
-  // hex is consumed on the way out.
-  _hexLaunch(f, gate, k) {
+  // Launch out of the hex you're pinned in, along the aim, at a speed set by
+  // the hex's current SIZE (bigger hex = harder launch). The launch is always
+  // free and does NOT consume the hex — it stays behind so you can bounce
+  // between hexes. The `inside` set keeps you from being re-caught until you
+  // actually leave its radius.
+  _hexLaunch(f, gate) {
     const aim = f.hammerCatch?.aim || { x: f.facing, y: 0 };
     const n = Math.hypot(aim.x, aim.y) || 1;
-    const speed = HAMMER_INFLATE_LAUNCH0 + (HAMMER_INFLATE_LAUNCH1 - HAMMER_INFLATE_LAUNCH0) * clamp(k, 0, 1);
+    const grow = clamp((gate.r - HAMMER_HEX_RADIUS0) / (HAMMER_INFLATE_MAX - HAMMER_HEX_RADIUS0), 0, 1);
+    const speed = HAMMER_INFLATE_LAUNCH0 + (HAMMER_INFLATE_LAUNCH1 - HAMMER_INFLATE_LAUNCH0) * grow;
     f.vx = aim.x / n * speed;
     f.vy = aim.y / n * speed;
     f.fastfall = false;
     f.grounded = false;
     f.dashT = Math.max(f.dashT, ATTACKS.hthrust.active);
     f.hammerFlight = { hit: new Set(), by: f.id };
-    gate.ttl = 0;   // the hex is spent on the launch
+    gate.glow = false;   // released, but the hex remains behind to bounce off
     f.hammerCatch = null;
     this.events.push({ e: 'hexgate', id: f.id, x: gate.x, y: gate.y });
   }
@@ -2480,6 +2488,7 @@ export class Game {
             const dmg = pr.touchDmg * fighter.st.dmgTaken;
             fighter.pct += dmg;
             att.score.dmg += dmg;
+            pr.ttl -= HEX_DAMAGE_LIFE_COST;   // dealing damage burns a little of the hex's life
             this.events.push({ e: 'burn', x: fighter.x, y: fighter.y - F_H / 2, vic: fighter.id, dmg: Math.round(dmg) });
           }
           if (within) pr.inside.add(fighter.id); else pr.inside.delete(fighter.id);
@@ -2837,12 +2846,9 @@ export class Game {
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
-      if (pr.kind === 'hammerwave' && pr.life && !pr.pinned) {
-        // Preserve a useful core until the final moment while making the
-        // long-lived field visibly and mechanically decay. A hex holding a
-        // caught wielder is pinned: it keeps (and can grow) its size instead.
-        pr.r = pr.r0 * (.32 + .68 * Math.max(0, pr.ttl / pr.life));
-      }
+      // A hammer hex keeps its size for its whole life (its size is its launch
+      // power) and simply vanishes when its life runs out; it only loses life
+      // to natural decay, to dealing damage, and gains it from the caster.
       // a returning rang that reaches its thrower is caught — gone from the
       // air, and the hand is free to wind up the next throw early
       if (pr.ret && pr.ttl > 0 && pr.vx * pr.lnx + pr.vy * pr.lny < 0) {
