@@ -714,7 +714,8 @@ const HAMMER_CATCH_DELAY = .08;       // suspended pause before a jump can dislo
 const HAMMER_INFLATE_MAX = 150;       // caught in your own hex: hard cap on how big charging pumps it
 const HAMMER_INFLATE_LAUNCH0 = 820;   // uncharged launch out of your own hex (free)
 const HAMMER_INFLATE_LAUNCH1 = 2200;  // fully charged launch — very powerful
-const HAMMER_HEX_CHARGE_COST = 45;    // mana to begin charging a pinned hex for a stronger launch
+const HAMMER_HEX_CHARGE_COST = 15;    // mana to begin charging a pinned hex for a stronger launch
+const HAMMER_HEX_LIFE_PER_R = 0.08;   // seconds of life banked per unit the pinned hex grows
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
@@ -1291,8 +1292,13 @@ export class Game {
         if (f.hammerCatch.charging) {
           f.hammerCatch.chgT += TICK;
           const k = clamp(f.hammerCatch.chgT / this._chargeMax(f), 0, 1);
+          const prevR = gate.r;
           gate.r = Math.min(HAMMER_INFLATE_MAX,
             f.hammerCatch.baseR + (HAMMER_INFLATE_MAX - f.hammerCatch.baseR) * k);
+          // Growing the hex banks life proportional to the size added, so
+          // pumping it bigger buys time and it can't vanish out from under a
+          // full charge (aging in _stepProjectiles subtracts a tick per frame).
+          if (gate.r > prevR) gate.ttl += (gate.r - prevR) * HAMMER_HEX_LIFE_PER_R;
           if (!inp.chg || k >= 1) this._hexLaunch(f, gate, k);
           this._decayInput(inp);
           return;

@@ -617,6 +617,30 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('a fully charged hex launch is very powerful',
     !ca.hammerCatch && ca.vy < -1800 && ca.hammerFlight && chex.ttl === 0);
 
+  // Regression: aging happens in _stepProjectiles, so a real frame ages the
+  // hex. A nearly-expired hex must NOT vanish once you start charging — the
+  // size you add banks life. Drive whole frames (step order: fighter, then
+  // projectiles) and confirm it survives to a strong launch.
+  const vg = mkGame('hammer');
+  const va = vg.fighters[0];
+  vg._startAttack(va, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  const vhex = vg.projectiles.find(p => p.kind === 'hammerwave');
+  va.x = vhex.x + vhex.r + 100; vg._resolveAttacks();
+  va.x = vhex.x; va.y = vhex.y; va.moveIntent = { x: 0, y: 0 }; vg._resolveAttacks();
+  va.mana = 100; vhex.ttl = 0.3;   // almost gone when the charge starts
+  const vchg = blankInput(); vchg.chg = { dx: 0, dy: -1 }; vchg.chgArm = true; vchg.my = -1;
+  vg._stepFighter(va, vchg); vg._stepProjectiles(); vchg.chgArm = false;
+  let survived = va.hammerCatch != null;
+  for (let i = 0; i < 100 && va.hammerCatch; i++) {
+    vg._stepFighter(va, vchg);
+    vg._stepProjectiles();
+    if (!vg.projectiles.some(p => p.eid === vhex.eid)) survived = false;
+  }
+  check('a growing pinned hex banks life and does not vanish mid-charge', survived && va.hammerCatch);
+  const vrel = blankInput(); vrel.my = -1;
+  vg._stepFighter(va, vrel);
+  check('the rescued charge still launches strongly', !va.hammerCatch && va.hammerFlight && va.vy < -1500);
+
   // A dry wielder can't start a charge (but the free tap is still available).
   const dryGame = mkGame('hammer');
   const da = dryGame.fighters[0];
