@@ -631,17 +631,30 @@ export class Renderer {
         const armed = !(p.arm > 0);
         const pulse = .65 + .35 * Math.sin(t * 18 + p.eid);
         ctx.scale(1, .32);
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7);
+        // A chain of ground-cracking hexagons replaces the old yellow
+        // circles: green facets build inward, then flash solid on impact.
+        const hex = (rad) => {
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = Math.PI / 6 + i * Math.PI / 3;
+            const x = Math.cos(a) * rad, y = Math.sin(a) * rad;
+            if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+          }
+          ctx.closePath();
+        };
         if (armed) {
           const g = ctx.createRadialGradient(0, 0, r * .15, 0, 0, r);
-          g.addColorStop(0, 'rgba(255,245,185,.85)');
-          g.addColorStop(1, 'rgba(255,126,35,.12)');
+          g.addColorStop(0, 'rgba(210,255,221,.88)');
+          g.addColorStop(1, 'rgba(35,190,105,.12)');
+          hex(r);
           ctx.fillStyle = g; ctx.fill();
-          ctx.strokeStyle = '#ffd36a'; ctx.lineWidth = 7; ctx.stroke();
+          ctx.strokeStyle = '#55e88d'; ctx.lineWidth = 7; ctx.stroke();
+          ctx.strokeStyle = 'rgba(174,255,201,.65)'; ctx.lineWidth = 3;
+          hex(r * .62); ctx.stroke();
         } else {
-          // Every future section owns a dashed warning footprint.
-          ctx.strokeStyle = `rgba(255,176,46,${(.55 + .4 * pulse).toFixed(2)})`;
-          ctx.lineWidth = 5; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -t * 70;
+          ctx.strokeStyle = `rgba(72,226,132,${(.55 + .4 * pulse).toFixed(2)})`;
+          ctx.lineWidth = 5; ctx.setLineDash([9, 6]); ctx.lineDashOffset = -t * 70;
+          hex(r);
           ctx.stroke();
         }
       } else if (p.kind === 'boomerang') {
@@ -4226,8 +4239,8 @@ export class Renderer {
 
     // The hammer is carried overhead for the entire patient charge, then
     // rotates violently down through the release pose.
-    if (f.weapon === 'hammer') {
-      const live = f.atk === 'hslam' || f.atk === 'hupp';
+    if (f.weapon === 'hammer' && f.state !== 'charge') {
+      const live = f.atk === 'hslam' || f.atk === 'hthrust';
       ctx.save();
       ctx.scale(f.facing || 1, 1);
       ctx.translate(live ? 4 : -bw / 2 + 5, live ? -F_H / 2 - 9 : bTop + 9);
@@ -4235,21 +4248,21 @@ export class Renderer {
       const charge = clamp(f.hb?.chg || 0, 0, 1);
       if (f.state === 'charge') {
         const wind = charge * charge;
-        angle = f.atk === 'hupp' ? 1.25 + 1.25 * wind : -.85 - .78 * wind;
+        angle = f.atk === 'hthrust' ? 1.25 + 1.25 * wind : -.85 - .78 * wind;
         // A full hammer visibly strains in the wielder's hands rather than
         // freezing in a single overhead pose.
         ctx.translate(Math.sin(t * 34) * charge * 1.8, Math.cos(t * 29) * charge * 1.2);
       } else if (f.state === 'attack') {
-        const duration = f.atk === 'hupp' ? .33 : .20;
+        const duration = f.atk === 'hthrust' ? .33 : .20;
         const swing = clamp((f.stateT || 0) / duration, 0, 1);
         const eased = 1 - Math.pow(1 - swing, 3);
-        const start = f.atk === 'hupp' ? 2.5 : -1.63;
-        const end = f.atk === 'hupp' ? -2.45 : 1.12;
+        const start = f.atk === 'hthrust' ? 2.5 : -1.63;
+        const end = f.atk === 'hthrust' ? -2.45 : 1.12;
         angle = start + (end - start) * eased;
         // Broad fading arc gives the heavy head readable speed and impact.
         ctx.strokeStyle = `rgba(255,211,106,${(.34 * (1 - swing)).toFixed(2)})`;
         ctx.lineWidth = 15; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.arc(0, 0, 43, start - Math.PI / 2, angle - Math.PI / 2, f.atk === 'hupp'); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, 43, start - Math.PI / 2, angle - Math.PI / 2, f.atk === 'hthrust'); ctx.stroke();
       }
       ctx.rotate(angle);
       ctx.strokeStyle = '#7b5735'; ctx.lineWidth = 7; ctx.lineCap = 'round';
@@ -4263,7 +4276,7 @@ export class Renderer {
       ctx.fillStyle = f.color;
       for (const hy of [4, 15]) { ctx.beginPath(); ctx.arc(0, hy, 5.5, 0, 7); ctx.fill(); }
       ctx.restore();
-    }
+      }
 
     // body
     ctx.fillStyle = f.color;
@@ -4299,6 +4312,26 @@ export class Renderer {
       if (attacking) { // gritted mouth
         ctx.fillRect(ex - 6, ey + 10, 12, 3);
       }
+    }
+
+    // During charge the hammer is deliberately rendered after the body,
+    // matching the sword's foreground presentation instead of hiding the
+    // weapon behind the fighter silhouette.
+    if (f.weapon === 'hammer' && f.state === 'charge') {
+      const charge = clamp(f.hb?.chg || 0, 0, 1);
+      const aim = f.aim || { x: f.facing || 1, y: 0 };
+      const angle = Math.atan2(aim.y || 0, aim.x || f.facing || 1) + Math.PI / 2;
+      ctx.save();
+      ctx.translate((aim.x || 0) * 8, (aim.y || 0) * 8 - 8);
+      ctx.rotate(angle);
+      ctx.translate(Math.sin(t * 34) * charge * 1.8, Math.cos(t * 29) * charge * 1.2);
+      ctx.strokeStyle = '#7b5735'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 18); ctx.lineTo(0, -25); ctx.stroke();
+      ctx.fillStyle = '#68758b'; roundRect(ctx, -18, -34, 36, 18, 4); ctx.fill();
+      ctx.strokeStyle = '#20283a'; ctx.lineWidth = 3; roundRect(ctx, -18, -34, 36, 18, 4); ctx.stroke();
+      ctx.fillStyle = f.color;
+      for (const hy of [4, 15]) { ctx.beginPath(); ctx.arc(0, hy, 5.5, 0, 7); ctx.fill(); }
+      ctx.restore();
     }
 
     // raised shield: while a bash charges or rams, the slab rides the
