@@ -711,9 +711,10 @@ const HAMMER_CHAIN_WINDOW = .34;
 const HAMMER_CHAIN_MAX = 4;
 const HAMMER_FLOAT_DECAY = 1.15;      // seconds until normal gravity fully returns while held
 const HAMMER_CATCH_DELAY = .08;       // suspended pause before a jump can dislodge you
-const HAMMER_INFLATE_MAX = 200;       // caught in your own hex: charging can pump it this big
-const HAMMER_INFLATE_LAUNCH0 = 700;   // release launch speed off a barely-inflated hex
-const HAMMER_INFLATE_LAUNCH1 = 1560;  // release launch speed off a fully inflated hex
+const HAMMER_INFLATE_MAX = 150;       // caught in your own hex: hard cap on how big charging pumps it
+const HAMMER_INFLATE_LAUNCH0 = 820;   // uncharged launch out of your own hex (free)
+const HAMMER_INFLATE_LAUNCH1 = 2200;  // fully charged launch — very powerful
+const HAMMER_HEX_CHARGE_COST = 45;    // mana to begin charging a pinned hex for a stronger launch
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
@@ -1258,41 +1259,48 @@ export class Game {
       const gate = this.projectiles.find(p => p.eid === f.hammerCatch.eid && p.ttl > 0);
       if (!gate) f.hammerCatch = null;
       else if (gate.owner === f.id) {
-        // Caught in your OWN hex: fully suspended and snapped to its center. A
-        // jump breaks you free after a readable pause; charging instead pumps
-        // the hex bigger, and letting go consumes it to launch you along the
-        // charge, scaled by how large the hex grew.
+        // Caught in your OWN hex: fully suspended and snapped to its center.
+        //  - A jump breaks you free after a readable pause.
+        //  - An uncharged tap launches you straight out for free.
+        //  - Charging spends mana up front to pump the hex bigger (capped),
+        //    and the release consumes it for a launch scaled by the charge —
+        //    a very powerful, mana-fuelled escape.
         f.hammerCatch.t += TICK;
         f.x = gate.x; f.y = gate.y;
         f.vx = 0; f.vy = 0; f.fastfall = false; f.grounded = false;
         gate.pinned = true;
-        const ax = Math.abs(inp.mx) > .3 ? Math.sign(inp.mx) : 0;
-        const ay = Math.abs(inp.my) > .3 ? Math.sign(inp.my) : 0;
-        if (ax || ay) f.hammerCatch.aim = { x: ax, y: ay };
+        const sx = Math.abs(inp.mx) > .3 ? Math.sign(inp.mx) : 0;
+        const sy = Math.abs(inp.my) > .3 ? Math.sign(inp.my) : 0;
+        if (sx || sy) f.hammerCatch.aim = { x: sx, y: sy };
+        else if (inp.atk && (inp.atk.dx || inp.atk.dy)) f.hammerCatch.aim = { x: inp.atk.dx, y: inp.atk.dy };
+        else if (inp.chg && (inp.chg.dx || inp.chg.dy)) f.hammerCatch.aim = { x: inp.chg.dx, y: inp.chg.dy };
+        // Begin a charge: costs mana. Too dry to pay and it just doesn't start
+        // (the uncharged tap is still available for free).
         if (!f.hammerCatch.charging && inp.chg && inp.chgArm) {
-          f.hammerCatch.charging = true;
-          f.hammerCatch.chgT = 0;
-          f.hammerCatch.baseR = gate.r;
+          if (f.mana >= HAMMER_HEX_CHARGE_COST) {
+            f.mana -= HAMMER_HEX_CHARGE_COST;
+            f.hammerCatch.charging = true;
+            f.hammerCatch.chgT = 0;
+            f.hammerCatch.baseR = gate.r;
+            this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
+          } else {
+            this.events.push({ e: 'fizzle', id: f.id, x: f.x, y: f.y, why: 'mana' });
+          }
           inp.chgArm = false;
-          this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
         }
         if (f.hammerCatch.charging) {
           f.hammerCatch.chgT += TICK;
           const k = clamp(f.hammerCatch.chgT / this._chargeMax(f), 0, 1);
-          gate.r = f.hammerCatch.baseR + (HAMMER_INFLATE_MAX - f.hammerCatch.baseR) * k;
-          if (!inp.chg || k >= 1) {
-            const aim = f.hammerCatch.aim || { x: f.facing, y: 0 };
-            const n = Math.hypot(aim.x, aim.y) || 1;
-            const grow = clamp((gate.r - HAMMER_HEX_RADIUS0) / (HAMMER_INFLATE_MAX - HAMMER_HEX_RADIUS0), 0, 1);
-            const speed = HAMMER_INFLATE_LAUNCH0 + (HAMMER_INFLATE_LAUNCH1 - HAMMER_INFLATE_LAUNCH0) * grow;
-            f.vx = aim.x / n * speed;
-            f.vy = aim.y / n * speed;
-            f.dashT = Math.max(f.dashT, ATTACKS.hthrust.active);
-            f.hammerFlight = { hit: new Set(), by: f.id };
-            gate.ttl = 0;   // the inflated hex is spent on the launch
-            f.hammerCatch = null;
-            this.events.push({ e: 'hexgate', id: f.id, x: gate.x, y: gate.y });
-          }
+          gate.r = Math.min(HAMMER_INFLATE_MAX,
+            f.hammerCatch.baseR + (HAMMER_INFLATE_MAX - f.hammerCatch.baseR) * k);
+          if (!inp.chg || k >= 1) this._hexLaunch(f, gate, k);
+          this._decayInput(inp);
+          return;
+        }
+        // Uncharged tap: launch straight out, no mana spent.
+        if (inp.atk) {
+          inp.atk = null; inp.bufA = 0;
+          this._hexLaunch(f, gate, 0);
           this._decayInput(inp);
           return;
         }
@@ -1810,6 +1818,24 @@ export class Game {
     if (name === 'bomb') this._throwBomb(f, dx, dy, chg);
     if (name === 'hthrust') this._hammerLaunch(f, dx, dy, chg, hammerChain);
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
+  }
+
+  // Launch out of the hex you're pinned in, along the aim, at a speed that
+  // scales from the free uncharged pop up to a very powerful full charge. The
+  // hex is consumed on the way out.
+  _hexLaunch(f, gate, k) {
+    const aim = f.hammerCatch?.aim || { x: f.facing, y: 0 };
+    const n = Math.hypot(aim.x, aim.y) || 1;
+    const speed = HAMMER_INFLATE_LAUNCH0 + (HAMMER_INFLATE_LAUNCH1 - HAMMER_INFLATE_LAUNCH0) * clamp(k, 0, 1);
+    f.vx = aim.x / n * speed;
+    f.vy = aim.y / n * speed;
+    f.fastfall = false;
+    f.grounded = false;
+    f.dashT = Math.max(f.dashT, ATTACKS.hthrust.active);
+    f.hammerFlight = { hit: new Set(), by: f.id };
+    gate.ttl = 0;   // the hex is spent on the launch
+    f.hammerCatch = null;
+    this.events.push({ e: 'hexgate', id: f.id, x: gate.x, y: gate.y });
   }
 
   _hammerLaunch(f, dx, dy, k, chained = false) {

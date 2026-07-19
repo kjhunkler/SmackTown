@@ -586,20 +586,48 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const held = blankInput(); held.my = -1;
   for (let i = 0; i < 8; i++) g._stepFighter(a, held);
   check('holding a direction keeps you pinned instead of boosting', a.hammerCatch && a.vx === 0 && a.vy === 0);
-  // Charging while caught inflates the hex; the release consumes it and hurls
-  // the wielder along the charge, scaled by the inflated size.
-  const baseR = waves[0].r;
-  const chg = blankInput(); chg.chg = { dx: 0, dy: -1 }; chg.chgArm = true; chg.my = -1;
-  g._stepFighter(a, chg); chg.chgArm = false;
-  for (let i = 0; i < 24; i++) g._stepFighter(a, chg);
-  check('charging while caught inflates the hex', waves[0].r > baseR && a.hammerCatch);
-  const release = blankInput(); release.my = -1;
-  g._stepFighter(a, release);
-  check('releasing consumes the hex and launches you by its size',
-    !a.hammerCatch && a.vy < -700 && a.hammerFlight && waves[0].ttl === 0);
+  // An uncharged tap launches you straight out of your own hex, for free.
+  const manaBeforeTap = a.mana;
+  const tap = blankInput(); tap.atk = { kind: 'swipe', dx: 0, dy: -1 }; tap.my = -1;
+  g._stepFighter(a, tap);
+  check('an uncharged tap launches you out of your own hex', !a.hammerCatch && a.vy < 0 && a.hammerFlight);
+  check('an uncharged hex launch spends no mana', a.mana >= manaBeforeTap);
+  check('an uncharged hex launch consumes the hex', waves[0].ttl === 0);
   victim.x = a.x; victim.y = a.y; victim.invuln = 0;
   g._resolveAttacks();
   check('a hex-launched wielder has a body-sized projectile hitbox', a.hammerFlight.hit.has(victim.id));
+
+  // Charging a pinned hex costs mana up front, pumps it bigger (capped), and
+  // the release is a very powerful launch scaled by the charge.
+  const cg = mkGame('hammer');
+  const ca = cg.fighters[0];
+  cg._startAttack(ca, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);   // cheap uncharged hex
+  const chex = cg.projectiles.find(p => p.kind === 'hammerwave');
+  ca.x = chex.x + chex.r + 100; cg._resolveAttacks();
+  ca.x = chex.x; ca.y = chex.y; ca.moveIntent = { x: 0, y: 0 }; cg._resolveAttacks();
+  ca.mana = 100;
+  const baseR = chex.r, manaBeforeCharge = ca.mana;
+  const chg = blankInput(); chg.chg = { dx: 0, dy: -1 }; chg.chgArm = true; chg.my = -1;
+  cg._stepFighter(ca, chg); chg.chgArm = false;
+  check('beginning a hex charge consumes mana', ca.mana < manaBeforeCharge && ca.hammerCatch);
+  for (let i = 0; i < 140; i++) cg._stepFighter(ca, chg);
+  check('the inflated hex is capped in size', chex.r > baseR && chex.r <= 150);
+  const rel = blankInput(); rel.my = -1;
+  cg._stepFighter(ca, rel);
+  check('a fully charged hex launch is very powerful',
+    !ca.hammerCatch && ca.vy < -1800 && ca.hammerFlight && chex.ttl === 0);
+
+  // A dry wielder can't start a charge (but the free tap is still available).
+  const dryGame = mkGame('hammer');
+  const da = dryGame.fighters[0];
+  dryGame._startAttack(da, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  const dryHex = dryGame.projectiles.find(p => p.kind === 'hammerwave');
+  da.x = dryHex.x + dryHex.r + 100; dryGame._resolveAttacks();
+  da.x = dryHex.x; da.y = dryHex.y; da.moveIntent = { x: 0, y: 0 }; dryGame._resolveAttacks();
+  da.mana = 10;
+  const dryCharge = blankInput(); dryCharge.chg = { dx: 0, dy: -1 }; dryCharge.chgArm = true; dryCharge.my = -1;
+  dryGame._stepFighter(da, dryCharge);
+  check('a hex charge with too little mana does not start', da.hammerCatch && da.mana >= 10 && !da.hammerCatch.charging);
 
   // A jump dislodges a caught wielder naturally once the pause has passed.
   const jg = mkGame('hammer');
