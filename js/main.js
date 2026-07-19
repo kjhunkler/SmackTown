@@ -1586,6 +1586,7 @@ class Session {
         id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, facing: f.facing,
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
+        aim: f.atkDir,
         mana: f.mana, weapon: f.st.weapon,
         color: this.meta.get(f.id)?.color, hat: this.activeMeta(f.id)?.hat, cds: f.cds,
         score: f.score, parked: f.parked,
@@ -1879,6 +1880,7 @@ class Session {
       pct: r[6], stocks: r[7], state: r[8], dead: !!r[9],
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
       hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', blade: r[11] === 'slash', spear: r[11] === 'thrust', chg: r[14][5] || 0 } : null,
+      aim: { x: r[26] || 0, y: r[27] || 0 },
       guard: r[28],
       mana: r[38], weapon: this.activeMeta(r[0])?.build?.weapon,
       color: this.meta.get(r[0])?.color, hat: this.activeMeta(r[0])?.hat,
@@ -1914,6 +1916,7 @@ class Session {
         vx: mine.vx, vy: mine.vy, facing: mine.facing,
         pct: mine.pct, stocks: mine.stocks, state: mine.state, dead: mine.dead,
         invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
+        aim: mine.atkDir,
         guard: mine.guard, mana: mine.mana, weapon: mine.st.weapon,
         cds: mine.cds, color: this.meta.get(mine.id)?.color, hat: this.activeMeta(mine.id)?.hat,
       };
@@ -1924,7 +1927,7 @@ class Session {
       const i = fighters.findIndex(f => f.id === this.myId);
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
     }
-    const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0, arm: p[6] || 0, section: p[7] ?? -1 }));
+    const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0, arm: p[6] || 0, section: p[7] ?? -1, bombR: p[8] || 0 }));
     const hearts = (b.s.ht || []).map(h => ({ hid: h[0], x: h[1], y: h[2], tLeft: h[3] || 0 }));
     const enemies = interpolateEnemyRows(a.s.en, b.s.en, k, this._enemyInterpolation.from, this._enemyInterpolation.out);
     const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;
