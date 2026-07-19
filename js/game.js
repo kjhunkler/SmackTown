@@ -721,9 +721,6 @@ const HAMMER_INFLATE_LAUNCH1 = 2200;  // fully charged launch — very powerful
 const HEX_TRICKLE_MANA = 13;          // = MANA_REGEN * 0.5: net-zero hold, offsets decay
 const HEX_CHARGE_MANA_PER_SEC = 34;   // mana/sec poured into the hex while charging it bigger
 const HEX_LIFE_PER_MANA = 0.12;       // seconds of hex life gained per mana spent charging
-const HEX_DAMAGE_LIFE_COST = 0.2;     // extra hex life lost each time it deals touch damage
-const HEX_TOUCH_EVERY = 0.3;          // how often the hex chips a rival standing in it
-const HEX_TOUCH_DMG0 = 3, HEX_TOUCH_DMG1 = 6;  // per-tick touch damage vs charge (no lingering burn)
 
 // Hex energy is its remaining lifetime. Radius is the public energy gauge:
 // every gate shrinks continuously from its charged size to a tiny spark at
@@ -731,7 +728,8 @@ const HEX_TOUCH_DMG0 = 3, HEX_TOUCH_DMG1 = 6;  // per-tick touch damage vs charg
 function syncHammerHexRadius(hex) {
   const energy = clamp(hex.ttl / Math.max(hex.life || 0, TICK), 0, 1);
   hex.r = HAMMER_HEX_RADIUS_MIN
-    + (Math.max(hex.r0 || HAMMER_HEX_RADIUS_MIN, HAMMER_HEX_RADIUS_MIN) - HAMMER_HEX_RADIUS_MIN) * energy;
+    + (clamp(hex.r0 || HAMMER_HEX_RADIUS_MIN, HAMMER_HEX_RADIUS_MIN, HAMMER_INFLATE_MAX)
+      - HAMMER_HEX_RADIUS_MIN) * energy;
 }
 
 function hammerHexStrength(radius, low, high) {
@@ -1311,7 +1309,8 @@ export class Game {
         const la = f.hammerCatch.aim || { x: f.facing, y: 0 };
         const ln = Math.hypot(la.x, la.y) || 1;
         gate.aimX = la.x / ln; gate.aimY = la.y / ln; gate.glow = true;
-        // Charging needs no up-front cost — it starts the moment you press it.
+        // Charging needs no up-front cost. A held charge can flow directly
+        // into the hex after entry; it never needs a release/re-press edge.
         if (!f.hammerCatch.charging && inp.chg && inp.chgArm) {
           f.hammerCatch.charging = true;
           f.hammerCatch.chgT = 0;
@@ -1510,6 +1509,21 @@ export class Game {
     else if (mayAct && inp.atk) { this._startAttack(f, inp.atk, duckAttack); inp.atk = null; }
     if (mayAct && inp.ab0) { this._useAbility(f, 0); inp.ab0 = false; }
     if (mayAct && inp.ab1) { this._useAbility(f, 1); inp.ab1 = false; }
+
+    // Hammer aim is live for the whole hold. Both the attack gesture and the
+    // movement stick may redirect it any number of times before release.
+    if (inCharge && f.st.weapon === 'hammer' && inp.chg) {
+      let dx = inp.chg.dx | 0, dy = inp.chg.dy | 0;
+      if (Math.abs(inp.mx) > .3 || Math.abs(inp.my) > .3) {
+        dx = Math.abs(inp.mx) > .3 ? Math.sign(inp.mx) : 0;
+        dy = Math.abs(inp.my) > .3 ? Math.sign(inp.my) : 0;
+      }
+      if (dx || dy) {
+        f.chgAim = { dx, dy };
+        f.atkDir = { x: dx, y: dy };
+        if (dx) f.facing = dx;
+      }
+    }
 
     // charge state machine: fires when the control is let go (the release
     // also arrives as a buffered swipe edge — consume it) or at the cap
@@ -1917,8 +1931,7 @@ export class Game {
     const power = .75 + 1.25 * charge;
     const life = HAMMER_HEX_LIFE0 + (HAMMER_HEX_LIFE1 - HAMMER_HEX_LIFE0) * charge;
     // Ground and air now share the same body-centered hex. It remains behind
-    // as a shrinking launch gate and a hazard that chips whoever stands in it
-    // (touch damage only — no lingering burn once they leave).
+    // as a shrinking launch gate, but is not itself a damage hazard.
     for (let section = 0; section < 1; section++) {
       this.projectiles.push({
         eid: nextEid++, kind: 'hammerwave', owner: f.id,
@@ -1929,7 +1942,6 @@ export class Game {
         hit: new Set(), section, dir: Math.sign(nx) || f.facing,
         aimX: nx, aimY: ny, boost: HAMMER_HEX_BOOST0 + (HAMMER_HEX_BOOST1 - HAMMER_HEX_BOOST0) * charge,
         inside: new Set([f.id]),
-        touchDmg: HEX_TOUCH_DMG0 + (HEX_TOUCH_DMG1 - HEX_TOUCH_DMG0) * charge, touchCd: 0,
       });
     }
     const speed = HAMMER_LAUNCH0 + (HAMMER_LAUNCH1 - HAMMER_LAUNCH0) * charge;
@@ -2502,44 +2514,36 @@ export class Game {
       // Lingering hammer hexes always catch on entry. Direction handling is
       // deferred to fighter stepping so the catch is visible and persistent.
       if (pr.kind === 'hammerwave' && pr.inside) {
-        const att = this.fighters.find(x => x.id === pr.owner);
-        pr.touchCd = (pr.touchCd || 0) - TICK;
-        const touch = pr.touchCd <= 0;
-        if (touch) pr.touchCd = HEX_TOUCH_EVERY;
         for (const fighter of this.fighters) {
           const within = !fighter.dead && Math.abs(fighter.x - pr.x) < F_W / 2 + pr.r
             && Math.abs(fighter.y - pr.y) < F_H / 2 + pr.r;
           const wasWithin = pr.inside.has(fighter.id);
           if (within && !wasWithin) {
+            const heldCharge = fighter.state === 'charge' && !!this.inputs.get(fighter.id)?.chg;
             const intent = fighter.moveIntent || { x: 0, y: 0 };
             const n = Math.hypot(intent.x, intent.y);
-            fighter.hammerCatch = { eid: pr.eid, t: 0, intent: n > .15 ? { x: intent.x, y: intent.y } : null };
+            fighter.hammerCatch = {
+              eid: pr.eid, t: 0,
+              intent: n > .15 ? { x: intent.x, y: intent.y } : null,
+              charging: heldCharge,
+              chgT: 0,
+              baseR: pr.r,
+            };
             fighter.hammerFlight = null;
             fighter.vx = 0; fighter.vy = 0;
             fighter.fastfall = false;
-            // Cancel any strong attack the fighter was winding up (or swinging)
-            // as they entered: while pinned the charge sits frozen, and without
-            // this it would release into a whole new hex the moment they launch
-            // out. Charging a pinned hex is a separate, hammerCatch-only path.
+            // Cancel the normal wind-up without spending its reserved mana.
+            // If the control is still held, hammerCatch above immediately
+            // continues that same hold as a fresh hex charge.
             if (fighter.state === 'charge' || fighter.state === 'attack') {
               fighter.state = 'air'; fighter.atk = null; fighter.atkDir = null;
               fighter.chg = 0; fighter.chgAim = null; fighter.atkHit.clear();
             }
             this.events.push({ e: 'catch', id: fighter.id, x: pr.x, y: pr.y });
           }
-          // Touch damage: the hex only chips a rival while they are inside it,
-          // ticking directly with no burn that lingers after they step out.
-          if (touch && within && att && fighter.id !== pr.owner
-              && fighter.invuln <= 0 && !this.coop) {
-            const dmg = hammerHexStrength(pr.r, HEX_TOUCH_DMG0, HEX_TOUCH_DMG1) * fighter.st.dmgTaken;
-            fighter.pct += dmg;
-            att.score.dmg += dmg;
-            pr.ttl -= HEX_DAMAGE_LIFE_COST;   // dealing damage burns a little of the hex's life
-            this.events.push({ e: 'burn', x: fighter.x, y: fighter.y - F_H / 2, vic: fighter.id, dmg: Math.round(dmg) });
-          }
           if (within) pr.inside.add(fighter.id); else pr.inside.delete(fighter.id);
         }
-        continue;   // the hex's fighter damage is the touch tick above, not a hit
+        continue;   // hexes catch/launch fighters, but never resolve as damaging hits
       }
       for (const o of this.fighters) {
         if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
