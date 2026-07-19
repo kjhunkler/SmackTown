@@ -642,6 +642,27 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('no phantom second hex spawns after launching out',
     xg.projectiles.filter(p => p.kind === 'hammerwave').length === hexCountBefore);
 
+  // Bug: the smash release ALSO queues a swipe-attack edge. When you release an
+  // inflate-charge inside a hex, that buffered edge must be consumed — otherwise
+  // it fires a normal hthrust and spawns a second hex the frame you launch out.
+  const yg = mkGame('hammer');
+  const yp = yg.fighters[0];
+  yg._startAttack(yp, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);   // hex A
+  const yhex = yg.projectiles.find(p => p.kind === 'hammerwave');
+  yp.x = yhex.x + yhex.r + 100; yp.hammerFlight = null; yg._resolveAttacks();
+  yp.x = yhex.x; yp.y = yhex.y; yp.moveIntent = { x: 0, y: 0 }; yg._resolveAttacks();   // caught in A
+  yp.mana = 100;
+  const yr = blankInput(); yr.chg = { dx: 0, dy: -1 }; yr.chgArm = true; yr.my = -1;
+  yg._stepFighter(yp, yr); yr.chgArm = false;
+  for (let i = 0; i < 10; i++) yg._stepFighter(yp, yr);            // inflate the hex
+  yr.chg = null; yr.atk = { kind: 'swipe', dx: 0, dy: -1 }; yr.bufA = 0.15;   // release (queues a swipe edge)
+  yg._stepFighter(yp, yr);
+  check('releasing an inflate-charge launches you out', !yp.hammerCatch && yp.hammerFlight);
+  const yHexCount = yg.projectiles.filter(p => p.kind === 'hammerwave').length;
+  for (let i = 0; i < 8; i++) yg._stepFighter(yp, yr);            // buffer decays; a leak would fire a hthrust
+  check('the release edge does not leak a second hex',
+    yg.projectiles.filter(p => p.kind === 'hammerwave').length === yHexCount);
+
   // Charging a pinned hex drains mana into its life, pumps it bigger (capped),
   // and the release is a very powerful launch scaled by the charge.
   const cg = mkGame('hammer');

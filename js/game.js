@@ -1311,7 +1311,13 @@ export class Game {
           // keep decaying naturally.
           const spend = Math.min(f.mana, HEX_CHARGE_MANA_PER_SEC * TICK);
           if (spend > 0) { f.mana -= spend; gate.ttl += spend * HEX_LIFE_PER_MANA; }
-          if (!inp.chg || k >= 1) this._hexLaunch(f, gate);
+          if (!inp.chg || k >= 1) {
+            // Releasing a smash also queues a buffered swipe edge; consume it
+            // (as _releaseCharge does) so it can't fire a normal hthrust — and
+            // spawn a second hex — the instant we launch out.
+            inp.atk = null; inp.bufA = 0;
+            this._hexLaunch(f, gate);
+          }
           this._decayInput(inp);
           return;
         }
