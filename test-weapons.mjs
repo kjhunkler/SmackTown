@@ -326,7 +326,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const fists = launch('unarmed', 'fsmash');
   const magic = launch('magic', 'mcast');
   check('sword launches weaker than fists', sword < fists);
-  check('magic launches harder than sword', magic > sword * 1.3);
+  check('magic launches harder than sword', magic > sword * 1.15);
 }
 
 // --- 7. casts never grow a melee hitbox ---

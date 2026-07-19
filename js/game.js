@@ -584,7 +584,7 @@ const ATTACKS = {
   // run out along the aim (rx = blade length, ry = half-thickness) — reach
   // no fist can match, but a narrow band that punishes sloppy lines. Trades
   // raw damage for real launch power; the wind-up hangs in the air.
-  slash:  { dmg: 12.6, kb: 120, ks: 10.5, startup: .09, active: .11, rec: .24, rx: 96, ry: 14, ang: -25, blade: true },
+  slash:  { dmg: 12.6, kb: 132, ks: 11.5, startup: .09, active: .11, rec: .24, rx: 96, ry: 14, ang: -25, blade: true },
   // magic strong attack: the cast pose. 'cast' = no melee box ever goes
   // active — the hit is the burst projectile spawned at release.
   mcast:  { dmg: 0,  kb: 0,   ks: 0,  startup: .08, active: .02, rec: .26, rx: 30, ry: 24, ang: 0, cast: true },
