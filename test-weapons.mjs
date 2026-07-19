@@ -2,7 +2,7 @@
 // equipped weapon — bare fists keep the smash kit, swords lunge-slash with a
 // fast charge, magic casts mana-fueled knockback bursts whose range scales
 // with charge, boomerangs throw a returning blade, and the shield rams with
-// a rebound. The hammer plants three staggered shockwave sections. Run: node test-weapons.mjs
+// a rebound. The hammer leaves one lingering, interactive hex. Run: node test-weapons.mjs
 import { Game, gameFromSnapshot, blankInput } from './js/game.js';
 import { sanitizeBuild, buildCost, derivedStats } from './js/profile.js';
 
@@ -557,7 +557,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('the return leg carries 60% of the bite', back > 0 && Math.abs(back - out * 0.6) < 1e-9);
 }
 
-// --- hammer: three directional launch hexes and redirect chains ---
+// --- hammer: one lingering launch hex, mana, and redirect chains ---
 {
   const g = mkGame('hammer');
   const a = g.fighters[0];
@@ -565,28 +565,39 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('hammer uses one directional launch on the ground', g._weaponAttack(a, 1, 0) === 'hthrust');
   g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
   const waves = g.projectiles.filter(p => p.kind === 'hammerwave');
-  check('hammer releases three simultaneous sections', waves.length === 3 && waves.every(p => p.arm === 0));
-  check('all three launch hexes retain the same footprint', waves.every(p => p.r === waves[0].r));
-  check('the three ground points are evenly spaced', waves[1].x - waves[0].x === waves[2].x - waves[1].x);
+  check('hammer releases one body-centered ground hex', waves.length === 1 && waves[0].x === a.x && waves[0].y === a.y);
   const tapRadius = mkGame('hammer');
   tapRadius._startAttack(tapRadius.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
-  check('holding charge expands all three hexagons', waves.every(p => p.r > tapRadius.projectiles[0].r));
-  check('release launches the wielder through the points', a.vx > 1000 && a.vy === 0);
-  const beforeBoost = a.vx;
-  a.x = waves[0].x;
+  check('holding charge makes the hex much larger', waves[0].r > tapRadius.projectiles[0].r * 2);
+  check('full charge makes the launch substantially stronger', a.vx > 1400 && a.vy === 0);
+  check('hammer release consumes charge-scaled mana', a.mana < tapRadius.fighters[0].mana);
+  const victim = g.fighters[1]; victim.x = waves[0].x; victim.y = waves[0].y;
   g._resolveAttacks();
-  check('ground hexes boost the wielder further along the aim', a.vx > beforeBoost);
+  check('passing through a hammer hex applies afterburn', !!victim.burn && victim.burn.n === 4);
+  const beforeBoost = a.vx; a.x = waves[0].x + waves[0].r + 100;
+  g._resolveAttacks();
+  a.moveIntent = { x: 0, y: -1 }; a.x = waves[0].x;
+  g._resolveAttacks();
+  check('re-entering with direction boosts in that direction', a.vy < -600 && a.vx === beforeBoost);
+  a.x = waves[0].x + waves[0].r + 100; g._resolveAttacks();
+  a.moveIntent = { x: 0, y: 0 }; a.x = waves[0].x; g._resolveAttacks();
+  check('neutral re-entry catches and stops the wielder', a.vx === 0 && a.vy === 0);
+
+  const dry = mkGame('hammer');
+  dry.fighters[0].mana = 20;
+  dry._startAttack(dry.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  check('dry hammer cannot create a hex or launch', dry.projectiles.length === 0 && dry.fighters[0].vx === 0);
 
   const down = mkGame('hammer');
   const d = down.fighters[0]; d.grounded = true;
   down._startAttack(d, { kind: 'swipe', dx: 0, dy: 1 }, false, 1);
   const split = down.projectiles.filter(p => p.kind === 'hammerwave');
-  check('grounded down hammer lines up three downward hexes', split.length === 3 && split.every(p => p.y > d.y));
+  check('grounded down hammer still makes one centered hex', split.length === 1 && split[0].x === d.x && split[0].y === d.y);
 
   const up = mkGame('hammer');
   const u = up.fighters[0]; u.grounded = true;
   up._startAttack(u, { kind: 'swipe', dx: 0, dy: -1 }, false, 1);
-  check('grounded up hammer launches through three hexes', u.atk === 'hthrust' && u.vy < 0 && up.projectiles.filter(p => p.kind === 'hammerwave').length === 3);
+  check('grounded up hammer launches through one hex', u.atk === 'hthrust' && u.vy < 0 && up.projectiles.filter(p => p.kind === 'hammerwave').length === 1);
 
   const diag = mkGame('hammer');
   const dg = diag.fighters[0]; dg.grounded = true;
@@ -614,7 +625,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   chain._startAttack(c, { kind: 'swipe', dx: 1, dy: 0 });
   c.stateT = .35; chain.step();
   chain._startAttack(c, { kind: 'swipe', dx: 0, dy: -1 });
-  check('a redirected uncharged follow-up creates one hex', chain.projectiles.filter(p => p.kind === 'hammerwave').length === 4 && c.hammerChainN === 1);
+  check('a redirected uncharged follow-up creates one more hex', chain.projectiles.filter(p => p.kind === 'hammerwave').length === 2 && c.hammerChainN === 1);
   check('hammer attack has no recovery delay', c.atk === 'hthrust' && c.stateT === 0);
 }
 
