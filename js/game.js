@@ -2,7 +2,7 @@
 // everyone's latest inputs and broadcasts snapshots; clients interpolate.
 // All tuning constants live here so host handoff resumes identical rules.
 
-import { derivedStats, buildCost, emptyBuild, STATS, WEAPONS, ABILITIES, AUGMENTS } from './profile.js';
+import { derivedStats, buildCost, emptyBuild, STATS, WEAPONS, ABILITIES, AUGMENTS, MAX_ABILITIES, MAX_AUGMENTS } from './profile.js';
 
 export const TICK = 1 / 60;
 export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
@@ -457,6 +457,10 @@ const BOSS_REGION_EVERY = 3;         // a boss bars the road every Nth biome reg
 const BOSS_SPAWN_SLOW = 5.0;         // trickle spawn cadence floor while a boss lives
 const BOSS_HEARTS = 10;              // defeat fireworks: hearts flung in all directions
 const ENEMY_HIT_MERCY = 0.55;        // post-hit invulnerability so a swarm can't chain-stun
+const REGROWTH_PCT = 1;              // regrowth augment: percent shaved per second (PvP)
+const REGROWTH_HP = 0.5;             // regrowth augment: hp knit per second (expedition)
+const SCAVENGER_CR = 1.3;            // scavenger augment: bounty multiplier on defeats
+const SCAVENGER_HEART = 1.5;         // scavenger augment: heart heal multiplier
 const LOOT_HEAL_FRACTION = 0.5;      // "Patch Up" loot card: heal half of max HP
 export const LOOT_CR_BONUS = 200;    // "Windfall" loot card: CR straight into the wallet
 const EXPEDITION_START_CR = 160;     // co-op wallet balance at the start of a run
@@ -1168,6 +1172,12 @@ export class Game {
     f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : 0.5) * TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
+    // regrowth: slowly knit back together — percent bleeds off in stock
+    // matches, hp refills out on the road
+    if (f.st.augments.includes('regrowth')) {
+      if (this.coop) f.hp = Math.min(f.maxHp, f.hp + REGROWTH_HP * TICK);
+      else f.pct = Math.max(0, f.pct - REGROWTH_PCT * TICK);
+    }
 
     if (f.state === 'respawn') {
       if (f.stateT > 0.8) { f.state = 'air'; }
@@ -2234,7 +2244,7 @@ export class Game {
               o.state = 'hitstun'; o.stateT = 0; o.hitstunFor = 0.26;
               o.atk = null; o.atkDir = null; o.melee = null; o.chg = 0;
               this.events.push({ e: 'hit', x: o.x, y: o.y, dmg: Math.round(dmg), heavy: false, vic: o.id, att: pr.owner });
-              this._damageHp(o, dmg, pr.owner);
+              this._damageHp(o, dmg, pr.owner, true);
               if (this.coop) o.invuln = Math.max(o.invuln, ENEMY_HIT_MERCY);
               pr.ttl = 0;
             }
@@ -2623,8 +2633,11 @@ export class Game {
 
   // Take a chunk out of a co-op fighter's health, attributing the blow for
   // KO credit. Zero drops them: they go down and revive after a spell.
-  _damageHp(vic, dmg, attId) {
+  _damageHp(vic, dmg, attId, creep = false) {
     if (!this.coop || vic.dead) return;
+    // ironclad: creep-sourced hits bypass the defense-stat pipeline, so the
+    // augment's 10% shave is applied here (PvP hits get it via dmgTaken)
+    if (creep && vic.st.augments.includes('ironclad')) dmg *= 0.9;
     if (attId) vic.lastHitBy = attId;
     vic.hp -= dmg;
     if (vic.hp <= 0) this._downFighter(vic);
@@ -2676,11 +2689,11 @@ export class Game {
     if (w && w.cost <= cr) { build.weapon = w.id; cr -= w.cost; }
     for (const id of old.abilities || []) {
       const a = ABILITIES.find(x => x.id === id);
-      if (a && a.cost <= cr && build.abilities.length < 2) { build.abilities.push(id); cr -= a.cost; }
+      if (a && a.cost <= cr && build.abilities.length < MAX_ABILITIES) { build.abilities.push(id); cr -= a.cost; }
     }
     for (const id of old.augments || []) {
       const a = AUGMENTS.find(x => x.id === id);
-      if (a && a.cost <= cr && build.augments.length < 2) { build.augments.push(id); cr -= a.cost; }
+      if (a && a.cost <= cr && build.augments.length < MAX_AUGMENTS) { build.augments.push(id); cr -= a.cost; }
     }
     return { build, cr };
   }
@@ -3175,7 +3188,7 @@ export class Game {
         f.state = 'hitstun'; f.stateT = 0; f.hitstunFor = 0.26;
         f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0;
         this.events.push({ e: 'hit', x: f.x, y: f.y, dmg: Math.round(dmg), heavy: dmg >= 6, vic: f.id, att: 'e' + e.eid });
-        this._damageHp(f, dmg, 'e' + e.eid);
+        this._damageHp(f, dmg, 'e' + e.eid, true);
         f.invuln = Math.max(f.invuln, ENEMY_HIT_MERCY);
       }
     }
@@ -3404,7 +3417,7 @@ export class Game {
     f.state = 'hitstun'; f.stateT = 0; f.hitstunFor = 0.3;
     f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0;
     this.events.push({ e: 'hit', x: f.x, y: f.y, dmg: Math.round(dmg), heavy: true, vic: f.id, att: 'e' + e.eid });
-    this._damageHp(f, dmg, 'e' + e.eid);
+    this._damageHp(f, dmg, 'e' + e.eid, true);
     f.invuln = Math.max(f.invuln, ENEMY_HIT_MERCY);
   }
 
@@ -3625,7 +3638,9 @@ export class Game {
     if (h.taken) return;
     h.taken = true;
     for (const f of live) {
-      if (Math.hypot(f.x - h.x, f.y - h.y) <= HEART_AOE) f.hp = Math.min(f.maxHp, f.hp + HEART_HEAL);
+      if (Math.hypot(f.x - h.x, f.y - h.y) <= HEART_AOE) {
+        f.hp = Math.min(f.maxHp, f.hp + HEART_HEAL * (f.st.augments.includes('scavenger') ? SCAVENGER_HEART : 1));
+      }
     }
     this.events.push({ e: 'heart', x: h.x, y: h.y });
   }
@@ -3741,7 +3756,7 @@ export class Game {
     e.hp = 0;
     if (att && !e.ally) {
       att.score.ko++;
-      att.score.cr += e.cr || 1;
+      att.score.cr += Math.round((e.cr || 1) * (att.st.augments.includes('scavenger') ? SCAVENGER_CR : 1));
       if (e.elite) att.score.elite++;
       if (att.st.augments.includes('reaper')) att.hp = Math.min(att.maxHp, att.hp + att.maxHp * 0.02);
     }

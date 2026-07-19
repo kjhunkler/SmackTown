@@ -103,13 +103,23 @@ export const AUGMENTS = [
   { id: 'reaper',      icon: '💀', name: 'Reaper',       cost: 170,
     desc: 'KO a foe to heal 50%',
     pveDesc: 'Heal 2% for every creep you defeat' },
+  { id: 'ironclad',    icon: '🛡️', name: 'Ironclad',     cost: 165,
+    desc: 'Take 10% less damage' },
+  { id: 'regrowth',    icon: '🌿', name: 'Regrowth',     cost: 170,
+    desc: 'Slowly knit back together — your percent ticks down on its own',
+    pveDesc: 'Slowly regenerate HP between fights' },
+  { id: 'skyborn',     icon: '☁️', name: 'Skyborn',      cost: 150,
+    desc: 'Jump 15% higher' },
+  { id: 'scavenger',   icon: '🧲', name: 'Scavenger',    cost: 150,
+    desc: 'Hearts heal 50% more and creeps pay 30% more CR — an expedition specialist' },
 ];
 
 export const MAX_ABILITIES = 2;
-export const MAX_AUGMENTS = 2;
+export const MAX_AUGMENTS = 5;
 
 // The priciest a fully-legal build can ever cost (every stat maxed, dearest
-// weapon, two dearest abilities & augments). Co-op expeditions cap spending
+// weapon, the dearest abilities & augments a build can carry). Co-op
+// expeditions cap spending
 // at accumulated credits instead of the 1000 PvP budget, so their builds are
 // validated against this structural ceiling rather than the standard purse.
 export const MAX_BUILD_COST = (() => {
@@ -326,8 +336,8 @@ export function derivedStats(build) {
     speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.95 : 1),
     kbTaken:   (1 - 0.06 * b.stats.defense) * (has('heavy') ? 0.85 : 1)
       * (has('feather') ? 1.08 : 1) * (glass ? 1.18 : 1),
-    dmgTaken:  1 - 0.04 * b.stats.defense,
-    jumpMult:  1 + 0.05 * b.stats.agility,
+    dmgTaken:  (1 - 0.04 * b.stats.defense) * (has('ironclad') ? 0.9 : 1),
+    jumpMult:  (1 + 0.05 * b.stats.agility) * (has('skyborn') ? 1.15 : 1),
     airMult:   1 + 0.08 * b.stats.agility,
     // Co-op health pool (unused by stock matches): Defense doubles as a
     // toughness stat, so a tank build carries more HP through an expedition.
