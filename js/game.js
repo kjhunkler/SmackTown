@@ -342,7 +342,7 @@ export function hazardsAt(mapId, tickF) {
   });
 }
 
-const GRAV = 2600, MAX_FALL = 1150, FASTFALL = 1750;
+const GRAV = 2600, MAX_FALL = 920, FASTFALL = 1750;   // MAX_FALL trimmed 20% (was 1150) — floatier drops, fast-fall unchanged
 const FALL_GRAV = 1.35;              // gravity multiplier on descent — rise unchanged, so jump heights hold
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 3400;
 const TURN_ACCEL = 2.2;              // ground accel multiplier while reversing a run

@@ -14,7 +14,7 @@ function check(name, ok) {
 }
 const near = (a, b, eps = 2) => Math.abs(a - b) <= eps;
 
-const MAX_FALL = 1150;               // mirrors game.js physics constants
+const MAX_FALL = 920;                // mirrors game.js physics constants
 const build = weapon => ({ stats: { power: 0, speed: 0, defense: 0, agility: 0 }, weapon, abilities: [], augments: [] });
 const players = weapon => [
   { id: 'A', name: 'Alice', color: '#f00', build: build(weapon) },
