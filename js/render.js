@@ -601,7 +601,25 @@ export class Renderer {
     for (const p of view.projectiles || []) {
       ctx.save();
       ctx.translate(p.x, p.y);
-      if (p.kind === 'boomerang') {
+      if (p.kind === 'hammerwave') {
+        const r = p.r || 40;
+        const armed = !(p.arm > 0);
+        const pulse = .65 + .35 * Math.sin(t * 18 + p.eid);
+        ctx.scale(1, .32);
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7);
+        if (armed) {
+          const g = ctx.createRadialGradient(0, 0, r * .15, 0, 0, r);
+          g.addColorStop(0, 'rgba(255,245,185,.85)');
+          g.addColorStop(1, 'rgba(255,126,35,.12)');
+          ctx.fillStyle = g; ctx.fill();
+          ctx.strokeStyle = '#ffd36a'; ctx.lineWidth = 7; ctx.stroke();
+        } else {
+          // Every future section owns a dashed warning footprint.
+          ctx.strokeStyle = `rgba(255,176,46,${(.55 + .4 * pulse).toFixed(2)})`;
+          ctx.lineWidth = 5; ctx.setLineDash([10, 7]); ctx.lineDashOffset = -t * 70;
+          ctx.stroke();
+        }
+      } else if (p.kind === 'boomerang') {
         // spin-blur halo so the blade reads against light skies too
         ctx.strokeStyle = 'rgba(10, 24, 46, .35)';
         ctx.lineWidth = 3;
@@ -4178,6 +4196,27 @@ export class Renderer {
       ctx.beginPath();
       ctx.moveTo(0, -18); ctx.lineTo(-3.4, -9); ctx.lineTo(3.4, -9);
       ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    // The hammer is carried overhead for the entire patient charge, then
+    // rotates violently down through the release pose.
+    if (f.weapon === 'hammer') {
+      const live = f.atk === 'hslam' || f.atk === 'hupp';
+      ctx.save();
+      ctx.scale(f.facing || 1, 1);
+      ctx.translate(live ? 4 : -bw / 2 + 5, live ? -F_H / 2 - 9 : bTop + 9);
+      let angle = -0.55;
+      if (f.state === 'charge') angle = f.atk === 'hupp' ? 2.5 : -1.55;
+      else if (f.state === 'attack' && f.atk === 'hslam') angle = .95;
+      else if (f.state === 'attack' && f.atk === 'hupp') angle = -2.35;
+      ctx.rotate(angle);
+      ctx.strokeStyle = '#7b5735'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 18); ctx.lineTo(0, -25); ctx.stroke();
+      ctx.fillStyle = '#68758b';
+      roundRect(ctx, -18, -34, 36, 18, 4); ctx.fill();
+      ctx.strokeStyle = '#20283a'; ctx.lineWidth = 3;
+      roundRect(ctx, -18, -34, 36, 18, 4); ctx.stroke();
       ctx.restore();
     }
 
