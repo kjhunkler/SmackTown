@@ -574,25 +574,45 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const victim = g.fighters[1]; victim.x = waves[0].x; victim.y = waves[0].y;
   g._resolveAttacks();
   check('passing through a hammer hex applies afterburn', !!victim.burn && victim.burn.n === 4);
+  // Caught in your OWN hex: suspended and centered, no longer boosted by a
+  // held direction. Re-enter after having left the hex once.
   a.x = waves[0].x + waves[0].r + 100;
   g._resolveAttacks();
-  a.moveIntent = { x: 0, y: -1 }; a.x = waves[0].x;
+  a.x = waves[0].x; a.y = waves[0].y - 40; a.moveIntent = { x: 0, y: 0 };
   g._resolveAttacks();
-  check('re-entering with direction catches before boosting', a.hammerCatch && a.vx === 0 && a.vy === 0);
+  check('re-entering your own hex catches and suspends you', a.hammerCatch && a.vx === 0 && a.vy === 0);
+  g._stepFighter(a, blankInput());
+  check('a caught wielder is snapped to the hex center', a.x === waves[0].x && a.y === waves[0].y);
   const held = blankInput(); held.my = -1;
-  g._stepFighter(a, held);
-  check('a held entry direction pauses briefly before launch', a.hammerCatch && a.vy === 0);
-  for (let i = 0; i < 6; i++) g._stepFighter(a, held);
-  check('continuing to hold launches in that direction', !a.hammerCatch && a.vy < -500 && a.hammerFlight);
-  a.x = waves[0].x + waves[0].r + 100; g._resolveAttacks();
-  a.moveIntent = { x: 0, y: 0 }; a.x = waves[0].x; g._resolveAttacks();
-  check('neutral re-entry catches and stops the wielder', a.vx === 0 && a.vy === 0);
-  const press = blankInput(); press.mx = -1;
-  g._stepFighter(a, press);
-  check('a direction pressed while caught launches immediately', !a.hammerCatch && a.vx < 0 && a.hammerFlight);
+  for (let i = 0; i < 8; i++) g._stepFighter(a, held);
+  check('holding a direction keeps you pinned instead of boosting', a.hammerCatch && a.vx === 0 && a.vy === 0);
+  // Charging while caught inflates the hex; the release consumes it and hurls
+  // the wielder along the charge, scaled by the inflated size.
+  const baseR = waves[0].r;
+  const chg = blankInput(); chg.chg = { dx: 0, dy: -1 }; chg.chgArm = true; chg.my = -1;
+  g._stepFighter(a, chg); chg.chgArm = false;
+  for (let i = 0; i < 24; i++) g._stepFighter(a, chg);
+  check('charging while caught inflates the hex', waves[0].r > baseR && a.hammerCatch);
+  const release = blankInput(); release.my = -1;
+  g._stepFighter(a, release);
+  check('releasing consumes the hex and launches you by its size',
+    !a.hammerCatch && a.vy < -700 && a.hammerFlight && waves[0].ttl === 0);
   victim.x = a.x; victim.y = a.y; victim.invuln = 0;
   g._resolveAttacks();
-  check('a hex-launched fighter has a body-sized projectile hitbox', a.hammerFlight.hit.has(victim.id));
+  check('a hex-launched wielder has a body-sized projectile hitbox', a.hammerFlight.hit.has(victim.id));
+
+  // A jump dislodges a caught wielder naturally once the pause has passed.
+  const jg = mkGame('hammer');
+  const ja = jg.fighters[0];
+  jg._startAttack(ja, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
+  const jhex = jg.projectiles.find(p => p.kind === 'hammerwave');
+  ja.x = jhex.x + jhex.r + 100; jg._resolveAttacks();
+  ja.x = jhex.x; ja.y = jhex.y; ja.moveIntent = { x: 0, y: 0 }; jg._resolveAttacks();
+  for (let i = 0; i < 8; i++) jg._stepFighter(ja, blankInput());
+  check('a caught wielder holds still with no input', ja.hammerCatch && ja.vy === 0);
+  const jump = blankInput(); jump.jump = true; ja.jumps = ja.st.maxJumps;
+  jg._stepFighter(ja, jump);
+  check('a jump dislodges a caught wielder', !ja.hammerCatch && ja.vy < 0 && !ja.hammerFlight);
 
   const expiring = mkGame('hammer');
   const ex = expiring.fighters[0];

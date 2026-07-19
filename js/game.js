@@ -710,7 +710,10 @@ const HAMMER_MANA_COST0 = 24, HAMMER_MANA_COST1 = 62;
 const HAMMER_CHAIN_WINDOW = .34;
 const HAMMER_CHAIN_MAX = 4;
 const HAMMER_FLOAT_DECAY = 1.15;      // seconds until normal gravity fully returns while held
-const HAMMER_CATCH_DELAY = .08;       // held entry aim must visibly catch before it launches
+const HAMMER_CATCH_DELAY = .08;       // suspended pause before a jump can dislodge you
+const HAMMER_INFLATE_MAX = 200;       // caught in your own hex: charging can pump it this big
+const HAMMER_INFLATE_LAUNCH0 = 700;   // release launch speed off a barely-inflated hex
+const HAMMER_INFLATE_LAUNCH1 = 1560;  // release launch speed off a fully inflated hex
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
@@ -1216,10 +1219,10 @@ export class Game {
     f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
     f.regrabT = Math.max(0, f.regrabT - TICK);
     f.standT = Math.max(0, f.standT - TICK);
-    // Hammer mana only returns on the ground: repeated launches can cross a
-    // gap, but cannot turn into permanent flight. Magic retains its gentler
-    // half-speed aerial refill.
-    const airRegen = f.st.weapon === 'hammer' ? 0 : 0.5;
+    // Mana refills fully on the ground and at half speed in the air. The
+    // hammer now shares that aerial trickle (it used to get none), so airborne
+    // hex-boost chains can slowly rebuild the mana they spend.
+    const airRegen = 0.5;
     f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : airRegen) * TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
@@ -1254,7 +1257,64 @@ export class Game {
     if (f.hammerCatch) {
       const gate = this.projectiles.find(p => p.eid === f.hammerCatch.eid && p.ttl > 0);
       if (!gate) f.hammerCatch = null;
-      else {
+      else if (gate.owner === f.id) {
+        // Caught in your OWN hex: fully suspended and snapped to its center. A
+        // jump breaks you free after a readable pause; charging instead pumps
+        // the hex bigger, and letting go consumes it to launch you along the
+        // charge, scaled by how large the hex grew.
+        f.hammerCatch.t += TICK;
+        f.x = gate.x; f.y = gate.y;
+        f.vx = 0; f.vy = 0; f.fastfall = false; f.grounded = false;
+        gate.pinned = true;
+        const ax = Math.abs(inp.mx) > .3 ? Math.sign(inp.mx) : 0;
+        const ay = Math.abs(inp.my) > .3 ? Math.sign(inp.my) : 0;
+        if (ax || ay) f.hammerCatch.aim = { x: ax, y: ay };
+        if (!f.hammerCatch.charging && inp.chg && inp.chgArm) {
+          f.hammerCatch.charging = true;
+          f.hammerCatch.chgT = 0;
+          f.hammerCatch.baseR = gate.r;
+          inp.chgArm = false;
+          this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
+        }
+        if (f.hammerCatch.charging) {
+          f.hammerCatch.chgT += TICK;
+          const k = clamp(f.hammerCatch.chgT / this._chargeMax(f), 0, 1);
+          gate.r = f.hammerCatch.baseR + (HAMMER_INFLATE_MAX - f.hammerCatch.baseR) * k;
+          if (!inp.chg || k >= 1) {
+            const aim = f.hammerCatch.aim || { x: f.facing, y: 0 };
+            const n = Math.hypot(aim.x, aim.y) || 1;
+            const grow = clamp((gate.r - HAMMER_HEX_RADIUS0) / (HAMMER_INFLATE_MAX - HAMMER_HEX_RADIUS0), 0, 1);
+            const speed = HAMMER_INFLATE_LAUNCH0 + (HAMMER_INFLATE_LAUNCH1 - HAMMER_INFLATE_LAUNCH0) * grow;
+            f.vx = aim.x / n * speed;
+            f.vy = aim.y / n * speed;
+            f.dashT = Math.max(f.dashT, ATTACKS.hthrust.active);
+            f.hammerFlight = { hit: new Set(), by: f.id };
+            gate.ttl = 0;   // the inflated hex is spent on the launch
+            f.hammerCatch = null;
+            this.events.push({ e: 'hexgate', id: f.id, x: gate.x, y: gate.y });
+          }
+          this._decayInput(inp);
+          return;
+        }
+        // Not charging: a jump dislodges you once the brief pause has passed.
+        if (f.hammerCatch.t >= HAMMER_CATCH_DELAY && inp.jump && f.jumps > 0) {
+          gate.pinned = false;
+          f.hammerCatch = null;
+          f.vy = -JUMP_V * f.st.jumpMult;
+          f.jumps--;
+          f.fastfall = false;
+          f.ffLockT = JUMP_FF_LOCK;
+          f.state = 'air';
+          f.standT = 0;
+          f.jumpT = 0;
+          inp.jump = false;
+          this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
+        }
+        this._decayInput(inp);
+        return;
+      } else {
+        // Caught in someone ELSE's hex: the classic boost gate. A held or
+        // freshly pressed direction fires you along it after a tiny pause.
         f.hammerCatch.t += TICK;
         const intent = f.moveIntent;
         const n = Math.hypot(intent.x, intent.y);
@@ -2716,9 +2776,10 @@ export class Game {
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
-      if (pr.kind === 'hammerwave' && pr.life) {
+      if (pr.kind === 'hammerwave' && pr.life && !pr.pinned) {
         // Preserve a useful core until the final moment while making the
-        // long-lived field visibly and mechanically decay.
+        // long-lived field visibly and mechanically decay. A hex holding a
+        // caught wielder is pinned: it keeps (and can grow) its size instead.
         pr.r = pr.r0 * (.32 + .68 * Math.max(0, pr.ttl / pr.life));
       }
       // a returning rang that reaches its thrower is caught — gone from the
