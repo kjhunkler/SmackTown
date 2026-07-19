@@ -66,7 +66,7 @@ export const WEAPONS = [
   { id: 'shield',  icon: '🛡️', name: 'Shield', cost: 0,
     desc: 'Battering-ram lunge that blasts foes out of their spot and puts you in it — the victim becomes a live hazard mid-flight, damaging anyone else they crash into. Blunts hits while charging' },
   { id: 'hammer',  icon: '🔨', name: 'Hammer', cost: 0,
-    desc: 'Very slow, deeply chargeable smashes send three fading, telegraphed shockwaves outward; aim down for both sides or up to launch yourself' },
+    desc: 'Chargeable launches leave one fading burn hex; re-enter with a direction to boost, or neutral to stop. Grounded time refills its mana' },
   { id: 'bombs',   icon: '💣', name: 'Bombs', cost: 0,
     desc: 'Lob a delayed explosive — charge for a longer throw, bigger blast, and more damage. Its blast can launch you, but never hurts you' },
 ];

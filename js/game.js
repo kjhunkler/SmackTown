@@ -702,11 +702,11 @@ const SHIELD_LUNGE = 1.1;            // bash lunge, fraction of the sword's (a c
 const SHIELD_LUNGE_UP = 1.15;        // up-bashes still climb, but less vertically than before
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
-const HAMMER_HEX_RADIUS0 = 38, HAMMER_HEX_RADIUS1 = 72;
-const HAMMER_SPREAD = 92;
-const HAMMER_LAUNCH0 = 760, HAMMER_LAUNCH1 = 1180;
-const HAMMER_HEX_BOOST = 180;
-const HAMMER_HEX_LIFE = .42;
+const HAMMER_HEX_RADIUS0 = 36, HAMMER_HEX_RADIUS1 = 96;
+const HAMMER_LAUNCH0 = 620, HAMMER_LAUNCH1 = 1460;
+const HAMMER_HEX_BOOST0 = 360, HAMMER_HEX_BOOST1 = 680;
+const HAMMER_HEX_LIFE0 = 2.2, HAMMER_HEX_LIFE1 = 4.8;
+const HAMMER_MANA_COST0 = 24, HAMMER_MANA_COST1 = 62;
 const HAMMER_CHAIN_WINDOW = .34;
 const HAMMER_CHAIN_MAX = 4;
 const HAMMER_FLOAT_DECAY = 1.15;      // seconds until normal gravity fully returns while held
@@ -959,7 +959,8 @@ export class Game {
       chgAim: null,                 // 8-way aim captured when the charge began
       invuln: 0, counterT: 0, dashT: 0, slideT: 0,
       guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
-      mana: MANA_MAX,               // magic weapon fuel, always recharging
+      mana: MANA_MAX,               // magic/hammer fuel, always recharging
+      moveIntent: { x: 0, y: 0 },   // live stick direction for lingering hammer gates
       cds: [0, 0],                  // ability cooldowns (seconds remaining)
       lastHitBy: null,              // KO attribution (reaper heal)
       dropT: 0,                     // drop-through timer
@@ -1205,9 +1206,11 @@ export class Game {
     f.riseT = f.grounded ? 0 : Math.max(0, f.riseT - TICK);
     f.regrabT = Math.max(0, f.regrabT - TICK);
     f.standT = Math.max(0, f.standT - TICK);
-    // mana trickles back half as fast while airborne, so the hover-mage
-    // can't sustain the aerial loop forever without touching down
-    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : 0.5) * TICK);
+    // Hammer mana only returns on the ground: repeated launches can cross a
+    // gap, but cannot turn into permanent flight. Magic retains its gentler
+    // half-speed aerial refill.
+    const airRegen = f.st.weapon === 'hammer' ? 0 : 0.5;
+    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : airRegen) * TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
     // regrowth: slowly knit back together — percent bleeds off in stock
@@ -1231,6 +1234,7 @@ export class Game {
     const inCrush = f.state === 'crush';
     const canAct = !inHitstun && !inAttack && !inCharge && !inCrush;
 
+    f.moveIntent = { x: Math.abs(inp.mx) > .15 ? inp.mx : 0, y: Math.abs(inp.my) > .15 ? inp.my : 0 };
     if (Math.abs(inp.mx) > 0.15) f.lastDir = { x: Math.sign(inp.mx), y: inp.my };
 
     // --- dodge roll: shove the stick sideways out of a duck ---
@@ -1707,22 +1711,27 @@ export class Game {
     const n = Math.hypot(dx, dy) || 1;
     const nx = dx / n, ny = dy / n;
     const charge = clamp(k, 0, 1);
-    const airborne = !f.grounded;
     const radius = HAMMER_HEX_RADIUS0 + (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0) * charge;
-    const count = airborne || chained ? 1 : 3;
-    const power = 1 + .5 * charge;
-    for (let section = 0; section < count; section++) {
-      // An aerial release detonates the one hex wrapped around the wielder.
-      // Ground releases leave three boost gates evenly down the aimed path.
-      const off = airborne ? 0 : HAMMER_SPREAD * (section + 1);
+    const cost = HAMMER_MANA_COST0 + (HAMMER_MANA_COST1 - HAMMER_MANA_COST0) * charge;
+    if (f.mana < cost) {
+      this.events.push({ e: 'fizzle', id: f.id, x: f.x, y: f.y, why: 'mana' });
+      return;
+    }
+    f.mana -= cost;
+    const power = .75 + 1.25 * charge;
+    const life = HAMMER_HEX_LIFE0 + (HAMMER_HEX_LIFE1 - HAMMER_HEX_LIFE0) * charge;
+    // Ground and air now share the same body-centered hex. It remains behind
+    // as a shrinking launch gate and burning hazard after the wielder leaves.
+    for (let section = 0; section < 1; section++) {
       this.projectiles.push({
         eid: nextEid++, kind: 'hammerwave', owner: f.id,
-        x: f.x + nx * off, y: f.y + ny * off, vx: 0, vy: 0,
-        r: radius, arm: 0, ttl: HAMMER_HEX_LIFE,
+        x: f.x, y: f.y, vx: 0, vy: 0,
+        r: radius, r0: radius, arm: 0, ttl: life, life,
         dmg: 11 * power, kb: 300 * power, ks: 22,
         ang: Math.atan2(ny, nx) * 180 / Math.PI, thru: true,
         hit: new Set(), section, dir: Math.sign(nx) || f.facing,
-        aimX: nx, aimY: ny, boost: !airborne, boosted: false,
+        aimX: nx, aimY: ny, boost: HAMMER_HEX_BOOST0 + (HAMMER_HEX_BOOST1 - HAMMER_HEX_BOOST0) * charge,
+        inside: new Set([f.id]), dot: { n: 4, every: .45, dmg: 1.5 + 1.5 * charge },
       });
     }
     const speed = HAMMER_LAUNCH0 + (HAMMER_LAUNCH1 - HAMMER_LAUNCH0) * charge;
@@ -2273,16 +2282,28 @@ export class Game {
     // projectiles vs fighters
     for (const pr of this.projectiles) {
       if (pr.kind === 'anchor' || pr.arm > 0) continue;   // warnings are visible but harmless
-      // Ground hammer hexes are both hazards and launch gates. Each gate can
-      // accelerate its owner once, extending the release along its locked aim.
-      if (pr.kind === 'hammerwave' && pr.boost && !pr.boosted) {
-        const owner = this.fighters.find(x => x.id === pr.owner);
-        if (owner && Math.abs(owner.x - pr.x) < F_W / 2 + pr.r
-            && Math.abs(owner.y - pr.y) < F_H / 2 + pr.r) {
-          owner.vx += pr.aimX * HAMMER_HEX_BOOST;
-          owner.vy += pr.aimY * HAMMER_HEX_BOOST;
-          owner.fastfall = false;
-          pr.boosted = true;
+      // Lingering hammer hexes react on entry. A held direction turns the
+      // gate into a boost in that direction; neutral input makes it a catch
+      // that arrests momentum. Track occupants so standing in one does not
+      // repeatedly fire it every simulation tick.
+      if (pr.kind === 'hammerwave' && pr.inside) {
+        for (const fighter of this.fighters) {
+          const within = !fighter.dead && Math.abs(fighter.x - pr.x) < F_W / 2 + pr.r
+            && Math.abs(fighter.y - pr.y) < F_H / 2 + pr.r;
+          const wasWithin = pr.inside.has(fighter.id);
+          if (within && !wasWithin) {
+            const intent = fighter.moveIntent || { x: 0, y: 0 };
+            const n = Math.hypot(intent.x, intent.y);
+            if (n > .15) {
+              fighter.vx += intent.x / n * pr.boost;
+              fighter.vy += intent.y / n * pr.boost;
+            } else {
+              fighter.vx = 0; fighter.vy = 0;
+            }
+            fighter.fastfall = false;
+            this.events.push({ e: 'hexgate', id: fighter.id, x: pr.x, y: pr.y });
+          }
+          if (within) pr.inside.add(fighter.id); else pr.inside.delete(fighter.id);
         }
       }
       for (const o of this.fighters) {
@@ -2636,6 +2657,11 @@ export class Game {
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
+      if (pr.kind === 'hammerwave' && pr.life) {
+        // Preserve a useful core until the final moment while making the
+        // long-lived field visibly and mechanically decay.
+        pr.r = pr.r0 * (.32 + .68 * Math.max(0, pr.ttl / pr.life));
+      }
       // a returning rang that reaches its thrower is caught — gone from the
       // air, and the hand is free to wind up the next throw early
       if (pr.ret && pr.ttl > 0 && pr.vx * pr.lnx + pr.vy * pr.lny < 0) {
@@ -4271,19 +4297,16 @@ export function meleeHitbox(f, spec, aim = null) {
       blade: true,
     };
   }
+  // The hammer telegraph always wraps the wielder, on ground or in air.
+  if (spec.hammerThrust) {
+    return { dx: 0, dy: 0,
+      hw: HAMMER_HEX_RADIUS0, hh: HAMMER_HEX_RADIUS0,
+      hammerThrust: true, hammerAir: true };
+  }
   // spear: the same long-thin-box-along-the-aim as a blade, but with a
   // dead zone carved out of the near end (gap) — the box runs from
   // gap..rx out from the body's edge instead of 0..rx, so a target
   // standing inside the gap simply isn't there yet.
-  if (spec.hammerThrust) {
-    const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };
-    const n = Math.hypot(dir.x, dir.y) || 1;
-    const air = !f.grounded;
-    return { dx: air ? 0 : dir.x / n * HAMMER_SPREAD * 2,
-      dy: air ? 0 : dir.y / n * HAMMER_SPREAD * 2,
-      hw: HAMMER_HEX_RADIUS0, hh: HAMMER_HEX_RADIUS0,
-      hammerThrust: true, hammerAir: air };
-  }
   if (spec.spear) {
     const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };
     const n = Math.hypot(dir.x, dir.y);

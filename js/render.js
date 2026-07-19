@@ -4396,16 +4396,18 @@ export class Renderer {
       }
     }
 
-    // mana meter: magic users wear their fuel gauge under their feet.
+    // mana meter: magic and hammer users wear their fuel gauge underfoot.
     // Violet while there's a cast in the tank, dimming when too dry to fire.
-    if (f.weapon === 'magic' && f.mana != null) {
+    if ((f.weapon === 'magic' || f.weapon === 'hammer') && f.mana != null) {
       const w = 44, h = 4;
       const k = clamp(f.mana / 100, 0, 1);
       const x = f.x - w / 2, y = f.y + F_H / 2 + 8;
       ctx.fillStyle = 'rgba(10,12,30,.6)';
       roundRect(ctx, x, y, w, h, 2); ctx.fill();
       if (k > 0) {
-        ctx.fillStyle = k >= 0.35 ? '#b388ff' : '#6b5a96';  // 35 = one cast
+        ctx.fillStyle = f.weapon === 'hammer'
+          ? (k >= .24 ? '#55e88d' : '#416e52')
+          : (k >= 0.35 ? '#b388ff' : '#6b5a96');
         roundRect(ctx, x, y, Math.max(3, w * k), h, 2); ctx.fill();
       }
     }
@@ -4481,12 +4483,8 @@ export class Renderer {
   }
 
   _hammerTelegraph(ctx, f, t) {
-    const aim = f.aim && (f.aim.x || f.aim.y) ? f.aim : { x: f.facing || 1, y: 0 };
-    const n = Math.hypot(aim.x, aim.y) || 1;
-    const nx = aim.x / n, ny = aim.y / n;
     const charge = clamp(f.hb.chg || 0, 0, 1);
-    const radius = 38 + (72 - 38) * charge;
-    const spread = 92;
+    const radius = 36 + (96 - 36) * charge;
     const pulse = .68 + .22 * Math.sin(t * (7 + charge * 8));
     ctx.save();
     ctx.strokeStyle = `rgba(72,226,132,${pulse.toFixed(2)})`;
@@ -4494,10 +4492,8 @@ export class Renderer {
     ctx.lineWidth = 4;
     ctx.setLineDash([8, 6]);
     ctx.lineDashOffset = -t * 55;
-    const count = f.hb.hammerAir ? 1 : 3;
-    for (let point = 1; point <= count; point++) {
-      const x = f.x + (f.hb.hammerAir ? 0 : nx * spread * point);
-      const y = f.y + (f.hb.hammerAir ? 0 : ny * spread * point);
+    for (let point = 1; point <= 1; point++) {
+      const x = f.x, y = f.y;
       ctx.beginPath();
       for (let side = 0; side < 6; side++) {
         const a = Math.PI / 6 + side * Math.PI / 3;
