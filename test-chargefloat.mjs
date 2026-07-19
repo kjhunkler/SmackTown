@@ -56,6 +56,8 @@ const vyAt = (weapon, dx, dy, ticks = 26) => charging(weapon, dx, dy, ticks).f.v
   check('rang side-charge keeps normal fall', near(vyAt('boomerang', 1, 0), MAX_FALL));
   check('rang up-charge keeps normal fall', near(vyAt('boomerang', 0, -1), MAX_FALL));
   check('rang down-charge hangs 80% slow (cap 230)', near(vyAt('boomerang', 0, 1), MAX_FALL * 0.2));
+  check('hammer begins at a complete hover', vyAt('hammer', 1, 0, 3) < 60);
+  check('hammer hover decays during a long hold', vyAt('hammer', 1, 0, 40) > 100);
 }
 
 // --- 2. the spear's aerial down-thrust charge floats UP ---

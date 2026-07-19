@@ -614,9 +614,10 @@ const ATTACKS = {
   // 'bounce' swaps the wielder into the victim's spot on clean hits. A modest
   // launcher with light damage — a slab of steel, not a blade.
   bash:   { dmg: 7, kb: 340, ks: 22, startup: .09, active: .20, rec: .30, rx: 46, ry: 42, ang: -28, bounce: true },
-  hslam:  { dmg: 0, kb: 0, ks: 0, startup: .18, active: .02, rec: .68, rx: 44, ry: 34, ang: 0, cast: true },
-  // Compact head-first strike: its live reach is extended from charge below.
-  hthrust:{ dmg: 18, kb: 320, ks: 27, startup: .18, active: .11, rec: .62, rx: 72, gap: 8, ry: 11, ang: -42, hammerThrust: true },
+  // Hammer damage lives in the three launch hexes rather than a conventional
+  // melee rectangle. The active time is only the travel window; there is no
+  // recovery tail after the launch finishes.
+  hthrust:{ dmg: 0, kb: 0, ks: 0, startup: 0, active: .34, rec: 0, rx: 38, ry: 38, ang: -42, cast: true, hammerThrust: true },
   bomb:   { dmg: 0, kb: 0, ks: 0, startup: .08, active: .02, rec: .24, rx: 30, ry: 24, ang: 0, cast: true },
 };
 
@@ -654,6 +655,7 @@ const CHG_FALL = {
   spear:     { up: 0.6, down: -0.1, side: 0.6 },  // down-thrust rises at 10%
   unarmed:   { up: 0.6, down: 0.8,  side: 0.8 },  // fists: 40% up, 20% else
   boomerang: { up: 1,   down: 0.2,  side: 1 },    // down-charge hangs 80% slow…
+  hammer:    { up: 0,   down: 0,    side: 0 },    // full hover initially; see decay below
 };
 const RANG_CHG_POP = 780;            // …then release vaults the thrower upward
 const RANG_CHG_POP_CHG = 0.5;        // +50% pop speed at full charge
@@ -700,14 +702,13 @@ const SHIELD_LUNGE = 1.1;            // bash lunge, fraction of the sword's (a c
 const SHIELD_LUNGE_UP = 1.15;        // up-bashes still climb, but less vertically than before
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
-const HAMMER_WAVES = [
-  { off: 72,  r: 68, delay: .05, dmg: 16, kb: 410, ks: 27 },
-  { off: 170, r: 50, delay: .23, dmg: 11, kb: 310, ks: 21 },
-  { off: 248, r: 34, delay: .43, dmg: 7,  kb: 220, ks: 15 },
-];
-const HAMMER_THRUST_RANGE = 112;     // extra live reach at standard full charge
-const HAMMER_THRUST_LUNGE = .78;     // meaningful minimum body thrust on a tap
-const HAMMER_THRUST_UP = 1.35;       // diagonal-up retains horizontal and vertical carry
+const HAMMER_HEX_RADIUS = 38;
+const HAMMER_SPREAD0 = 58, HAMMER_SPREAD1 = 122;
+const HAMMER_LAUNCH0 = 760, HAMMER_LAUNCH1 = 1180;
+const HAMMER_HEX_LIFE = .42;
+const HAMMER_CHAIN_WINDOW = .34;
+const HAMMER_CHAIN_MAX = 4;
+const HAMMER_FLOAT_DECAY = 1.15;      // seconds until normal gravity fully returns while held
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1050;
@@ -944,6 +945,7 @@ export class Game {
       grounded: true, jumps: st.maxJumps, fastfall: false,
       jumpT: -1,                    // seconds since liftoff while a jump cut is still possible (-1 idle)
       comboN: 0, comboT: 0,         // tap combo: next stage index + chain window left
+      hammerChainN: 0, hammerChainT: 0, hammerChainDir: null,
       pct: 0, stocks: STOCKS,
       hp: st.maxHp, maxHp: st.maxHp, downT: 0,   // co-op health & downed timer
       state: 'idle',                // idle|run|air|attack|charge|hitstun|ledge|roll|dead|respawn
@@ -1271,10 +1273,7 @@ export class Game {
     const ducking = f.state === 'duck';
 
     // --- horizontal movement ---
-    // Hammer recovery is deliberately planted, including in the air: its
-    // long recovery is a real movement lock rather than steerable drift.
-    const hammerRecovery = inAttack && (f.atk === 'hslam' || f.atk === 'hthrust');
-    if (!inHitstun && !inCrush && !hammerRecovery && f.dashT <= 0) {
+    if (!inHitstun && !inCrush && f.dashT <= 0) {
       const want = inp.mx * RUN * f.st.speedMult;
       if (f.grounded) {
         if (Math.abs(inp.mx) > 0.15 && canAct && !ducking) {
@@ -1351,7 +1350,10 @@ export class Game {
     if (inAttack) {
       const a = ATTACKS[f.atk];
       const total = a ? a.startup + a.active + a.rec : 0;
-      if (f.stateT >= total) { f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.lowJab = false; f.atkHit.clear(); f.chg = 0; f.atkSpd = 0; }
+      if (f.stateT >= total) {
+        if (f.atk === 'hthrust' && f.hammerChainN < HAMMER_CHAIN_MAX) f.hammerChainT = HAMMER_CHAIN_WINDOW;
+        f.state = f.grounded ? 'idle' : 'air'; f.atk = null; f.atkDir = null; f.lowJab = false; f.atkHit.clear(); f.chg = 0; f.atkSpd = 0;
+      }
     }
     if (inHitstun && f.stateT >= f.hitstunFor) { f.state = f.grounded ? 'idle' : 'air'; f.stunned = false; }
     if (inCrush && f.stateT >= CRUSH_STUN) { f.state = f.grounded ? 'idle' : 'air'; }
@@ -1359,6 +1361,10 @@ export class Game {
     // tap combo window: run out the clock, and drop the chain on a hit
     if (inHitstun || inCrush) { f.comboT = 0; f.comboN = 0; }
     else if (f.comboT > 0 && (f.comboT -= TICK) <= 0) { f.comboT = 0; f.comboN = 0; }
+    if (inHitstun || inCrush) { f.hammerChainT = 0; f.hammerChainN = 0; f.hammerChainDir = null; }
+    else if (f.hammerChainT > 0 && (f.hammerChainT -= TICK) <= 0) {
+      f.hammerChainT = 0; f.hammerChainN = 0; f.hammerChainDir = null;
+    }
 
     // --- gravity & integration ---
     if (!f.grounded) {
@@ -1367,7 +1373,11 @@ export class Game {
       // drop, the rang's down-charge hangs, the spear's down-thrust lifts
       const chgTable = inCharge ? CHG_FALL[f.st.weapon] : null;
       const aimY = f.chgAim ? f.chgAim.dy : 0;
-      const slow = chgTable ? (aimY < 0 ? chgTable.up : aimY > 0 ? chgTable.down : chgTable.side) : 1;
+      let slow = chgTable ? (aimY < 0 ? chgTable.up : aimY > 0 ? chgTable.down : chgTable.side) : 1;
+      // A hammer begins at a complete hover, then smoothly gives gravity
+      // back even if the button remains held, so charging cannot become
+      // permanent flight.
+      if (inCharge && f.st.weapon === 'hammer') slow = clamp(f.stateT / HAMMER_FLOAT_DECAY, 0, 1);
       // apex hang: gravity eases through the top of the arc so aerials are
       // easier to place. Off in hitstun/crush (launch KOs keep their exact
       // physics) and while fast-falling.
@@ -1624,6 +1634,15 @@ export class Game {
       if (name === 'bash' && f.grounded && dy > 0) { dy = 0; dx = dx || f.facing; }
     }
 
+    const hammerChain = swipe && name === 'hthrust' && chg === 0
+      && f.hammerChainT > 0 && f.hammerChainN < HAMMER_CHAIN_MAX
+      && (!f.hammerChainDir || dx !== f.hammerChainDir.x || dy !== f.hammerChainDir.y);
+    if (name === 'hthrust') {
+      if (hammerChain) f.hammerChainN++;
+      else { f.hammerChainN = 0; f.hammerChainT = 0; }
+      f.hammerChainDir = { x: dx, y: dy };
+    }
+
     if (dx) f.facing = dx;
     f.state = 'attack';
     f.stateT = 0;
@@ -1658,7 +1677,6 @@ export class Game {
     // the bash IS a lunge: the shield rams ahead harder than any blade,
     // and up-aimed rams climb extra hard (shield users fly shieldfirst)
     if (name === 'bash') this._lunge(f, dx, dy, chg, SHIELD_LUNGE, SHIELD_LUNGE_UP);
-    if (name === 'hthrust') this._lunge(f, dx, dy, chg, HAMMER_THRUST_LUNGE, HAMMER_THRUST_UP);
     if (name === 'sweep') this.events.push({ e: 'sweep', id: f.id, x: f.x, y: f.y + F_H / 2 });
     // tap combo bookkeeping: a stage lunges along the held aim (harder
     // deeper into the string) only while a direction is held — see
@@ -1680,27 +1698,36 @@ export class Game {
     if (name === 'mcast' && !this._castBurst(f, dx, dy, chg)) return; // fizzled: no swing
     if (name === 'rang' && !this._throwRang(f, dx, dy, chg)) return;  // rang still out: no throw
     if (name === 'bomb') this._throwBomb(f, dx, dy, chg);
-    if (name === 'hslam') this._hammerShockwaves(f, dx, dy, chg);
+    if (name === 'hthrust') this._hammerLaunch(f, dx, dy, chg, hammerChain);
     this.events.push({ e: 'swing', id: f.id, atk: name, x: f.x, y: f.y, dx, dy, chg });
   }
 
-  _hammerShockwaves(f, dx, dy, k) {
-    // A down smash splits in both directions. Every other ground smash
-    // travels in the horizontal component of its aim (or the facing).
-    const dirs = dy > 0 && f.grounded ? [-1, 1] : [Math.sign(dx) || f.facing || 1];
-    const groundY = f.y + F_H / 2 - 12;
-    for (const dir of dirs) for (let section = 0; section < HAMMER_WAVES.length; section++) {
-      const wave = HAMMER_WAVES[section];
-      const power = 1 + .5 * k;
+  _hammerLaunch(f, dx, dy, k, chained = false) {
+    const n = Math.hypot(dx, dy) || 1;
+    const nx = dx / n, ny = dy / n;
+    const charge = clamp(k, 0, 1);
+    const spread = HAMMER_SPREAD0 + (HAMMER_SPREAD1 - HAMMER_SPREAD0) * charge;
+    const count = chained ? 1 : 3;
+    const first = spread;
+    const power = 1 + .5 * charge;
+    for (let section = 0; section < count; section++) {
+      const off = first + section * spread;
       this.projectiles.push({
         eid: nextEid++, kind: 'hammerwave', owner: f.id,
-        x: f.x + dir * wave.off, y: groundY, vx: 0, vy: 0,
-        r: wave.r, arm: wave.delay, ttl: wave.delay + .16,
-        dmg: wave.dmg * power, kb: wave.kb * power, ks: wave.ks,
-        ang: -38, thru: true, hit: new Set(), section, dir,
+        x: f.x + nx * off, y: f.y + ny * off, vx: 0, vy: 0,
+        r: HAMMER_HEX_RADIUS, arm: 0, ttl: HAMMER_HEX_LIFE,
+        dmg: 11 * power, kb: 300 * power, ks: 22,
+        ang: Math.atan2(ny, nx) * 180 / Math.PI, thru: true,
+        hit: new Set(), section, dir: Math.sign(nx) || f.facing,
       });
     }
-    this.events.push({ e: 'hammerslam', id: f.id, x: f.x, y: groundY });
+    const speed = HAMMER_LAUNCH0 + (HAMMER_LAUNCH1 - HAMMER_LAUNCH0) * charge;
+    f.vx = nx * speed;
+    f.vy = ny * speed;
+    f.grounded = false;
+    f.fastfall = false;
+    f.dashT = ATTACKS.hthrust.active;
+    this.events.push({ e: 'hammerslam', id: f.id, x: f.x, y: f.y });
   }
 
   _throwBomb(f, dx, dy, k) {
@@ -1725,7 +1752,7 @@ export class Game {
     if (w === 'spear') return dy > 0 && f.grounded ? 'sweep' : 'thrust';
     if (w === 'boomerang') return 'rang';
     if (w === 'shield') return 'bash';
-    if (w === 'hammer') return (!f.grounded || dy < 0) ? 'hthrust' : 'hslam';
+    if (w === 'hammer') return 'hthrust';
     if (w === 'bombs') return 'bomb';
     if (dy < 0 && !dx) return 'usmash';
     if (dy > 0 && !dx) return f.grounded ? 'dsmash' : 'dair';
@@ -2187,12 +2214,10 @@ export class Game {
     if (f.state === 'charge' && f.atk) {
       let a = ATTACKS[f.atk];
       if (!a) return null;              // move from a newer version — no box
-      if (a.hammerThrust) a = { ...a, rx: a.rx + HAMMER_THRUST_RANGE * clamp(f.stateT / this._chargeMax(f), 0, 1) };
       return { ...meleeHitbox(f, a, f.atkDir), active: false, chg: clamp(f.stateT / this._chargeMax(f), 0, 1) };
     }
     if (f.state === 'attack' && f.atk) {
       let a = ATTACKS[f.atk];
-      if (a?.hammerThrust) a = { ...a, rx: a.rx + HAMMER_THRUST_RANGE * clamp(f.chg, 0, 1) };
       if (a && !a.cast && f.stateT <= a.startup + a.active) {
         return { ...meleeHitbox(f, a, f.atkDir), active: f.stateT >= a.startup, round: !!a.rehit };
       }
@@ -2216,7 +2241,6 @@ export class Game {
         const a = ATTACKS[f.atk];
         if (a && !a.cast && f.stateT >= a.startup && f.stateT <= a.startup + a.active) {
           let spec = a;
-          if (a.hammerThrust) spec = { ...a, rx: a.rx + HAMMER_THRUST_RANGE * clamp(f.chg, 0, 1) };
           if (a.rehit) {
             // multi-hit: split the active window into rehit-sized slices and
             // re-arm the hit set at each slice boundary so victims can be
@@ -4033,6 +4057,9 @@ export class Game {
           r1(f.hp), f.maxHp, r2(f.downT),   // co-op health (indices 42,43,44)
           r2(f.jumpT),                      // live jump-cut window (index 45)
           f.comboN, r2(f.comboT),           // tap combo chain state (indices 46,47)
+          f.hammerChainN, r2(f.hammerChainT),
+          f.hammerChainDir ? f.hammerChainDir.x : 0,
+          f.hammerChainDir ? f.hammerChainDir.y : 0, // hammer redirects (48..51)
         ];
       }),
       p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0), r2(p.arm || 0), p.section ?? -1, r1(p.bombR || 0)]),
@@ -4137,6 +4164,10 @@ export function restoreFighter(f, row) {
     if (row.length > 43) { f.hp = +row[42] || 0; f.maxHp = +row[43] || f.maxHp; f.downT = +row[44] || 0; }
     if (row.length > 45) f.jumpT = +row[45];
     if (row.length > 47) { f.comboN = row[46] | 0; f.comboT = +row[47] || 0; }
+    if (row.length > 51) {
+      f.hammerChainN = row[48] | 0; f.hammerChainT = +row[49] || 0;
+      f.hammerChainDir = (row[50] || row[51]) ? { x: row[50] | 0, y: row[51] | 0 } : null;
+    }
   } else {
     // Old-format row: mid-swing/hitstun details aren't included; resuming
     // in a neutral state costs at most a dropped attack frame.
@@ -4217,7 +4248,14 @@ export function meleeHitbox(f, spec, aim = null) {
   // dead zone carved out of the near end (gap) — the box runs from
   // gap..rx out from the body's edge instead of 0..rx, so a target
   // standing inside the gap simply isn't there yet.
-  if (spec.spear || spec.hammerThrust) {
+  if (spec.hammerThrust) {
+    const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };
+    const n = Math.hypot(dir.x, dir.y) || 1;
+    const spread = HAMMER_SPREAD0;
+    return { dx: dir.x / n * spread * 2, dy: dir.y / n * spread * 2,
+      hw: HAMMER_HEX_RADIUS, hh: HAMMER_HEX_RADIUS, hammerThrust: true };
+  }
+  if (spec.spear) {
     const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };
     const n = Math.hypot(dir.x, dir.y);
     const nx = dir.x / n, ny = dir.y / n;
@@ -4228,8 +4266,7 @@ export function meleeHitbox(f, spec, aim = null) {
       dy: ny * (F_H / 2 + mid),
       hw: Math.abs(nx) * hl + spec.ry,
       hh: Math.abs(ny) * hl + spec.ry,
-      spear: !!spec.spear,
-      hammerThrust: !!spec.hammerThrust,
+      spear: true,
     };
   }
   const a = !spec.both && aim && (aim.x || aim.y) ? aim : null;

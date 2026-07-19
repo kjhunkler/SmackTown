@@ -630,9 +630,7 @@ export class Renderer {
         const r = p.r || 40;
         const armed = !(p.arm > 0);
         const pulse = .65 + .35 * Math.sin(t * 18 + p.eid);
-        ctx.scale(1, .32);
-        // A chain of ground-cracking hexagons replaces the old yellow
-        // circles: green facets build inward, then flash solid on impact.
+        // True, unsquashed hexagons in every direction.
         const hex = (rad) => {
           ctx.beginPath();
           for (let i = 0; i < 6; i++) {
@@ -4445,6 +4443,7 @@ export class Renderer {
   _hitbox(ctx, f, t) {
     if (f.hb.blade) return this._blade(ctx, f, t);
     if (f.hb.spear) return this._spear(ctx, f, t);
+    if (f.hb.hammerThrust) return this._hammerTelegraph(ctx, f, t);
     if (f.atk === 'nspin') return;   // no hitbox overlay — the body's own crouch-and-spin sells the move
     const { dx, dy, hw, hh, active, round } = f.hb;
     const x = f.x + dx - hw, y = f.y + dy - hh;
@@ -4477,6 +4476,33 @@ export class Renderer {
       ctx.lineDashOffset = -t * 60;
       shape();
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  _hammerTelegraph(ctx, f, t) {
+    const aim = f.aim && (f.aim.x || f.aim.y) ? f.aim : { x: f.facing || 1, y: 0 };
+    const n = Math.hypot(aim.x, aim.y) || 1;
+    const nx = aim.x / n, ny = aim.y / n;
+    const charge = clamp(f.hb.chg || 0, 0, 1);
+    const spread = 58 + (122 - 58) * charge;
+    const pulse = .68 + .22 * Math.sin(t * (7 + charge * 8));
+    ctx.save();
+    ctx.strokeStyle = `rgba(72,226,132,${pulse.toFixed(2)})`;
+    ctx.fillStyle = `rgba(50,210,115,${(.08 + charge * .12).toFixed(2)})`;
+    ctx.lineWidth = 4;
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = -t * 55;
+    for (let point = 1; point <= 3; point++) {
+      const x = f.x + nx * spread * point;
+      const y = f.y + ny * spread * point;
+      ctx.beginPath();
+      for (let side = 0; side < 6; side++) {
+        const a = Math.PI / 6 + side * Math.PI / 3;
+        const px = x + Math.cos(a) * 38, py = y + Math.sin(a) * 38;
+        if (side) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
     }
     ctx.restore();
   }
