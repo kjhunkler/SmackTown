@@ -557,7 +557,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('the return leg carries 60% of the bite', back > 0 && Math.abs(back - out * 0.6) < 1e-9);
 }
 
-// --- hammer: slow charge, staggered fading waves, two-sided down, rising up ---
+// --- hammer: grounded waves, charge-scaled aerial/up thrust, heavy recovery ---
 {
   const g = mkGame('hammer');
   const a = g.fighters[0];
@@ -578,7 +578,25 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const up = mkGame('hammer');
   const u = up.fighters[0]; u.grounded = true;
   up._startAttack(u, { kind: 'swipe', dx: 0, dy: -1 }, false, 1);
-  check('upper hammer is one furious melee smash, not a wave', u.atk === 'hupp' && u.vy < 0 && !up.projectiles.some(p => p.kind === 'hammerwave'));
+  check('grounded up hammer is a thrust, not a wave', u.atk === 'hthrust' && u.vy < 0 && !up.projectiles.some(p => p.kind === 'hammerwave'));
+
+  const diag = mkGame('hammer');
+  const dg = diag.fighters[0]; dg.grounded = true;
+  diag._startAttack(dg, { kind: 'swipe', dx: 1, dy: -1 }, false, 1);
+  check('diagonal-up hammer thrust carries both axes', dg.atk === 'hthrust' && dg.vx > 0 && dg.vy < 0);
+
+  const air = mkGame('hammer');
+  const ar = air.fighters[0]; ar.grounded = false;
+  check('every aerial hammer direction selects thrust', [[1, 0], [0, 1], [-1, -1]].every(([dx, dy]) => air._weaponAttack(ar, dx, dy) === 'hthrust'));
+  air._startAttack(ar, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  const short = air.hitboxFor(ar);
+  const charged = mkGame('hammer');
+  const ch = charged.fighters[0]; ch.grounded = false;
+  charged._startAttack(ch, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
+  const long = charged.hitboxFor(ch);
+  check('hammer thrust has a compact minimum hitbox', short.hammerThrust && short.hw < 45 && short.hh < 16);
+  check('charge extends hammer thrust range', long.hw > short.hw + 45);
+  check('hammer attacks enforce a long recovery', u.atk && (u.stateT = .5, up.step(), u.state === 'attack'));
 }
 
 console.log(`\n${n - fails}/${n} passed`);

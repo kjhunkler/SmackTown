@@ -614,8 +614,9 @@ const ATTACKS = {
   // 'bounce' swaps the wielder into the victim's spot on clean hits. A modest
   // launcher with light damage — a slab of steel, not a blade.
   bash:   { dmg: 7, kb: 340, ks: 22, startup: .09, active: .20, rec: .30, rx: 46, ry: 42, ang: -28, bounce: true },
-  hslam:  { dmg: 0, kb: 0, ks: 0, startup: .18, active: .02, rec: .48, rx: 44, ry: 34, ang: 0, cast: true },
-  hupp:   { dmg: 17, kb: 300, ks: 25, startup: .20, active: .13, rec: .38, rx: 58, ry: 74, ang: -88, up: true },
+  hslam:  { dmg: 0, kb: 0, ks: 0, startup: .18, active: .02, rec: .68, rx: 44, ry: 34, ang: 0, cast: true },
+  // Compact head-first strike: its live reach is extended from charge below.
+  hthrust:{ dmg: 18, kb: 320, ks: 27, startup: .18, active: .11, rec: .62, rx: 72, gap: 8, ry: 11, ang: -42, hammerThrust: true },
   bomb:   { dmg: 0, kb: 0, ks: 0, startup: .08, active: .02, rec: .24, rx: 30, ry: 24, ang: 0, cast: true },
 };
 
@@ -704,6 +705,9 @@ const HAMMER_WAVES = [
   { off: 170, r: 50, delay: .23, dmg: 11, kb: 310, ks: 21 },
   { off: 248, r: 34, delay: .43, dmg: 7,  kb: 220, ks: 15 },
 ];
+const HAMMER_THRUST_RANGE = 112;     // extra live reach at standard full charge
+const HAMMER_THRUST_LUNGE = .78;     // meaningful minimum body thrust on a tap
+const HAMMER_THRUST_UP = 1.35;       // diagonal-up retains horizontal and vertical carry
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1050;
@@ -1267,7 +1271,10 @@ export class Game {
     const ducking = f.state === 'duck';
 
     // --- horizontal movement ---
-    if (!inHitstun && !inCrush && f.dashT <= 0) {
+    // Hammer recovery is deliberately planted, including in the air: its
+    // long recovery is a real movement lock rather than steerable drift.
+    const hammerRecovery = inAttack && (f.atk === 'hslam' || f.atk === 'hthrust');
+    if (!inHitstun && !inCrush && !hammerRecovery && f.dashT <= 0) {
       const want = inp.mx * RUN * f.st.speedMult;
       if (f.grounded) {
         if (Math.abs(inp.mx) > 0.15 && canAct && !ducking) {
@@ -1651,10 +1658,7 @@ export class Game {
     // the bash IS a lunge: the shield rams ahead harder than any blade,
     // and up-aimed rams climb extra hard (shield users fly shieldfirst)
     if (name === 'bash') this._lunge(f, dx, dy, chg, SHIELD_LUNGE, SHIELD_LUNGE_UP);
-    if (name === 'hupp') {
-      f.vy = Math.min(f.vy, -900 * (1 + .45 * chg));
-      f.grounded = false; f.fastfall = false; f.riseT = AIR_RISE_CD;
-    }
+    if (name === 'hthrust') this._lunge(f, dx, dy, chg, HAMMER_THRUST_LUNGE, HAMMER_THRUST_UP);
     if (name === 'sweep') this.events.push({ e: 'sweep', id: f.id, x: f.x, y: f.y + F_H / 2 });
     // tap combo bookkeeping: a stage lunges along the held aim (harder
     // deeper into the string) only while a direction is held — see
@@ -1721,7 +1725,7 @@ export class Game {
     if (w === 'spear') return dy > 0 && f.grounded ? 'sweep' : 'thrust';
     if (w === 'boomerang') return 'rang';
     if (w === 'shield') return 'bash';
-    if (w === 'hammer') return dy < 0 ? 'hupp' : 'hslam';
+    if (w === 'hammer') return (!f.grounded || dy < 0) ? 'hthrust' : 'hslam';
     if (w === 'bombs') return 'bomb';
     if (dy < 0 && !dx) return 'usmash';
     if (dy > 0 && !dx) return f.grounded ? 'dsmash' : 'dair';
@@ -2181,12 +2185,14 @@ export class Game {
     if (f.dead) return null;
     // charging smash: telegraph with a 0..1 charge level for the renderer
     if (f.state === 'charge' && f.atk) {
-      const a = ATTACKS[f.atk];
+      let a = ATTACKS[f.atk];
       if (!a) return null;              // move from a newer version — no box
+      if (a.hammerThrust) a = { ...a, rx: a.rx + HAMMER_THRUST_RANGE * clamp(f.stateT / this._chargeMax(f), 0, 1) };
       return { ...meleeHitbox(f, a, f.atkDir), active: false, chg: clamp(f.stateT / this._chargeMax(f), 0, 1) };
     }
     if (f.state === 'attack' && f.atk) {
-      const a = ATTACKS[f.atk];
+      let a = ATTACKS[f.atk];
+      if (a?.hammerThrust) a = { ...a, rx: a.rx + HAMMER_THRUST_RANGE * clamp(f.chg, 0, 1) };
       if (a && !a.cast && f.stateT <= a.startup + a.active) {
         return { ...meleeHitbox(f, a, f.atkDir), active: f.stateT >= a.startup, round: !!a.rehit };
       }
@@ -2210,6 +2216,7 @@ export class Game {
         const a = ATTACKS[f.atk];
         if (a && !a.cast && f.stateT >= a.startup && f.stateT <= a.startup + a.active) {
           let spec = a;
+          if (a.hammerThrust) spec = { ...a, rx: a.rx + HAMMER_THRUST_RANGE * clamp(f.chg, 0, 1) };
           if (a.rehit) {
             // multi-hit: split the active window into rehit-sized slices and
             // re-arm the hit set at each slice boundary so victims can be
@@ -4210,7 +4217,7 @@ export function meleeHitbox(f, spec, aim = null) {
   // dead zone carved out of the near end (gap) — the box runs from
   // gap..rx out from the body's edge instead of 0..rx, so a target
   // standing inside the gap simply isn't there yet.
-  if (spec.spear) {
+  if (spec.spear || spec.hammerThrust) {
     const dir = aim && (aim.x || aim.y) ? aim : { x: f.facing || 1, y: 0 };
     const n = Math.hypot(dir.x, dir.y);
     const nx = dir.x / n, ny = dir.y / n;
@@ -4221,7 +4228,8 @@ export function meleeHitbox(f, spec, aim = null) {
       dy: ny * (F_H / 2 + mid),
       hw: Math.abs(nx) * hl + spec.ry,
       hh: Math.abs(ny) * hl + spec.ry,
-      spear: true,
+      spear: !!spec.spear,
+      hammerThrust: !!spec.hammerThrust,
     };
   }
   const a = !spec.both && aim && (aim.x || aim.y) ? aim : null;
