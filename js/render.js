@@ -1,7 +1,7 @@
 // Canvas renderer: draws the stage, fighters, projectiles and juice
 // (particles, screen shake, KO bursts) from interpolated view state.
 
-import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE } from './game.js';
+import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, bombLaunch, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE } from './game.js';
 import { hatImage } from './ui.js';
 import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -606,7 +606,7 @@ export class Renderer {
     // sees it while charging. It uses the same launch equation as the sim.
     const thrower = (view.fighters || []).find(f => f.id === myId);
     if (thrower?.weapon === 'bombs' && thrower.state === 'charge' && thrower.atk === 'bomb') {
-      this._bombTrajectory(ctx, thrower, t);
+      this._bombTrajectory(ctx, thrower, view.tick ?? 0, t);
     }
 
     // projectiles
@@ -4232,9 +4232,25 @@ export class Renderer {
       ctx.scale(f.facing || 1, 1);
       ctx.translate(live ? 4 : -bw / 2 + 5, live ? -F_H / 2 - 9 : bTop + 9);
       let angle = -0.55;
-      if (f.state === 'charge') angle = f.atk === 'hupp' ? 2.5 : -1.55;
-      else if (f.state === 'attack' && f.atk === 'hslam') angle = .95;
-      else if (f.state === 'attack' && f.atk === 'hupp') angle = -2.35;
+      const charge = clamp(f.hb?.chg || 0, 0, 1);
+      if (f.state === 'charge') {
+        const wind = charge * charge;
+        angle = f.atk === 'hupp' ? 1.25 + 1.25 * wind : -.85 - .78 * wind;
+        // A full hammer visibly strains in the wielder's hands rather than
+        // freezing in a single overhead pose.
+        ctx.translate(Math.sin(t * 34) * charge * 1.8, Math.cos(t * 29) * charge * 1.2);
+      } else if (f.state === 'attack') {
+        const duration = f.atk === 'hupp' ? .33 : .20;
+        const swing = clamp((f.stateT || 0) / duration, 0, 1);
+        const eased = 1 - Math.pow(1 - swing, 3);
+        const start = f.atk === 'hupp' ? 2.5 : -1.63;
+        const end = f.atk === 'hupp' ? -2.45 : 1.12;
+        angle = start + (end - start) * eased;
+        // Broad fading arc gives the heavy head readable speed and impact.
+        ctx.strokeStyle = `rgba(255,211,106,${(.34 * (1 - swing)).toFixed(2)})`;
+        ctx.lineWidth = 15; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(0, 0, 43, start - Math.PI / 2, angle - Math.PI / 2, f.atk === 'hupp'); ctx.stroke();
+      }
       ctx.rotate(angle);
       ctx.strokeStyle = '#7b5735'; ctx.lineWidth = 7; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(0, 18); ctx.lineTo(0, -25); ctx.stroke();
@@ -4242,6 +4258,10 @@ export class Renderer {
       roundRect(ctx, -18, -34, 36, 18, 4); ctx.fill();
       ctx.strokeStyle = '#20283a'; ctx.lineWidth = 3;
       roundRect(ctx, -18, -34, 36, 18, 4); ctx.stroke();
+      // Two hands sliding apart along the haft make the blow feel driven by
+      // the fighter instead of a prop rotating around an invisible pivot.
+      ctx.fillStyle = f.color;
+      for (const hy of [4, 15]) { ctx.beginPath(); ctx.arc(0, hy, 5.5, 0, 7); ctx.fill(); }
       ctx.restore();
     }
 
@@ -4360,20 +4380,29 @@ export class Renderer {
     }
   }
 
-  _bombTrajectory(ctx, f, t) {
+  _bombTrajectory(ctx, f, tick, t) {
     const k = clamp(f.hb?.chg || 0, 0, 1);
-    let dx = f.aim?.x || f.facing || 1, dy = f.aim?.y || 0;
-    if (dy > 0 && Math.abs(f.vy || 0) < 1) dy = 0;
-    const n = Math.hypot(dx, dy) || 1;
-    const speed = 360 + (850 - 360) * k;
-    const lift = 260 + (520 - 260) * k;
-    const vx = dx / n * speed, vy = dy / n * speed - lift;
-    const x0 = f.x + dx / n * 34, y0 = f.y - 16 + dy / n * 16;
+    const launch = bombLaunch(f.x, f.y, f.facing, f.aim?.x, f.aim?.y,
+      Math.abs(f.vy || 0) < 1, k);
+    const surfaces = [this.stage.main, ...(this.stage.infinite
+      ? expansePlats(this.expanseSeed >>> 0, launch.x - 1200, launch.x + 1200)
+      : platsAt(this.mapId, tick))];
     ctx.save();
     ctx.fillStyle = `rgba(255,210,62,${(.65 + .25 * Math.sin(t * 8)).toFixed(2)})`;
-    for (let s = 0; s <= 1.35; s += .09) {
-      const x = x0 + vx * s, y = y0 + vy * s + .5 * 1050 * s * s;
+    let prevX = launch.x, prevY = launch.y;
+    for (let s = 0; s <= launch.ttl; s += .03) {
+      let x = launch.x + launch.vx * s;
+      let y = launch.y + launch.vy * s + .5 * launch.grav * s * s;
+      let stopped = false;
+      if (launch.vy + launch.grav * s >= 0) for (const pl of surfaces) {
+        const top = pl.y - 13;
+        if (x + 13 <= pl.x || x - 13 >= pl.x + pl.w || prevY > top || y < top) continue;
+        const d = y - prevY;
+        x = prevX + (x - prevX) * ((top - prevY) / (d || 1)); y = top; stopped = true; break;
+      }
       ctx.beginPath(); ctx.arc(x, y, 2.5 + 1.5 * s / 1.35, 0, 7); ctx.fill();
+      if (stopped) break;
+      prevX = x; prevY = y;
     }
     ctx.restore();
   }

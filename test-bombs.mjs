@@ -1,5 +1,5 @@
 // Headless coverage for the delayed, charge-scaled bomb weapon.
-import { Game } from './js/game.js';
+import { Game, bombLaunch } from './js/game.js';
 import { sanitizeBuild } from './js/profile.js';
 
 let n = 0, fails = 0;
@@ -18,6 +18,7 @@ const game = () => new Game([
 ], 19, 'flatlands');
 
 check('bombs are accepted by build sanitization', sanitizeBuild(build('bombs')).weapon === 'bombs');
+check('straight-up bomb aim has no sideways drift', bombLaunch(0, 0, 1, 0, -1, true, .5).vx === 0);
 
 const weakGame = game();
 const weakThrower = weakGame.fighters[0];
@@ -32,6 +33,17 @@ const strong = strongGame.projectiles[0];
 check('charge increases throw distance', strong.vx > weak.vx && Math.abs(strong.vy) > Math.abs(weak.vy));
 check('charge increases damage and explosion radius', strong.dmg > weak.dmg && strong.bombR > weak.bombR);
 check('snapshot carries the public explosion telegraph radius', strongGame.snapshot().p[0][8] === strong.bombR);
+
+const platformGame = new Game([
+  { id: 'A', name: 'Alice', color: '#f00', build: build('bombs') },
+  { id: 'B', name: 'Bob', color: '#0f0', build: build('unarmed') },
+], 19, 'battlefield');
+const platform = platformGame.platsNow()[0];
+const landing = { kind: 'bomb', x: platform.x + platform.w / 2, y: platform.y - 14,
+  vx: 0, vy: 240, grav: 1050, r: 13, ttl: 1, arm: 1 };
+platformGame.projectiles.push(landing);
+platformGame._stepProjectiles();
+check('bombs collide with elevated platforms', landing.grav === 0 && landing.y === platform.y - landing.r);
 
 // Put both fighters inside the blast, expire the fuse, and resolve it.
 const owner = strongGame.fighters[0], victim = strongGame.fighters[1];

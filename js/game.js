@@ -708,6 +708,21 @@ const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1050;
 const BOMB_RADIUS0 = 75, BOMB_RADIUS1 = 150;
+export function bombLaunch(x, y, facing, aimX, aimY, grounded, charge) {
+  // Do not use truthiness for aimX: zero is the important straight-up case.
+  let dx = aimX ?? facing ?? 1, dy = aimY ?? 0;
+  if (grounded && dy > 0) dy = 0;
+  const n = Math.hypot(dx, dy) || 1;
+  const nx = dx / n, ny = dy / n;
+  const k = clamp(charge || 0, 0, 1);
+  const speed = BOMB_SPEED0 + (BOMB_SPEED1 - BOMB_SPEED0) * k;
+  const lift = BOMB_LIFT0 + (BOMB_LIFT1 - BOMB_LIFT0) * k;
+  return {
+    x: x + nx * 34, y: y - 16 + ny * 16,
+    vx: nx * speed, vy: ny * speed - lift,
+    grav: BOMB_GRAVITY, ttl: BOMB_FUSE,
+  };
+}
 const BOMB_DMG0 = 8, BOMB_DMG1 = 18;
 const BOMB_KB0 = 420, BOMB_KB1 = 760;
 // In co-op only, a landed (unblocked) bash turns its victim into a body-slam
@@ -1687,16 +1702,10 @@ export class Game {
   _throwBomb(f, dx, dy, k) {
     // Bombs always get an upward arc. Aim changes its initial direction;
     // charge stretches that same arc rather than shortening the fuse.
-    if (f.grounded && dy > 0) dy = 0;
-    const n = Math.hypot(dx, dy) || 1;
-    const nx = dx / n, ny = dy / n;
-    const speed = BOMB_SPEED0 + (BOMB_SPEED1 - BOMB_SPEED0) * k;
-    const lift = BOMB_LIFT0 + (BOMB_LIFT1 - BOMB_LIFT0) * k;
+    const launch = bombLaunch(f.x, f.y, f.facing, dx, dy, f.grounded, k);
     this.projectiles.push({
       eid: nextEid++, kind: 'bomb', owner: f.id,
-      x: f.x + nx * 34, y: f.y - 16 + ny * 16,
-      vx: nx * speed, vy: ny * speed - lift,
-      grav: BOMB_GRAVITY, ttl: BOMB_FUSE, arm: BOMB_FUSE,
+      ...launch, arm: BOMB_FUSE,
       r: 13, bombR: BOMB_RADIUS0 + (BOMB_RADIUS1 - BOMB_RADIUS0) * k,
       dmg: BOMB_DMG0 + (BOMB_DMG1 - BOMB_DMG0) * k,
       kb: BOMB_KB0 + (BOMB_KB1 - BOMB_KB0) * k, ks: 18,
@@ -2551,6 +2560,7 @@ export class Game {
 
   _stepProjectiles() {
     for (const pr of this.projectiles) {
+      const prevX = pr.x, prevY = pr.y;
       if (pr.arm > 0) pr.arm = Math.max(0, pr.arm - TICK);
       if (pr.ret) {
         // boomerang: decelerate along the launch axis, then swing back home
@@ -2578,7 +2588,7 @@ export class Game {
           this.events.push({ e: 'catch', id: own.id, x: pr.x, y: pr.y });
         }
       }
-      if (pr.kind === 'bomb') this._settleBomb(pr);
+      if (pr.kind === 'bomb') this._settleBomb(pr, prevX, prevY);
       else if (pr.grav) this._settleTrap(pr);
       else if (pr.plat != null) {
         // settled on a platform: ride it (traps on the crane girder sweep too)
@@ -2598,10 +2608,21 @@ export class Game {
     this.projectiles = this.projectiles.filter(p => p.ttl > 0);
   }
 
-  _settleBomb(pr) {
-    const floor = this.stage.main;
-    if (pr.x > floor.x && pr.x < floor.x + floor.w && pr.y >= floor.y - pr.r) {
-      pr.y = floor.y - pr.r; pr.vx *= .72; pr.vy = 0; pr.grav = 0;
+  _settleBomb(pr, prevX = pr.x, prevY = pr.y) {
+    if (pr.vy < 0) return;
+    const surfaces = [this.stage.main, ...this.platsNow()];
+    for (let i = 0; i < surfaces.length; i++) {
+      const pl = surfaces[i], top = pl.y - pr.r;
+      // Crossing the top from above prevents bombs thrown underneath a
+      // platform from snapping through it. Include the radius at the edges.
+      if (pr.x + pr.r <= pl.x || pr.x - pr.r >= pl.x + pl.w
+          || prevY > top || pr.y < top) continue;
+      const span = pr.x - prevX;
+      const hitX = span ? prevX + span * ((top - prevY) / (pr.y - prevY || 1)) : pr.x;
+      if (hitX + pr.r <= pl.x || hitX - pr.r >= pl.x + pl.w) continue;
+      pr.x = hitX; pr.y = top; pr.vx *= .72; pr.vy = 0; pr.grav = 0;
+      if (i > 0) { pr.plat = i - 1; pr.pox = pr.x - pl.x; }
+      return;
     }
   }
 
