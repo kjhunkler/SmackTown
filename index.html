@@ -120,14 +120,31 @@
       <h3 class="section-title">Upgrades <span class="hint">raise your core stats</span></h3>
       <div id="builder-stats"></div>
 
-      <h3 class="section-title">Weapon <span class="hint">what your strong attack swings — carry one</span></h3>
-      <div id="builder-weapons" class="shop-grid"></div>
-
-      <h3 class="section-title">Abilities <span class="hint">pick up to 2 — mapped to the two action buttons</span></h3>
-      <div id="builder-abilities" class="shop-grid"></div>
-
-      <h3 class="section-title">Augments <span class="hint">pick up to 2 passives</span></h3>
-      <div id="builder-augments" class="shop-grid"></div>
+      <!-- Gear dock: the three shops tuck behind a sticky tab rail, so
+           jumping between them is one tap from anywhere in the workshop -->
+      <div id="gear-tabs" class="gear-tabs">
+        <button class="gear-tab on" data-gear="weapons">
+          <span class="gt-icon">⚔️</span><span class="gt-name">Weapon</span><span class="gt-badge" id="gear-badge-weapons"></span>
+        </button>
+        <button class="gear-tab" data-gear="abilities">
+          <span class="gt-icon">✨</span><span class="gt-name">Abilities</span><span class="gt-badge" id="gear-badge-abilities"></span>
+        </button>
+        <button class="gear-tab" data-gear="augments">
+          <span class="gt-icon">🧬</span><span class="gt-name">Augments</span><span class="gt-badge" id="gear-badge-augments"></span>
+        </button>
+      </div>
+      <div id="gear-pane-weapons" class="gear-pane">
+        <h3 class="section-title">Weapon <span class="hint">what your strong attack swings — carry one</span></h3>
+        <div id="builder-weapons" class="shop-grid"></div>
+      </div>
+      <div id="gear-pane-abilities" class="gear-pane hidden">
+        <h3 class="section-title">Abilities <span class="hint">pick up to 2 — mapped to the two action buttons</span></h3>
+        <div id="builder-abilities" class="shop-grid"></div>
+      </div>
+      <div id="gear-pane-augments" class="gear-pane hidden">
+        <h3 class="section-title">Augments <span class="hint">pick up to 2 passives</span></h3>
+        <div id="builder-augments" class="shop-grid"></div>
+      </div>
     </div>
     <footer class="builder-foot">
       <button id="builder-reset" class="btn ghost">Reset</button>

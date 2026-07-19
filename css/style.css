@@ -354,6 +354,44 @@ input[type=text]:focus { border-color: var(--accent); }
 .stat-cost { font-size: 10px; color: var(--ink-dim); text-align: center; margin-top: 2px; }
 
 .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* gear dock: sticky tab rail over the weapon / ability / augment shops */
+.gear-tabs {
+  position: sticky; top: -1px; z-index: 5;
+  display: flex; gap: 6px;
+  padding: 8px 0 6px;
+  margin-top: 10px;
+  background: linear-gradient(var(--panel) 84%, transparent);
+}
+.gear-tab {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  padding: 8px 6px;
+  color: var(--ink-dim);
+  font: inherit; font-weight: 800; font-size: 13px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, transform .1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.gear-tab:active { transform: scale(.95); }
+.gear-tab.on { border-color: var(--accent); color: var(--ink); }
+.gear-tab .gt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gear-tab .gt-badge {
+  font-size: 11px; font-weight: 800;
+  background: rgba(0, 0, 0, .28);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: var(--ink-dim);
+}
+.gear-tab.on .gt-badge { color: var(--accent); }
+.gear-tab .gt-badge.full { color: var(--good); }
+.gear-pane .section-title { margin-top: 2px; }
+.gear-pane.gear-pane-in { animation: gear-pop .16s ease-out; }
+@keyframes gear-pop { from { opacity: 0; transform: translateY(10px); } }
 .shop-item {
   background: var(--panel-2);
   border: 2px solid transparent;

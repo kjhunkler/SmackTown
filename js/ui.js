@@ -170,6 +170,53 @@ export function renderBuilder(work) {
   renderWeaponShop($('#builder-weapons'), work, left);
   renderShop($('#builder-abilities'), ABILITIES, work.build.abilities, MAX_ABILITIES, left, work);
   renderShop($('#builder-augments'), AUGMENTS, work.build.augments, MAX_AUGMENTS, left, work);
+  wireGearDock();
+  renderGearDock(work);
+}
+
+// ---------- gear dock ----------
+// The weapon / ability / augment shops live behind a sticky tab rail: one
+// pane shows at a time, and the rail pins to the top of the workshop
+// scroll so hopping between the three is one tap from anywhere. Badges
+// keep the whole loadout readable without opening a tab — the equipped
+// weapon's icon and the two pick counts, green once a list is full.
+let gearTab = 'weapons';
+let gearWork = null;
+let gearWired = false;
+
+function wireGearDock() {
+  if (gearWired) return;
+  gearWired = true;
+  for (const tab of document.querySelectorAll('.gear-tab')) {
+    tab.addEventListener('click', () => {
+      if (tab.dataset.gear === gearTab) return;
+      gearTab = tab.dataset.gear;
+      renderGearDock(gearWork);
+      // snap: replay the pane's pop-in so the switch reads as motion
+      const pane = $('#gear-pane-' + gearTab);
+      pane.classList.remove('gear-pane-in');
+      void pane.offsetWidth;
+      pane.classList.add('gear-pane-in');
+    });
+  }
+}
+
+function renderGearDock(work) {
+  if (!work) return;
+  gearWork = work;
+  for (const tab of document.querySelectorAll('.gear-tab'))
+    tab.classList.toggle('on', tab.dataset.gear === gearTab);
+  for (const name of ['weapons', 'abilities', 'augments'])
+    $('#gear-pane-' + name).classList.toggle('hidden', name !== gearTab);
+  $('#gear-badge-weapons').textContent =
+    WEAPONS.find(w => w.id === work.build.weapon)?.icon || '👊';
+  const pick = (sel, owned, max) => {
+    const el = $(sel);
+    el.textContent = `${owned.length}/${max}`;
+    el.classList.toggle('full', owned.length >= max);
+  };
+  pick('#gear-badge-abilities', work.build.abilities, MAX_ABILITIES);
+  pick('#gear-badge-augments', work.build.augments, MAX_AUGMENTS);
 }
 
 // Expedition loot gating: an item the run hasn't unlocked yet renders as a
