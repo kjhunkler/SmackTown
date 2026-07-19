@@ -37,6 +37,22 @@ check('charge increases damage and explosion radius', strong.dmg > weak.dmg && s
 check('fully charged bombs have stronger knockback', strong.kb === 860);
 check('snapshot carries the public explosion telegraph radius', strongGame.snapshot().p[0][8] === strong.bombR);
 
+// Aiming down while standing spikes the bomb into the ground near your feet.
+const spike = bombLaunch(0, 0, 1, 1, 1, true, 0);
+check('grounded down-aim spikes the bomb downward', spike.vy > 0 && spike.bounce === 1);
+const loft = bombLaunch(0, 0, 1, 1, 0, true, 0);
+check('grounded side-aim still lofts on an upward arc', loft.vy < 0 && !loft.bounce);
+check('airborne down-aim keeps its arc (no spike)', bombLaunch(0, 0, 1, 1, 1, false, 0).bounce === 0);
+
+// A spiked bomb reflects off the floor once, then settles on the next touch.
+const bounceGame = game();
+const gmain = bounceGame.stage.main;
+const spiked = { kind: 'bomb', x: gmain.x + 120, y: gmain.y - 15, vx: 220, vy: 320,
+  grav: 1200, r: 13, ttl: 1, arm: 1, bounce: 1 };
+bounceGame.projectiles.push(spiked);
+bounceGame._stepProjectiles();
+check('a spiked bomb bounces off the ground', spiked.vy < 0 && spiked.grav === 1200 && spiked.bounce === 0);
+
 const platformGame = new Game([
   { id: 'A', name: 'Alice', color: '#f00', build: build('bombs') },
   { id: 'B', name: 'Bob', color: '#0f0', build: build('unarmed') },

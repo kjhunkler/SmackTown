@@ -715,19 +715,26 @@ const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
 const BOMB_RADIUS0 = 75, BOMB_RADIUS1 = 150;
+// A spiked bomb (thrown down while standing) reflects off the ground once
+// instead of settling flat, so it lands close and hops a little.
+const BOMB_BOUNCE_MIN = 60, BOMB_BOUNCE_REST = .35, BOMB_BOUNCE_CAP = 180;
 export function bombLaunch(x, y, facing, aimX, aimY, grounded, charge) {
   // Do not use truthiness for aimX: zero is the important straight-up case.
   let dx = aimX ?? facing ?? 1, dy = aimY ?? 0;
-  if (grounded && dy > 0) dy = 0;
+  // Aiming down while planted spikes the bomb at your feet: it keeps the
+  // downward aim with no lift, so it drops onto the ground close by and
+  // bounces slightly instead of being lobbed far forward on an upward arc.
+  const spike = grounded && dy > 0;
   const n = Math.hypot(dx, dy) || 1;
   const nx = dx / n, ny = dy / n;
   const k = clamp(charge || 0, 0, 1);
   const speed = BOMB_SPEED0 + (BOMB_SPEED1 - BOMB_SPEED0) * k;
-  const lift = BOMB_LIFT0 + (BOMB_LIFT1 - BOMB_LIFT0) * k;
+  const lift = spike ? 0 : BOMB_LIFT0 + (BOMB_LIFT1 - BOMB_LIFT0) * k;
   return {
     x: x + nx * 34, y: y - 16 + ny * 16,
     vx: nx * speed, vy: ny * speed - lift,
     grav: BOMB_GRAVITY, ttl: BOMB_FUSE,
+    bounce: spike ? 1 : 0,
   };
 }
 const BOMB_DMG0 = 8, BOMB_DMG1 = 18;
@@ -2756,7 +2763,16 @@ export class Game {
       const span = pr.x - prevX;
       const hitX = span ? prevX + span * ((top - prevY) / (pr.y - prevY || 1)) : pr.x;
       if (hitX + pr.r <= pl.x || hitX - pr.r >= pl.x + pl.w) continue;
-      pr.x = hitX; pr.y = top; pr.vx *= .72; pr.vy = 0; pr.grav = 0;
+      pr.x = hitX; pr.y = top;
+      // A spiked bomb still moving fast keeps a bounce in the bank: reflect a
+      // capped fraction of the impact upward and skate on, then settle flat on
+      // the next touch. Plain bombs (no bounce) settle immediately as before.
+      if (pr.bounce > 0 && pr.vy > BOMB_BOUNCE_MIN) {
+        pr.vy = -Math.min(pr.vy * BOMB_BOUNCE_REST, BOMB_BOUNCE_CAP);
+        pr.vx *= .55; pr.bounce--;
+        return;
+      }
+      pr.vx *= .72; pr.vy = 0; pr.grav = 0;
       if (i > 0) { pr.plat = i - 1; pr.pox = pr.x - pl.x; }
       return;
     }
