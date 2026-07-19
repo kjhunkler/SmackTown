@@ -714,8 +714,9 @@ const HAMMER_CATCH_DELAY = .08;       // suspended pause before a jump can dislo
 const HAMMER_INFLATE_MAX = 150;       // caught in your own hex: hard cap on how big charging pumps it
 const HAMMER_INFLATE_LAUNCH0 = 820;   // uncharged launch out of your own hex (free)
 const HAMMER_INFLATE_LAUNCH1 = 2200;  // fully charged launch — very powerful
-const HAMMER_HEX_CHARGE_COST = 15;    // mana to begin charging a pinned hex for a stronger launch
-const HAMMER_HEX_LIFE_PER_R = 0.08;   // seconds of life banked per unit the pinned hex grows
+const HEX_TRICKLE_MANA = 12;          // mana/sec spent while pinned to offset the hex's natural decay
+const HEX_CHARGE_MANA_PER_SEC = 34;   // mana/sec poured into the hex while charging it
+const HEX_LIFE_PER_MANA = 0.12;       // seconds of hex life gained per mana spent charging
 const HEX_TOUCH_EVERY = 0.3;          // how often the hex chips a rival standing in it
 const HEX_TOUCH_DMG0 = 3, HEX_TOUCH_DMG1 = 6;  // per-tick touch damage vs charge (no lingering burn)
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
@@ -1225,9 +1226,10 @@ export class Game {
     f.standT = Math.max(0, f.standT - TICK);
     // Mana refills fully on the ground and at half speed in the air. The
     // hammer now shares that aerial trickle (it used to get none), so airborne
-    // hex-boost chains can slowly rebuild the mana they spend.
+    // hex-boost chains can slowly rebuild the mana they spend. While pinned in
+    // a hex there is no passive refill — your mana feeds the hex instead.
     const airRegen = 0.5;
-    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : airRegen) * TICK);
+    if (!f.hammerCatch) f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : airRegen) * TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
     // regrowth: slowly knit back together — percent bleeds off in stock
@@ -1264,10 +1266,12 @@ export class Game {
       else if (gate.owner === f.id) {
         // Caught in your OWN hex: fully suspended and snapped to its center.
         //  - A jump breaks you free after a readable pause.
-        //  - An uncharged tap launches you straight out for free.
-        //  - Charging spends mana up front to pump the hex bigger (capped),
-        //    and the release consumes it for a launch scaled by the charge —
-        //    a very powerful, mana-fuelled escape.
+        //  - An uncharged tap launches you straight out.
+        //  - Charging pours mana into the hex to pump it bigger (capped) and
+        //    longer-lived for a stronger launch.
+        // The hex always decays naturally. A mana trickle offsets that decay
+        // while you can pay it, and charging banks extra life on top — but
+        // launching is ALWAYS free and never spends mana or the hex's life.
         f.hammerCatch.t += TICK;
         f.x = gate.x; f.y = gate.y;
         f.vx = 0; f.vy = 0; f.fastfall = false; f.grounded = false;
@@ -1283,35 +1287,30 @@ export class Game {
         const la = f.hammerCatch.aim || { x: f.facing, y: 0 };
         const ln = Math.hypot(la.x, la.y) || 1;
         gate.aimX = la.x / ln; gate.aimY = la.y / ln; gate.glow = true;
-        // Begin a charge: costs mana. Too dry to pay and it just doesn't start
-        // (the uncharged tap is still available for free).
+        // Charging needs no up-front cost — it starts the moment you press it.
         if (!f.hammerCatch.charging && inp.chg && inp.chgArm) {
-          if (f.mana >= HAMMER_HEX_CHARGE_COST) {
-            f.mana -= HAMMER_HEX_CHARGE_COST;
-            f.hammerCatch.charging = true;
-            f.hammerCatch.chgT = 0;
-            f.hammerCatch.baseR = gate.r;
-            this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
-          } else {
-            this.events.push({ e: 'fizzle', id: f.id, x: f.x, y: f.y, why: 'mana' });
-          }
+          f.hammerCatch.charging = true;
+          f.hammerCatch.chgT = 0;
+          f.hammerCatch.baseR = gate.r;
+          this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
           inp.chgArm = false;
         }
         if (f.hammerCatch.charging) {
           f.hammerCatch.chgT += TICK;
           const k = clamp(f.hammerCatch.chgT / this._chargeMax(f), 0, 1);
-          const prevR = gate.r;
           gate.r = Math.min(HAMMER_INFLATE_MAX,
             f.hammerCatch.baseR + (HAMMER_INFLATE_MAX - f.hammerCatch.baseR) * k);
-          // Growing the hex banks life proportional to the size added, so
-          // pumping it bigger buys time and it can't vanish out from under a
-          // full charge (aging in _stepProjectiles subtracts a tick per frame).
-          if (gate.r > prevR) gate.ttl += (gate.r - prevR) * HAMMER_HEX_LIFE_PER_R;
+          // Pour mana into the hex's life while charging (converted at
+          // HEX_LIFE_PER_MANA). This is the only mana the hex ever costs — the
+          // launch itself is free, and an out-of-mana charge just lets the hex
+          // keep decaying naturally.
+          const spend = Math.min(f.mana, HEX_CHARGE_MANA_PER_SEC * TICK);
+          if (spend > 0) { f.mana -= spend; gate.ttl += spend * HEX_LIFE_PER_MANA; }
           if (!inp.chg || k >= 1) this._hexLaunch(f, gate, k);
           this._decayInput(inp);
           return;
         }
-        // Uncharged tap: launch straight out, no mana spent.
+        // Uncharged tap: launch straight out, free.
         if (inp.atk) {
           inp.atk = null; inp.bufA = 0;
           this._hexLaunch(f, gate, 0);
@@ -1331,7 +1330,13 @@ export class Game {
           f.jumpT = 0;
           inp.jump = false;
           this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
+          this._decayInput(inp);
+          return;
         }
+        // Just suspended and holding: trickle mana to offset the hex's natural
+        // decay, so it holds while you can pay and resumes decaying once dry.
+        const trickle = HEX_TRICKLE_MANA * TICK;
+        if (f.mana >= trickle) { f.mana -= trickle; gate.ttl += TICK; }
         this._decayInput(inp);
         return;
       } else {
