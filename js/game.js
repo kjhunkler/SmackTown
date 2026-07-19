@@ -710,6 +710,7 @@ const HAMMER_MANA_COST0 = 24, HAMMER_MANA_COST1 = 62;
 const HAMMER_CHAIN_WINDOW = .34;
 const HAMMER_CHAIN_MAX = 4;
 const HAMMER_FLOAT_DECAY = 1.15;      // seconds until normal gravity fully returns while held
+const HAMMER_CATCH_DELAY = .08;       // held entry aim must visibly catch before it launches
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
@@ -947,6 +948,7 @@ export class Game {
       jumpT: -1,                    // seconds since liftoff while a jump cut is still possible (-1 idle)
       comboN: 0, comboT: 0,         // tap combo: next stage index + chain window left
       hammerChainN: 0, hammerChainT: 0, hammerChainDir: null,
+      hammerCatch: null, hammerFlight: null,
       pct: 0, stocks: STOCKS,
       hp: st.maxHp, maxHp: st.maxHp, downT: 0,   // co-op health & downed timer
       state: 'idle',                // idle|run|air|attack|charge|hitstun|ledge|roll|dead|respawn
@@ -957,6 +959,7 @@ export class Game {
       atkSpd: 0,                    // speed when the swing began (momentum augment)
       chg: 0,                       // charge fraction baked into the live attack
       chgAim: null,                 // 8-way aim captured when the charge began
+      chargeMana: MANA_MAX,         // fuel at wind-up start (caps hammer charge)
       invuln: 0, counterT: 0, dashT: 0, slideT: 0,
       guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
       mana: MANA_MAX,               // magic/hammer fuel, always recharging
@@ -1237,6 +1240,36 @@ export class Game {
     f.moveIntent = { x: Math.abs(inp.mx) > .15 ? inp.mx : 0, y: Math.abs(inp.my) > .15 ? inp.my : 0 };
     if (Math.abs(inp.mx) > 0.15) f.lastDir = { x: Math.sign(inp.mx), y: inp.my };
 
+    // A hammer gate catches before it boosts. While caught, the fighter is
+    // pinned in midair until the field expires. A newly pressed direction
+    // launches immediately; a direction already held on entry does the same
+    // after a tiny, readable pause instead of silently auto-boosting.
+    if (f.hammerCatch) {
+      const gate = this.projectiles.find(p => p.eid === f.hammerCatch.eid && p.ttl > 0);
+      if (!gate) f.hammerCatch = null;
+      else {
+        f.hammerCatch.t += TICK;
+        const intent = f.moveIntent;
+        const n = Math.hypot(intent.x, intent.y);
+        const entered = f.hammerCatch.intent;
+        const changed = n > .15 && (!entered || Math.abs(intent.x - entered.x) > .15 || Math.abs(intent.y - entered.y) > .15);
+        if (n > .15 && (changed || !entered || f.hammerCatch.t >= HAMMER_CATCH_DELAY)) {
+          f.vx = intent.x / n * gate.boost;
+          f.vy = intent.y / n * gate.boost;
+          f.fastfall = false;
+          f.grounded = false;
+          f.dashT = Math.max(f.dashT, ATTACKS.hthrust.active);
+          f.hammerFlight = { hit: new Set(), by: gate.owner };
+          f.hammerCatch = null;
+          this.events.push({ e: 'hexgate', id: f.id, x: gate.x, y: gate.y });
+        } else {
+          f.vx = 0; f.vy = 0; f.fastfall = false; f.grounded = false;
+          this._decayInput(inp);
+          return;
+        }
+      }
+    }
+
     // --- dodge roll: shove the stick sideways out of a duck ---
     // Also honored through the brief stand-up window, so a hard sideways
     // slam that drops the duck a tick before the flick edge lands still
@@ -1346,7 +1379,11 @@ export class Game {
 
     // charge state machine: fires when the control is let go (the release
     // also arrives as a buffered swipe edge — consume it) or at the cap
-    if (inCharge && (!inp.chg || inp.atk || f.stateT >= this._chargeCap(f))) {
+    const hammerManaCap = f.st.weapon === 'hammer'
+      ? this._chargeMax(f) * clamp((f.chargeMana - HAMMER_MANA_COST0) / (HAMMER_MANA_COST1 - HAMMER_MANA_COST0), 0, 1)
+      : Infinity;
+    if (inCharge && (!inp.chg || inp.atk || f.stateT >= this._chargeCap(f)
+        || (f.mana >= HAMMER_MANA_COST0 && f.stateT >= hammerManaCap))) {
       this._releaseCharge(f);
       inp.atk = null; inp.bufA = 0;
     }
@@ -1473,6 +1510,7 @@ export class Game {
     }
 
     if (f.grounded && !wasGrounded) {
+      if (f.dashT <= 0) f.hammerFlight = null;
       f.jumps = f.st.maxJumps;
       // waveland: a fast-fallen touchdown with drift keeps sliding
       if (f.fastfall && Math.abs(f.vx) > WAVELAND_MIN_VX) f.slideT = WAVELAND_TIME;
@@ -1740,6 +1778,7 @@ export class Game {
     f.grounded = false;
     f.fastfall = false;
     f.dashT = ATTACKS.hthrust.active;
+    f.hammerFlight = { hit: new Set(), by: f.id };
     this.events.push({ e: 'hammerslam', id: f.id, x: f.x, y: f.y });
   }
 
@@ -1957,6 +1996,7 @@ export class Game {
     f.atk = name;
     f.atkDir = { x: dx, y: dy };
     f.chgAim = { dx, dy };
+    f.chargeMana = f.mana;
     f.atkHit.clear();
     if (f.grounded && f.slideT <= 0) f.vx *= 0.35;   // charging mid-waveland glides
     this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
@@ -2279,13 +2319,28 @@ export class Game {
       }
     }
 
+    // A fighter launched by a hammer gate is itself an invisible, body-sized
+    // projectile. Each rival can be struck once per flight; landing ends it.
+    for (const f of this.fighters) {
+      if (!f.hammerFlight || f.dead) continue;
+      const att = this.fighters.find(x => x.id === f.hammerFlight.by) || f;
+      for (const o of this.fighters) {
+        if (o.dead || o === f || o.invuln > 0 || f.hammerFlight.hit.has(o.id) || this.coop) continue;
+        const ob = hurtBox(o);
+        if (Math.abs(o.x - f.x) < F_W && Math.abs(o.y + ob.dy - f.y) < F_H / 2 + ob.hh) {
+          f.hammerFlight.hit.add(o.id);
+          const speed = Math.hypot(f.vx, f.vy);
+          const ang = Math.atan2(f.vy, Math.abs(f.vx) || 1);
+          this._applyHit(att, o, { dmg: 10, kb: Math.max(360, speed * .65), ks: 16, r: F_W / 2 }, ang, Math.sign(f.vx) || f.facing, false, true);
+        }
+      }
+    }
+
     // projectiles vs fighters
     for (const pr of this.projectiles) {
       if (pr.kind === 'anchor' || pr.arm > 0) continue;   // warnings are visible but harmless
-      // Lingering hammer hexes react on entry. A held direction turns the
-      // gate into a boost in that direction; neutral input makes it a catch
-      // that arrests momentum. Track occupants so standing in one does not
-      // repeatedly fire it every simulation tick.
+      // Lingering hammer hexes always catch on entry. Direction handling is
+      // deferred to fighter stepping so the catch is visible and persistent.
       if (pr.kind === 'hammerwave' && pr.inside) {
         for (const fighter of this.fighters) {
           const within = !fighter.dead && Math.abs(fighter.x - pr.x) < F_W / 2 + pr.r
@@ -2294,14 +2349,11 @@ export class Game {
           if (within && !wasWithin) {
             const intent = fighter.moveIntent || { x: 0, y: 0 };
             const n = Math.hypot(intent.x, intent.y);
-            if (n > .15) {
-              fighter.vx += intent.x / n * pr.boost;
-              fighter.vy += intent.y / n * pr.boost;
-            } else {
-              fighter.vx = 0; fighter.vy = 0;
-            }
+            fighter.hammerCatch = { eid: pr.eid, t: 0, intent: n > .15 ? { x: intent.x, y: intent.y } : null };
+            fighter.hammerFlight = null;
+            fighter.vx = 0; fighter.vy = 0;
             fighter.fastfall = false;
-            this.events.push({ e: 'hexgate', id: fighter.id, x: pr.x, y: pr.y });
+            this.events.push({ e: 'catch', id: fighter.id, x: pr.x, y: pr.y });
           }
           if (within) pr.inside.add(fighter.id); else pr.inside.delete(fighter.id);
         }
