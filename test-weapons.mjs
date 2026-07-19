@@ -557,28 +557,29 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('the return leg carries 60% of the bite', back > 0 && Math.abs(back - out * 0.6) < 1e-9);
 }
 
-// --- hammer: grounded waves, charge-scaled aerial/up thrust, heavy recovery ---
+// --- hammer: three directional launch hexes and redirect chains ---
 {
   const g = mkGame('hammer');
   const a = g.fighters[0];
   check('hammer has the slowest standard wind-up', g._chargeMax(a) > g._chargeMax(mkGame('magic').fighters[0]));
-  check('hammer side swipe is a ground slam', g._weaponAttack(a, 1, 0) === 'hslam');
+  check('hammer uses one directional launch on the ground', g._weaponAttack(a, 1, 0) === 'hthrust');
   g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
   const waves = g.projectiles.filter(p => p.kind === 'hammerwave');
-  check('hammer releases three staggered sections', waves.length === 3 && waves[0].arm < waves[1].arm && waves[1].arm < waves[2].arm);
-  check('shockwave footprint shrinks as it travels', waves[0].r > waves[1].r && waves[1].r > waves[2].r);
-  check('shockwave loses damage and launch power outward', waves[0].dmg > waves[1].dmg && waves[1].dmg > waves[2].dmg && waves[0].kb > waves[2].kb);
+  check('hammer releases three simultaneous sections', waves.length === 3 && waves.every(p => p.arm === 0));
+  check('all three launch hexes retain the same footprint', waves.every(p => p.r === waves[0].r));
+  check('charge spreads the three points evenly', waves[1].x - waves[0].x === waves[2].x - waves[1].x);
+  check('release launches the wielder through the points', a.vx > 1000 && a.vy === 0);
 
   const down = mkGame('hammer');
   const d = down.fighters[0]; d.grounded = true;
   down._startAttack(d, { kind: 'swipe', dx: 0, dy: 1 }, false, 1);
   const split = down.projectiles.filter(p => p.kind === 'hammerwave');
-  check('down hammer sends three sections in both directions', split.length === 6 && split.some(p => p.x < d.x) && split.some(p => p.x > d.x));
+  check('grounded down hammer lines up three downward hexes', split.length === 3 && split.every(p => p.y > d.y));
 
   const up = mkGame('hammer');
   const u = up.fighters[0]; u.grounded = true;
   up._startAttack(u, { kind: 'swipe', dx: 0, dy: -1 }, false, 1);
-  check('grounded up hammer is a thrust, not a wave', u.atk === 'hthrust' && u.vy < 0 && !up.projectiles.some(p => p.kind === 'hammerwave'));
+  check('grounded up hammer launches through three hexes', u.atk === 'hthrust' && u.vy < 0 && up.projectiles.filter(p => p.kind === 'hammerwave').length === 3);
 
   const diag = mkGame('hammer');
   const dg = diag.fighters[0]; dg.grounded = true;
@@ -588,15 +589,22 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const air = mkGame('hammer');
   const ar = air.fighters[0]; ar.grounded = false;
   check('every aerial hammer direction selects thrust', [[1, 0], [0, 1], [-1, -1]].every(([dx, dy]) => air._weaponAttack(ar, dx, dy) === 'hthrust'));
-  air._startAttack(ar, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+  air._startCharge(ar, { dx: 1, dy: 0 });
   const short = air.hitboxFor(ar);
   const charged = mkGame('hammer');
   const ch = charged.fighters[0]; ch.grounded = false;
-  charged._startAttack(ch, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
+  charged._startCharge(ch, { dx: 1, dy: 0 }); ch.stateT = charged._chargeMax(ch);
   const long = charged.hitboxFor(ch);
-  check('hammer thrust has a compact minimum hitbox', short.hammerThrust && short.hw < 45 && short.hh < 16);
-  check('charge extends hammer thrust range', long.hw > short.hw + 45);
-  check('hammer attacks enforce a long recovery', u.atk && (u.stateT = .5, up.step(), u.state === 'attack'));
+  check('hammer charge exposes its hex telegraph', short.hammerThrust && !short.active);
+  check('hammer telegraph retains equal-size hex data', long.hw === short.hw && long.hh === short.hh);
+
+  const chain = mkGame('hammer');
+  const c = chain.fighters[0];
+  chain._startAttack(c, { kind: 'swipe', dx: 1, dy: 0 });
+  c.stateT = .35; chain.step();
+  chain._startAttack(c, { kind: 'swipe', dx: 0, dy: -1 });
+  check('a redirected uncharged follow-up creates one hex', chain.projectiles.filter(p => p.kind === 'hammerwave').length === 4 && c.hammerChainN === 1);
+  check('hammer attack has no recovery delay', c.atk === 'hthrust' && c.stateT === 0);
 }
 
 console.log(`\n${n - fails}/${n} passed`);
