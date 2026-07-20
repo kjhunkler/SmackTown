@@ -1,8 +1,10 @@
 // Headless smoke test: per-weapon, per-aim charge floats. Each weapon's
-// heavy-charge changes its airborne fall physics (the spear's down-thrust
-// rises, the rang's down-charge hangs then vaults the thrower on release),
-// with fall CAPS as the crisp observable: after ~0.43s of charging from
-// vy=0 every configuration sits at its scaled terminal speed.
+// heavy-charge changes its airborne fall physics (the rang's down-charge
+// hangs then vaults the thrower on release; hammer, spear, and fists begin
+// an airborne charge at a complete hover and decay back to normal fall over
+// a fixed duration), with fall CAPS as the crisp observable: after ~0.43s of
+// charging from vy=0 every fixed-slow configuration sits at its scaled
+// terminal speed.
 // Run: node test-chargefloat.mjs
 import { Game, blankInput } from './js/game.js';
 
@@ -48,34 +50,32 @@ const vyAt = (weapon, dx, dy, ticks = 26) => charging(weapon, dx, dy, ticks).f.v
   check('sword side-charge falls 60% slow too', near(vyAt('sword', 1, 0), MAX_FALL * 0.4));
   check('sword down-charge falls 60% slow too', near(vyAt('sword', 0, 1), MAX_FALL * 0.4));
   check('magic still hovers at 80% slow (cap 230)', near(vyAt('magic', 1, 0), MAX_FALL * 0.2));
-  check('fists up-charge slows 40% (cap 690)', near(vyAt('unarmed', 0, -1), MAX_FALL * 0.6));
-  check('fists side-charge slows 20% (cap 920)', near(vyAt('unarmed', 1, 0), MAX_FALL * 0.8));
-  check('fists down-charge slows 20% too', near(vyAt('unarmed', 0, 1), MAX_FALL * 0.8));
-  check('spear side-charge slows 40% (cap 690)', near(vyAt('spear', 1, 0), MAX_FALL * 0.6));
-  check('spear up-charge slows 40% too', near(vyAt('spear', 0, -1), MAX_FALL * 0.6));
   check('rang side-charge keeps normal fall', near(vyAt('boomerang', 1, 0), MAX_FALL));
   check('rang up-charge keeps normal fall', near(vyAt('boomerang', 0, -1), MAX_FALL));
   check('rang down-charge hangs 80% slow (cap 230)', near(vyAt('boomerang', 0, 1), MAX_FALL * 0.2));
   check('hammer begins at a complete hover', vyAt('hammer', 1, 0, 3) < 60);
   check('hammer hover decays during a long hold', vyAt('hammer', 1, 0, 40) > 100);
+  check('spear begins at a complete hover', vyAt('spear', 0, 1, 3) < 60);
+  check('spear hover decays during a long hold', vyAt('spear', 0, 1, 40) > 100);
+  check('fists begin at a complete hover', vyAt('unarmed', 1, 0, 3) < 60);
+  check('fists hover decays during a long hold', vyAt('unarmed', 1, 0, 40) > 100);
 }
 
-// --- 2. the spear's aerial down-thrust charge floats UP ---
+// --- 2. the decaying hover no longer lets the spear float upward, and it
+// arrests an existing plummet the same way the hammer's hover does ---
 {
-  const early = vyAt('spear', 0, 1, 26);
-  check('spear down-charge is rising within half a second', early < 0);
-  const held = vyAt('spear', 0, 1, 60);
-  check('the rise caps at 10% of fall speed (-115)', near(held, -MAX_FALL * 0.1));
+  const early = vyAt('spear', 0, 1, 3);
+  check('spear down-charge no longer rises', early >= 0);
   const { f } = charging('spear', 0, 1, 60);
-  check('the floating spearman actually gains height', f.y < -600);
-  // a fast fall in progress gets braked, then reversed
+  check('a long-held spear charge still falls (no permanent hover)', f.y > -600);
+  // a fast fall in progress gets braked by the fresh hover, not reversed
   const g2 = new Game(players('spear'), 3, 'battlefield');
   const f2 = g2.fighters[0];
   f2.y = -900; f2.vy = 900; f2.grounded = false; f2.jumps = 0;
   const inp = blankInput(); inp.chg = { dx: 0, dy: 1 }; inp.chgArm = true;
   g2.setInput('A', inp);
-  for (let i = 0; i < 40; i++) { const h = blankInput(); h.chg = { dx: 0, dy: 1 }; g2.setInput('A', h); g2.step(); }
-  check('a plummeting spearman brakes instead of snapping upward', f2.vy < 900 && f2.vy > -MAX_FALL * 0.1 - 2);
+  for (let i = 0; i < 3; i++) { const h = blankInput(); h.chg = { dx: 0, dy: 1 }; g2.setInput('A', h); g2.step(); }
+  check('a plummeting spearman is braked hard by the fresh hover', f2.vy < 100 && f2.vy >= 0);
 }
 
 // --- 3. rang down-charge release: the upward vault ---

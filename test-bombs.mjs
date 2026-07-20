@@ -24,17 +24,17 @@ const weakGame = game();
 const weakThrower = weakGame.fighters[0];
 weakGame._startAttack(weakThrower, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
 const weak = weakGame.projectiles[0];
-check('a bomb swipe throws a delayed bomb', weakThrower.atk === 'bomb' && weak.kind === 'bomb' && weak.arm > 1);
+check('a bomb swipe throws a bomb with a brief post-throw safety grace', weakThrower.atk === 'bomb' && weak.kind === 'bomb' && weak.arm > 0 && weak.arm < 1);
 check('the bomb starts on a gravity-driven arc', weak.grav > 0 && weak.vx > 0 && weak.vy < 0);
 check('bombs use the heavier fall gravity', weak.grav === 1200);
-check('uncharged bombs have stronger knockback', weak.kb === 480);
+check('uncharged bombs have stronger knockback', weak.kb === 580);
 
 const strongGame = game();
 strongGame._startAttack(strongGame.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
 const strong = strongGame.projectiles[0];
-check('charge increases throw distance', strong.vx > weak.vx && Math.abs(strong.vy) > Math.abs(weak.vy));
+check('charge no longer changes throw distance', strong.vx === weak.vx && strong.vy === weak.vy);
 check('charge increases damage and explosion radius', strong.dmg > weak.dmg && strong.bombR > weak.bombR);
-check('fully charged bombs have stronger knockback', strong.kb === 860);
+check('fully charged bombs have stronger knockback', strong.kb === 1000);
 check('snapshot carries the public explosion telegraph radius', strongGame.snapshot().p[0][8] === strong.bombR);
 
 // Aiming down while standing spikes the bomb into the ground near your feet.
@@ -75,6 +75,38 @@ check('the delayed explosion damages opponents', victim.pct > 0);
 check('the explosion knocks its thrower back', owner.vx !== 0 || owner.vy < 0);
 check('self-knockback never damages its thrower', owner.pct === ownerPct && owner.hp === owner.maxHp);
 check('the explosion is consumed exactly once', strongGame.projectiles.length === 0 && strong.boomed);
+
+// Bombs detonate the instant they touch an opponent, not just on fuse timeout.
+const impactGame = game();
+impactGame._startAttack(impactGame.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+const impactBomb = impactGame.projectiles[0];
+impactBomb.arm = 0;   // past the post-throw safety grace
+const impactVictim = impactGame.fighters[1];
+impactVictim.x = impactBomb.x; impactVictim.y = impactBomb.y;
+const impactPctBefore = impactVictim.pct;
+impactGame._resolveAttacks();
+check('a bomb touching an opponent is marked to detonate', impactBomb.ttl === 0 && !impactBomb.boomed);
+impactGame._stepProjectiles();
+check('bombs detonate on impact instead of waiting for the fuse',
+  impactVictim.pct > impactPctBefore && impactBomb.boomed);
+
+// Bombs detonate on contact with a co-op creep too.
+const creepGame = game();
+creepGame._startAttack(creepGame.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
+const creepBomb = creepGame.projectiles[0];
+creepBomb.arm = 0;
+creepGame.enemies.push({
+  eid: 1, kind: 'grunt', hw: 22, hh: 26,
+  x: creepBomb.x, y: creepBomb.y, vx: 0, vy: 0,
+  hp: 20, maxHp: 20, cr: 5, facing: -1, grounded: true, hurt: 0,
+  windup: 0, atkCd: 99, stagger: 0, temperament: 'bold', focusId: null,
+  elite: false, variant: 0, rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
+});
+const creep = creepGame.enemies[0];
+creepGame._resolveAttacks();
+check('a bomb touching a creep is marked to detonate', creepBomb.ttl === 0 && !creepBomb.boomed);
+creepGame._stepProjectiles();
+check('bombs detonate on impact with a creep too', creep.hp < 20 && creepBomb.boomed);
 
 console.log(`\n${n - fails}/${n} passed`);
 if (fails) process.exit(1);

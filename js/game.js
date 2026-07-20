@@ -342,7 +342,7 @@ export function hazardsAt(mapId, tickF) {
   });
 }
 
-const GRAV = 2600, MAX_FALL = 920, FASTFALL = 1750;   // MAX_FALL trimmed 20% (was 1150) — floatier drops, fast-fall unchanged
+const GRAV = 1950, MAX_FALL = 920, FASTFALL = 1750;   // GRAV cut 25% (was 2600) for tuning pass; MAX_FALL trimmed 20% (was 1150) — floatier drops, fast-fall unchanged
 const FALL_GRAV = 1.35;              // gravity multiplier on descent — rise unchanged, so jump heights hold
 const RUN = 380, AIR_ACCEL = 1450, GROUND_ACCEL = 3400, FRICTION = 3400;
 const TURN_ACCEL = 2.2;              // ground accel multiplier while reversing a run
@@ -355,8 +355,8 @@ const JUMP_V = 860, JUMP2_V = 780;
 // time — never in hitstun, so launch knockback keeps its exact physics.
 const JUMP_CUT = 0.45;               // fraction of the remaining rise kept on release
 const JUMP_CUT_GRACE = 0.08;         // liftoff seconds before a release can cut
-const APEX_GRAV = 0.75;              // gravity multiplier through the apex band
-const APEX_BAND = 130;               // |vy| below this counts as the apex
+const APEX_GRAV = 0.55;              // gravity multiplier through the apex band (eased further for more hang time)
+const APEX_BAND = 190;               // |vy| below this counts as the apex (widened for more hang time)
 const JUMP_FF_LOCK = 0.1;            // brief window after a jump before fast fall can trigger
 const SPIKE_BOUNCE = 640;            // attacker's upward spring off a landed spike
 const AIR_RISE_CD = 1.1;             // min seconds between aerial up-smash lifts
@@ -618,7 +618,7 @@ const ATTACKS = {
   // melee rectangle. The active time is only the travel window; there is no
   // recovery tail after the launch finishes.
   hthrust:{ dmg: 0, kb: 0, ks: 0, startup: 0, active: .34, rec: 0, rx: 38, ry: 38, ang: -42, cast: true, hammerThrust: true },
-  bomb:   { dmg: 0, kb: 0, ks: 0, startup: .08, active: .02, rec: .24, rx: 30, ry: 24, ang: 0, cast: true },
+  bomb:   { dmg: 0, kb: 0, ks: 0, startup: .08, active: .02, rec: .5, rx: 30, ry: 24, ang: 0, cast: true },
 };
 
 // Weapons: what the strong-attack control does. Bare fists keep the classic
@@ -645,17 +645,13 @@ const SWORD_LUNGE_H = 0.7;           // horizontal lunge component trimmed 30%
 const SWORD_LUNGE_V = 1.3;           // upward lunge boosted 30% (up & diagonals)
 // Charge floats: winding a heavy midair changes how the fighter falls,
 // per weapon and per charge aim (up / down / side). The value multiplies
-// gravity AND the fall cap: 1 is normal physics, 0.4 is a 60% slow, and
-// a negative value falls UPWARD — the spear's aerial down-thrust charge
-// gently lifts its wielder into position. Weapons missing from the table
-// (shield) keep normal physics.
+// gravity AND the fall cap: 1 is normal physics, 0.4 is a 60% slow. Weapons
+// missing from the table (shield, and the decaying-hover weapons below)
+// keep normal physics here.
 const CHG_FALL = {
   sword:     { up: 0.4, down: 0.4,  side: 0.4 },  // 60% slow on every aim
   magic:     { up: 0.2, down: 0.2,  side: 0.2 },  // the caster's near-hover
-  spear:     { up: 0.6, down: -0.1, side: 0.6 },  // down-thrust rises at 10%
-  unarmed:   { up: 0.6, down: 0.8,  side: 0.8 },  // fists: 40% up, 20% else
   boomerang: { up: 1,   down: 0.2,  side: 1 },    // down-charge hangs 80% slow…
-  hammer:    { up: 0,   down: 0,    side: 0 },    // full hover initially; see decay below
 };
 const RANG_CHG_POP = 780;            // …then release vaults the thrower upward
 const RANG_CHG_POP_CHG = 0.5;        // +50% pop speed at full charge
@@ -703,14 +699,21 @@ const SHIELD_LUNGE_UP = 1.15;        // up-bashes still climb, but less vertical
 const BASH_BLOCK_PUSH = 240;         // stop-nudge off a blocked (ducked) ram
 const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is raised
 const HAMMER_HEX_RADIUS0 = 36, HAMMER_HEX_RADIUS1 = 96;
-const HAMMER_HEX_RADIUS_MIN = 8;      // empty gates expire as a tiny, readable spark
+const HAMMER_HEX_RADIUS_MIN = 14;     // empty gates expire as a (slightly larger) readable spark
+const HAMMER_HEX_DECAY_RATE = 0.5;    // hexes lose energy at half the normal rate — longer-lived gates
 const HAMMER_LAUNCH0 = 620, HAMMER_LAUNCH1 = 1460;
 const HAMMER_HEX_BOOST0 = 360, HAMMER_HEX_BOOST1 = 680;
 const HAMMER_HEX_LIFE0 = 2.2, HAMMER_HEX_LIFE1 = 4.8;
 const HAMMER_MANA_COST0 = 24, HAMMER_MANA_COST1 = 62;
 const HAMMER_CHAIN_WINDOW = .34;
 const HAMMER_CHAIN_MAX = 4;
-const HAMMER_FLOAT_DECAY = 1.15;      // seconds until normal gravity fully returns while held
+// Decaying-hover charge float: these weapons begin an airborne charge at a
+// complete hover and smoothly give gravity back over a fixed duration even
+// if the button remains held, so charging cannot become permanent flight.
+// Originally hammer-only; extended to spear and bare fists, replacing their
+// old fixed per-aim slow-fall values (including the spear's down-thrust
+// upward float — it no longer rises while charging).
+const WEAPON_FLOAT_DECAY = { hammer: 1.15, spear: 1.15, unarmed: 1.15 };
 const HAMMER_CATCH_DELAY = .08;       // suspended pause before a jump can dislodge you
 const HAMMER_INFLATE_MAX = 120;       // caught in your own hex: medium-large size cap
 const HAMMER_INFLATE_LAUNCH0 = 820;   // uncharged launch out of your own hex (free)
@@ -741,10 +744,17 @@ function hammerHexStrength(radius, low, high) {
   return low + (high - low) * clamp((radius - HAMMER_HEX_RADIUS0)
     / (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0), 0, 1);
 }
-const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
-const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
+// Charge no longer buys throw distance — every toss travels the same arc.
+// It buys blast power instead (see BOMB_RADIUS0/1 and BOMB_DMG0/1 below).
+const BOMB_SPEED = 605, BOMB_LIFT = 390;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
-const BOMB_RADIUS0 = 75, BOMB_RADIUS1 = 150;
+// Bombs detonate the instant they touch a fighter or creep (see the contact
+// checks in _resolveAttacks) rather than waiting out the fuse. BOMB_ARM is a
+// brief post-throw grace before that contact check goes live, purely so the
+// bomb doesn't spawn already overlapping something and pop immediately; the
+// fuse (BOMB_FUSE/ttl) still stands as the fallback if nothing is touched.
+const BOMB_ARM = 0.12;
+const BOMB_RADIUS0 = 92, BOMB_RADIUS1 = 185;
 // A spiked bomb (thrown down while standing) reflects off the ground once
 // instead of settling flat, so it lands close and hops a little.
 const BOMB_BOUNCE_MIN = 60, BOMB_BOUNCE_REST = .35, BOMB_BOUNCE_CAP = 180;
@@ -757,9 +767,8 @@ export function bombLaunch(x, y, facing, aimX, aimY, grounded, charge) {
   const spike = grounded && dy > 0;
   const n = Math.hypot(dx, dy) || 1;
   const nx = dx / n, ny = dy / n;
-  const k = clamp(charge || 0, 0, 1);
-  const speed = BOMB_SPEED0 + (BOMB_SPEED1 - BOMB_SPEED0) * k;
-  const lift = spike ? 0 : BOMB_LIFT0 + (BOMB_LIFT1 - BOMB_LIFT0) * k;
+  const speed = BOMB_SPEED;
+  const lift = spike ? 0 : BOMB_LIFT;
   return {
     x: x + nx * 34, y: y - 16 + ny * 16,
     vx: nx * speed, vy: ny * speed - lift,
@@ -767,8 +776,8 @@ export function bombLaunch(x, y, facing, aimX, aimY, grounded, charge) {
     bounce: spike ? 1 : 0,
   };
 }
-const BOMB_DMG0 = 8, BOMB_DMG1 = 18;
-const BOMB_KB0 = 480, BOMB_KB1 = 860;
+const BOMB_DMG0 = 12, BOMB_DMG1 = 26;
+const BOMB_KB0 = 580, BOMB_KB1 = 1000;
 // In co-op only, a landed (unblocked) bash turns its victim into a body-slam
 // hazard for the rest of their flight: creeps they collide with while this
 // window is live take a hit too. PvP victims do not gain a hitbox. Piggybacks
@@ -1380,7 +1389,7 @@ export class Game {
         // Just suspended and holding: trickle mana to offset the hex's natural
         // decay, so it holds while you can pay and resumes decaying once dry.
         const trickle = HEX_TRICKLE_MANA * TICK;
-        if (f.mana >= trickle) { f.mana -= trickle; gate.ttl += TICK; }
+        if (f.mana >= trickle) { f.mana -= trickle; gate.ttl += TICK * HAMMER_HEX_DECAY_RATE; }
         this._decayInput(inp);
         return;
       } else {
@@ -1565,19 +1574,21 @@ export class Game {
     // --- gravity & integration ---
     if (!f.grounded) {
       // charge floats: per-weapon, per-aim fall physics from CHG_FALL —
-      // the sword winds slow-falling, the caster hovers, fists soften the
-      // drop, the rang's down-charge hangs, the spear's down-thrust lifts
+      // the sword winds slow-falling, the caster hovers, the rang's
+      // down-charge hangs
       const chgTable = inCharge ? CHG_FALL[f.st.weapon] : null;
       const aimY = f.chgAim ? f.chgAim.dy : 0;
       let slow = chgTable ? (aimY < 0 ? chgTable.up : aimY > 0 ? chgTable.down : chgTable.side) : 1;
-      // A hammer begins at a complete hover, then smoothly gives gravity
-      // back even if the button remains held, so charging cannot become
-      // permanent flight.
-      if (inCharge && f.st.weapon === 'hammer') slow = clamp(f.stateT / HAMMER_FLOAT_DECAY, 0, 1);
+      // Decaying hover: hammer, spear, and bare fists begin an airborne
+      // charge at a complete hover, then smoothly give gravity back even if
+      // the button remains held, so charging cannot become permanent flight.
+      const floatDecay = inCharge ? WEAPON_FLOAT_DECAY[f.st.weapon] : null;
+      if (floatDecay) slow = clamp(f.stateT / floatDecay, 0, 1);
       // apex hang: gravity eases through the top of the arc so aerials are
       // easier to place. Off in hitstun/crush (launch KOs keep their exact
-      // physics) and while fast-falling.
-      const apex = !inHitstun && !inCrush && !f.fastfall && Math.abs(f.vy) < APEX_BAND ? APEX_GRAV : 1;
+      // physics), while fast-falling, and during a charge float (which has
+      // its own bespoke fall physics).
+      const apex = !inHitstun && !inCrush && !f.fastfall && !chgTable && !floatDecay && Math.abs(f.vy) < APEX_BAND ? APEX_GRAV : 1;
       // heavier gravity on the way down — off in hitstun/crush so launch
       // knockback keeps its exact physics, like the apex hang above
       const fall = !inHitstun && !inCrush && f.vy > 0 ? FALL_GRAV : 1;
@@ -1966,7 +1977,7 @@ export class Game {
     const launch = bombLaunch(f.x, f.y, f.facing, dx, dy, f.grounded, k);
     this.projectiles.push({
       eid: nextEid++, kind: 'bomb', owner: f.id,
-      ...launch, arm: BOMB_FUSE,
+      ...launch, arm: BOMB_ARM,
       r: 13, bombR: BOMB_RADIUS0 + (BOMB_RADIUS1 - BOMB_RADIUS0) * k,
       dmg: BOMB_DMG0 + (BOMB_DMG1 - BOMB_DMG0) * k,
       kb: BOMB_KB0 + (BOMB_KB1 - BOMB_KB0) * k, ks: 18,
@@ -2558,6 +2569,9 @@ export class Game {
         const pos = this._rewound(o, pr.owner);
         const ob = hurtBox(o);
         if (Math.abs(pos.x - pr.x) < F_W / 2 + pr.r && Math.abs(pos.y + ob.dy - pr.y) < ob.hh + pr.r) {
+          // Bombs detonate on touch — the explosion (handled once ttl hits
+          // zero, next tick) is the payload, not a direct contact hit.
+          if (pr.kind === 'bomb') { pr.ttl = 0; break; }
           const att = this.fighters.find(x => x.id === pr.owner);
           if (o.counterT > 0) { pr.vx *= -1; pr.owner = o.id; this.events.push({ e: 'counter', x: o.x, y: o.y }); continue; }
           if (att) {
@@ -2610,6 +2624,9 @@ export class Game {
             // to their own summoner
             if (e.ally && (this.coop || e.ally === pr.owner)) continue;
             if (Math.abs(e.x - pr.x) < e.hw + pr.r && Math.abs(e.y - pr.y) < e.hh + pr.r) {
+              // Bombs detonate on touch — the explosion (handled once ttl
+              // hits zero, next tick) is the payload, not a direct hit.
+              if (pr.kind === 'bomb') { pr.ttl = 0; break; }
               const dirX = pr.spring ? -(Math.sign(e.vx) || e.facing || 1) : (Math.sign(pr.vx) || 1);
               this._hitEnemy(att, e, pr, deg(pr.ang ?? -40), dirX, false);
               if (pr.thru) pr.hit?.add('e' + e.eid);
@@ -2901,7 +2918,7 @@ export class Game {
       if (pr.grav) pr.vy = Math.min(pr.vy + pr.grav * TICK, 1150);  // traps drop until they settle
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
-      pr.ttl -= TICK;
+      pr.ttl -= pr.kind === 'hammerwave' ? TICK * HAMMER_HEX_DECAY_RATE : TICK;
       // Energy, life, visual radius, and force are the same readable system:
       // decay shrinks and weakens the gate, and removal happens only at zero.
       if (pr.kind === 'hammerwave') syncHammerHexRadius(pr);

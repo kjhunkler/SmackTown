@@ -774,7 +774,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const uhex = ug.projectiles.find(p => p.kind === 'hammerwave');
   uhex.ttl = 0.4;
   let uvanished = false;
-  for (let i = 0; i < 40; i++) { ug._stepProjectiles(); if (!ug.projectiles.some(p => p.eid === uhex.eid)) uvanished = true; }
+  for (let i = 0; i < 80; i++) { ug._stepProjectiles(); if (!ug.projectiles.some(p => p.eid === uhex.eid)) uvanished = true; }
   check('an unoccupied hex decays away on its own', uvanished);
 
   // Radius is the energy gauge: it falls continuously with life, reaches a
@@ -800,10 +800,10 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   fg._hexLaunch(fo, fhex);
   check('a faded hex launches with less force', fadedLaunch < Math.abs(fo.vy));
 
-  ehex.ttl = 1.1 / 60;
+  ehex.ttl = 0.9 / 60;
   eg._stepProjectiles();
   check('a positive-energy hex remains as a tiny spark',
-    eg.projectiles.some(p => p.eid === ehex.eid) && ehex.r < 9);
+    eg.projectiles.some(p => p.eid === ehex.eid) && ehex.r < 16);
   eg._stepProjectiles();
   check('a hex disappears only when its energy reaches zero',
     !eg.projectiles.some(p => p.eid === ehex.eid));
