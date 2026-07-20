@@ -723,6 +723,13 @@ const HEX_LIFE_PER_MANA = 0.12;       // seconds of hex life gained per mana spe
 const HEX_DAMAGE_LIFE_COST = 0.2;     // extra hex life lost each time it deals touch damage
 const HEX_TOUCH_EVERY = 0.3;          // how often the hex chips a rival standing in it
 const HEX_TOUCH_DMG0 = 3, HEX_TOUCH_DMG1 = 6;  // per-tick touch damage vs charge (no lingering burn)
+// A hex's size IS its remaining life (and its launch force): radius scales
+// straight off ttl, so it visibly shrinks as it decays and grows as it's fed.
+// Both cap together at HAMMER_INFLATE_MAX / HEX_LIFE_MAX.
+const HEX_R_PER_LIFE = 20;            // radius per second of remaining life
+const HEX_R_MIN = 12;                 // floor radius: a nearly-dead hex is still a tiny visible node
+const HEX_LIFE_MAX = HAMMER_INFLATE_MAX / HEX_R_PER_LIFE;   // life at which size (and life) caps
+function hexRadius(ttl) { return clamp(ttl * HEX_R_PER_LIFE, HEX_R_MIN, HAMMER_INFLATE_MAX); }
 const BOMB_SPEED0 = 360, BOMB_SPEED1 = 850;
 const BOMB_LIFT0 = 260, BOMB_LIFT1 = 520;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
@@ -1296,21 +1303,21 @@ export class Game {
         if (!f.hammerCatch.charging && inp.chg && inp.chgArm) {
           f.hammerCatch.charging = true;
           f.hammerCatch.chgT = 0;
-          f.hammerCatch.baseR = gate.r;
           this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
           inp.chgArm = false;
         }
         if (f.hammerCatch.charging) {
           f.hammerCatch.chgT += TICK;
           const k = clamp(f.hammerCatch.chgT / this._chargeMax(f), 0, 1);
-          gate.r = Math.min(HAMMER_INFLATE_MAX,
-            f.hammerCatch.baseR + (HAMMER_INFLATE_MAX - f.hammerCatch.baseR) * k);
-          // Pour mana into the hex's life while charging (converted at
-          // HEX_LIFE_PER_MANA). This is the only mana the hex ever costs — the
-          // launch itself is free, and an out-of-mana charge just lets the hex
-          // keep decaying naturally.
-          const spend = Math.min(f.mana, HEX_CHARGE_MANA_PER_SEC * TICK);
-          if (spend > 0) { f.mana -= spend; gate.ttl += spend * HEX_LIFE_PER_MANA; }
+          // Pour mana into the hex's LIFE, which is its size and force — it
+          // grows as it fills, capped at HEX_LIFE_MAX (== max radius). Once
+          // full it costs nothing more. This is the only mana the hex ever
+          // costs; the launch itself is free.
+          if (gate.ttl < HEX_LIFE_MAX) {
+            const spend = Math.min(f.mana, HEX_CHARGE_MANA_PER_SEC * TICK);
+            if (spend > 0) { f.mana -= spend; gate.ttl = Math.min(HEX_LIFE_MAX, gate.ttl + spend * HEX_LIFE_PER_MANA); }
+          }
+          gate.r = hexRadius(gate.ttl);
           if (!inp.chg || k >= 1) {
             // Releasing a smash also queues a buffered swipe edge; consume it
             // (as _releaseCharge does) so it can't fire a normal hthrust — and
@@ -1345,9 +1352,10 @@ export class Game {
           return;
         }
         // Just suspended and holding: trickle mana to offset the hex's natural
-        // decay, so it holds while you can pay and resumes decaying once dry.
+        // decay, so it holds its size while you can pay and resumes shrinking
+        // once dry.
         const trickle = HEX_TRICKLE_MANA * TICK;
-        if (f.mana >= trickle) { f.mana -= trickle; gate.ttl += TICK; }
+        if (f.mana >= trickle) { f.mana -= trickle; gate.ttl += TICK; gate.r = hexRadius(gate.ttl); }
         this._decayInput(inp);
         return;
       } else {
@@ -1858,7 +1866,7 @@ export class Game {
   _hexLaunch(f, gate) {
     const aim = f.hammerCatch?.aim || { x: f.facing, y: 0 };
     const n = Math.hypot(aim.x, aim.y) || 1;
-    const grow = clamp((gate.r - HAMMER_HEX_RADIUS0) / (HAMMER_INFLATE_MAX - HAMMER_HEX_RADIUS0), 0, 1);
+    const grow = clamp((gate.r - HEX_R_MIN) / (HAMMER_INFLATE_MAX - HEX_R_MIN), 0, 1);
     const speed = HAMMER_INFLATE_LAUNCH0 + (HAMMER_INFLATE_LAUNCH1 - HAMMER_INFLATE_LAUNCH0) * grow;
     f.vx = aim.x / n * speed;
     f.vy = aim.y / n * speed;
@@ -1875,7 +1883,6 @@ export class Game {
     const n = Math.hypot(dx, dy) || 1;
     const nx = dx / n, ny = dy / n;
     const charge = clamp(k, 0, 1);
-    const radius = HAMMER_HEX_RADIUS0 + (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0) * charge;
     const cost = HAMMER_MANA_COST0 + (HAMMER_MANA_COST1 - HAMMER_MANA_COST0) * charge;
     if (f.mana < cost) {
       this.events.push({ e: 'fizzle', id: f.id, x: f.x, y: f.y, why: 'mana' });
@@ -1884,14 +1891,14 @@ export class Game {
     f.mana -= cost;
     const power = .75 + 1.25 * charge;
     const life = HAMMER_HEX_LIFE0 + (HAMMER_HEX_LIFE1 - HAMMER_HEX_LIFE0) * charge;
-    // Ground and air now share the same body-centered hex. It remains behind
-    // as a shrinking launch gate and a hazard that chips whoever stands in it
-    // (touch damage only — no lingering burn once they leave).
+    // The hex's radius is its life: a bigger charge is born with more life and
+    // therefore a bigger, stronger hex. It shrinks as it decays and grows when
+    // fed. It remains behind as a launch gate and a touch-damage hazard.
     for (let section = 0; section < 1; section++) {
       this.projectiles.push({
         eid: nextEid++, kind: 'hammerwave', owner: f.id,
         x: f.x, y: f.y, vx: 0, vy: 0,
-        r: radius, r0: radius, arm: 0, ttl: life, life,
+        r: hexRadius(life), r0: hexRadius(life), arm: 0, ttl: life, life,
         dmg: 11 * power, kb: 300 * power, ks: 22,
         ang: Math.atan2(ny, nx) * 180 / Math.PI, thru: true,
         hit: new Set(), section, dir: Math.sign(nx) || f.facing,
@@ -2503,6 +2510,7 @@ export class Game {
             fighter.pct += dmg;
             att.score.dmg += dmg;
             pr.ttl -= HEX_DAMAGE_LIFE_COST;   // dealing damage burns a little of the hex's life
+            pr.r = hexRadius(pr.ttl);          // …and it shrinks a touch as a result
             this.events.push({ e: 'burn', x: fighter.x, y: fighter.y - F_H / 2, vic: fighter.id, dmg: Math.round(dmg) });
           }
           if (within) pr.inside.add(fighter.id); else pr.inside.delete(fighter.id);
@@ -2860,9 +2868,11 @@ export class Game {
       pr.x += pr.vx * TICK;
       pr.y += pr.vy * TICK;
       pr.ttl -= TICK;
-      // A hammer hex keeps its size for its whole life (its size is its launch
-      // power) and simply vanishes when its life runs out; it only loses life
-      // to natural decay, to dealing damage, and gains it from the caster.
+      // A hammer hex's size IS its remaining life (and its launch force): it
+      // shrinks as it decays and grows when the caster feeds it. It only loses
+      // life to natural decay and to dealing damage, and gains it from the
+      // caster while inside.
+      if (pr.kind === 'hammerwave') pr.r = hexRadius(pr.ttl);
       // a returning rang that reaches its thrower is caught — gone from the
       // air, and the hand is free to wind up the next throw early
       if (pr.ret && pr.ttl > 0 && pr.vx * pr.lnx + pr.vy * pr.lny < 0) {

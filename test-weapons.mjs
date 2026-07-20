@@ -677,8 +677,10 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   cg._stepFighter(ca, chg); chg.chgArm = false;
   check('charging a pinned hex drains mana into its life', ca.mana < manaBeforeCharge && ca.hammerCatch);
   const ttlBeforeCharge = chex.ttl;
-  for (let i = 0; i < 140; i++) cg._stepFighter(ca, chg);
-  check('charging pours mana into the hex life', chex.ttl > ttlBeforeCharge && ca.mana < manaBeforeCharge - 30);
+  for (let i = 0; i < 40; i++) cg._stepFighter(ca, chg);            // actively growing, below the cap
+  check('charging pours mana into the hex life (grows + drains)',
+    chex.ttl > ttlBeforeCharge && chex.r > baseR && ca.mana < manaBeforeCharge - 5);
+  for (let i = 0; i < 100; i++) cg._stepFighter(ca, chg);           // fill to the cap (stays under chargeMax)
   check('the inflated hex is capped in size', chex.r > baseR && chex.r <= 150);
   const rel = blankInput(); rel.my = -1;
   cg._stepFighter(ca, rel);
@@ -752,6 +754,19 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   let uvanished = false;
   for (let i = 0; i < 40; i++) { ug._stepProjectiles(); if (!ug.projectiles.some(p => p.eid === uhex.eid)) uvanished = true; }
   check('an unoccupied hex decays away on its own', uvanished);
+
+  // Size IS life and force: a bigger charge is born larger and longer-lived,
+  // and a hex visibly shrinks as it decays.
+  const mkHex = chg => { const gg = mkGame('hammer'); gg._startAttack(gg.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, chg); return [gg, gg.projectiles.find(p => p.kind === 'hammerwave')]; };
+  const [bigG, bigHex] = mkHex(1);
+  const [smallG, smallHex] = mkHex(0);
+  check('a bigger charge is born as a bigger hex with more life', bigHex.r > smallHex.r && bigHex.ttl > smallHex.ttl);
+  const bigR0 = bigHex.r;
+  for (let i = 0; i < 30; i++) bigG._stepProjectiles();
+  check('a decaying hex visibly shrinks', bigHex.r < bigR0 && bigHex.r > 0);
+  const lifeFrames = (gg, hx) => { let n = 0; while (n < 800 && gg.projectiles.some(p => p.eid === hx.eid)) { gg._stepProjectiles(); n++; } return n; };
+  const [bg2, bh2] = mkHex(1), [sg2, sh2] = mkHex(0);
+  check('a bigger hex lives longer than a smaller one', lifeFrames(bg2, bh2) > lifeFrames(sg2, sh2));
 
   // Dealing damage burns a little extra hex life beyond the natural decay.
   const dg2 = mkGame('hammer');
