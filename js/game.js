@@ -744,9 +744,11 @@ function hammerHexStrength(radius, low, high) {
   return low + (high - low) * clamp((radius - HAMMER_HEX_RADIUS0)
     / (HAMMER_HEX_RADIUS1 - HAMMER_HEX_RADIUS0), 0, 1);
 }
-// Charge no longer buys throw distance — every toss travels the same arc.
-// It buys blast power instead (see BOMB_RADIUS0/1 and BOMB_DMG0/1 below).
-const BOMB_SPEED = 605, BOMB_LIFT = 390;
+// Charge no longer buys throw distance — every toss launches straight along
+// the exact 8-way aim (no added lift, so a side throw starts perfectly
+// horizontal and only gravity bends it). Charge buys blast power instead
+// (see BOMB_RADIUS0/1 and BOMB_DMG0/1 below).
+const BOMB_SPEED = 605;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
 // Bombs detonate the instant they touch a fighter or creep (see the contact
 // checks in _resolveAttacks) rather than waiting out the fuse. BOMB_ARM is a
@@ -754,30 +756,33 @@ const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
 // bomb doesn't spawn already overlapping something and pop immediately; the
 // fuse (BOMB_FUSE/ttl) still stands as the fallback if nothing is touched.
 const BOMB_ARM = 0.12;
-const BOMB_RADIUS0 = 92, BOMB_RADIUS1 = 185;
+// An uncharged bomb barely has a blast at all — charging it up is what makes
+// it dangerous. Fully charged, the blast radius is half a character's height
+// (F_H below), i.e. a blast diameter of one character height.
+const BOMB_RADIUS0 = 8, BOMB_RADIUS1 = F_H / 2;
 // A spiked bomb (thrown down while standing) reflects off the ground once
 // instead of settling flat, so it lands close and hops a little.
 const BOMB_BOUNCE_MIN = 60, BOMB_BOUNCE_REST = .35, BOMB_BOUNCE_CAP = 180;
 export function bombLaunch(x, y, facing, aimX, aimY, grounded, charge) {
   // Do not use truthiness for aimX: zero is the important straight-up case.
   let dx = aimX ?? facing ?? 1, dy = aimY ?? 0;
-  // Aiming down while planted spikes the bomb at your feet: it keeps the
-  // downward aim with no lift, so it drops onto the ground close by and
-  // bounces slightly instead of being lobbed far forward on an upward arc.
+  // Aiming down while planted spikes the bomb at your feet instead of
+  // lobbing it: same straight-line launch, just flagged to bounce once.
   const spike = grounded && dy > 0;
   const n = Math.hypot(dx, dy) || 1;
   const nx = dx / n, ny = dy / n;
   const speed = BOMB_SPEED;
-  const lift = spike ? 0 : BOMB_LIFT;
   return {
     x: x + nx * 34, y: y - 16 + ny * 16,
-    vx: nx * speed, vy: ny * speed - lift,
+    vx: nx * speed, vy: ny * speed,
     grav: BOMB_GRAVITY, ttl: BOMB_FUSE,
     bounce: spike ? 1 : 0,
   };
 }
-const BOMB_DMG0 = 12, BOMB_DMG1 = 26;
-const BOMB_KB0 = 580, BOMB_KB1 = 1000;
+// Small and forgettable uncharged; charging up trades that spam away for a
+// bomb that actually hurts.
+const BOMB_DMG0 = 4, BOMB_DMG1 = 45;
+const BOMB_KB0 = 350, BOMB_KB1 = 1100;
 // In co-op only, a landed (unblocked) bash turns its victim into a body-slam
 // hazard for the rest of their flight: creeps they collide with while this
 // window is live take a hit too. PvP victims do not gain a hitbox. Piggybacks

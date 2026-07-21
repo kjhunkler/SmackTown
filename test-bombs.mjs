@@ -25,24 +25,28 @@ const weakThrower = weakGame.fighters[0];
 weakGame._startAttack(weakThrower, { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
 const weak = weakGame.projectiles[0];
 check('a bomb swipe throws a bomb with a brief post-throw safety grace', weakThrower.atk === 'bomb' && weak.kind === 'bomb' && weak.arm > 0 && weak.arm < 1);
-check('the bomb starts on a gravity-driven arc', weak.grav > 0 && weak.vx > 0 && weak.vy < 0);
+check('a side throw starts perfectly horizontal, no added arc', weak.grav > 0 && weak.vx > 0 && weak.vy === 0);
 check('bombs use the heavier fall gravity', weak.grav === 1200);
-check('uncharged bombs have stronger knockback', weak.kb === 580);
+check('uncharged bombs have weaker knockback', weak.kb === 350);
 
 const strongGame = game();
 strongGame._startAttack(strongGame.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
 const strong = strongGame.projectiles[0];
 check('charge no longer changes throw distance', strong.vx === weak.vx && strong.vy === weak.vy);
 check('charge increases damage and explosion radius', strong.dmg > weak.dmg && strong.bombR > weak.bombR);
-check('fully charged bombs have stronger knockback', strong.kb === 1000);
+check('an uncharged bomb has hardly any blast radius', weak.bombR === 8);
+check('a fully charged bomb blasts half a character height', strong.bombR === 32);
+check('fully charged bombs have much stronger knockback', strong.kb === 1100);
 check('snapshot carries the public explosion telegraph radius', strongGame.snapshot().p[0][8] === strong.bombR);
 
 // Aiming down while standing spikes the bomb into the ground near your feet.
 const spike = bombLaunch(0, 0, 1, 1, 1, true, 0);
 check('grounded down-aim spikes the bomb downward', spike.vy > 0 && spike.bounce === 1);
 const loft = bombLaunch(0, 0, 1, 1, 0, true, 0);
-check('grounded side-aim still lofts on an upward arc', loft.vy < 0 && !loft.bounce);
-check('airborne down-aim keeps its arc (no spike)', bombLaunch(0, 0, 1, 1, 1, false, 0).bounce === 0);
+check('grounded side-aim launches perfectly horizontal, no loft', loft.vy === 0 && !loft.bounce);
+check('airborne down-aim keeps its straight-line launch (no spike)', bombLaunch(0, 0, 1, 1, 1, false, 0).bounce === 0);
+const diag = bombLaunch(0, 0, 1, 1, -1, false, 0);
+check('a diagonal throw launches along the exact 45-degree aim', Math.abs(diag.vx) === Math.abs(diag.vy) && diag.vx > 0 && diag.vy < 0);
 
 // A spiked bomb reflects off the floor once, then settles on the next touch.
 const bounceGame = game();
