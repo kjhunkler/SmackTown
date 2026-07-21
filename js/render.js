@@ -313,6 +313,15 @@ export class Renderer {
             txt: String(ev.dmg), t: 0, life: 0.7, heavy: false, color: '#ff8a2e',
           });
           break;
+        case 'hexpop':
+          // A lighter, poison-green pop for standing in a hammer hex — no
+          // shake or flash, since this repeats several times a second.
+          this.burst(ev.x, ev.y, 6, '#55e88d', 200);
+          this.dmgPops.push({
+            x: ev.x + (Math.random() - 0.5) * 14, y: ev.y,
+            txt: String(ev.dmg), t: 0, life: 0.6, heavy: false, color: '#55e88d',
+          });
+          break;
       }
     }
   }

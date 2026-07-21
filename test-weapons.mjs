@@ -608,6 +608,15 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   g._resolveAttacks();
   check('hex contact never applies knockback', victim.vx === 0 && victim.vy === 0);
 
+  // Standing in a hex is visible: the running damage total surfaces as a
+  // floating number every so often, batched rather than once per tick.
+  g.events.length = 0;
+  const popTicks = 30;   // comfortably more than one HAMMER_HEX_POP_INTERVAL
+  for (let i = 0; i < popTicks; i++) g._resolveAttacks();
+  const pops = g.events.filter(e => e.e === 'hexpop' && e.vic === victim.id);
+  check('standing in a hex surfaces a damage popup', pops.length >= 1 && pops.every(p => p.dmg > 0));
+  check('popups are batched, not fired every single tick', pops.length < popTicks);
+
   // A hammer hex is a one-shot cast: there is nothing left to feed it, and an
   // unoccupied hex just decays on its own and vanishes.
   const ug = mkGame('hammer');

@@ -712,6 +712,10 @@ const HAMMER_CHAIN_MAX = 4;
 // knockback for as long as they overlap it; leaving the hitbox stops the
 // damage instantly, since it's a live per-tick check, not a lingering DoT.
 const HAMMER_HEX_DOT0 = 8, HAMMER_HEX_DOT1 = 22;   // touch damage per second vs charge
+// The tick itself fires every frame (so leaving stops it instantly), but a
+// popup every frame would be an unreadable blur — batch the running total
+// into one floating number every HAMMER_HEX_POP_INTERVAL instead.
+const HAMMER_HEX_POP_INTERVAL = 0.2;
 // Decaying-hover charge float: these weapons begin an airborne charge at a
 // complete hover and smoothly give gravity back over a fixed duration even
 // if the button remains held, so charging cannot become permanent flight.
@@ -1479,11 +1483,28 @@ export class Game {
   // Steady hammer-hex contact damage: a fixed rate applied only for the tick
   // the victim actually overlaps the hex — no knockback, no hitstun, and
   // nothing left running once contact breaks (unlike burn's lingering DoT).
-  _hexTouch(att, vic, dps) {
+  _hexTouch(att, vic, dps, pr) {
     const dmg = dps * TICK * vic.st.dmgTaken;
     vic.pct = Math.min(999, vic.pct + dmg);
     vic.score.taken += dmg;
     if (att) { att.score.dmg += dmg; vic.lastHitBy = att.id; }
+    this._hexPop(pr, vic.id, vic.x, vic.y - F_H / 2 - 10, dmg);
+  }
+
+  // The per-tick damage above is silent and immediate; this just batches the
+  // running total into one readable floating number every so often, per
+  // (hex, victim) pair, so standing in a hex is visibly costing you.
+  _hexPop(pr, vicId, x, y, dmg) {
+    if (!pr.pop) pr.pop = new Map();
+    let p = pr.pop.get(vicId);
+    if (!p) { p = { t: HAMMER_HEX_POP_INTERVAL, acc: 0 }; pr.pop.set(vicId, p); }
+    p.acc += dmg;
+    p.t -= TICK;
+    if (p.t <= 0) {
+      this.events.push({ e: 'hexpop', x, y, vic: vicId, dmg: Math.round(p.acc) });
+      p.t += HAMMER_HEX_POP_INTERVAL;
+      p.acc = 0;
+    }
   }
 
   _decayInput(inp) {
@@ -2373,7 +2394,7 @@ export class Game {
           for (const o of this.fighters) {
             if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
             if (Math.abs(o.x - pr.x) < F_W / 2 + pr.r && Math.abs(o.y - pr.y) < F_H / 2 + pr.r) {
-              this._hexTouch(att, o, pr.dps);
+              this._hexTouch(att, o, pr.dps, pr);
             }
           }
         }
@@ -2444,7 +2465,7 @@ export class Game {
               // A lingering hammer hex just ticks steady poison damage into
               // whatever's touching it — no knockback, no consuming the hex,
               // and it stops the instant the creep steps out.
-              if (pr.kind === 'hammerwave') { this._hexTouchEnemy(att, e, pr.dps); continue; }
+              if (pr.kind === 'hammerwave') { this._hexTouchEnemy(att, e, pr.dps, pr); continue; }
               if (pr.hit?.has('e' + e.eid)) continue;
               // Bombs detonate on touch — the explosion (handled once ttl
               // hits zero, next tick) is the payload, not a direct hit.
@@ -4053,10 +4074,11 @@ export class Game {
   // Steady hammer-hex contact damage against a creep: same fixed per-tick
   // rate as _hexTouch, just against the enemy hp/score shape. No knockback,
   // no stagger — it only bites while the creep is actually standing in it.
-  _hexTouchEnemy(att, e, dps) {
+  _hexTouchEnemy(att, e, dps, pr) {
     const dmg = dps * TICK;
     e.hp -= dmg;
     if (att) att.score.dmg += dmg;
+    this._hexPop(pr, 'e' + e.eid, e.x, e.y - e.hh - 6, dmg);
     if (e.hp <= 0) this._enemyDied(e, att);
   }
 
