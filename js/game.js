@@ -739,18 +739,22 @@ function syncHammerHexRadius(hex) {
 const BOMB_SPEED = 605;
 const BOMB_FUSE = 1.35, BOMB_GRAVITY = 1200;
 // Bombs detonate the instant they touch a fighter or creep (see the contact
-// checks in _resolveAttacks) rather than waiting out the fuse. BOMB_ARM is a
-// brief post-throw grace before that contact check goes live, purely so the
-// bomb doesn't spawn already overlapping something and pop immediately; the
-// fuse (BOMB_FUSE/ttl) still stands as the fallback if nothing is touched.
-const BOMB_ARM = 0.12;
+// checks in _resolveAttacks) — no arm/grace delay, so a bomb thrown at
+// point-blank range still connects instead of sailing through its target
+// during a "safety" window. The thrower themselves is excluded from that
+// check by owner id, not by any grace timer, so self-pops were never a risk.
+// The fuse (BOMB_FUSE/ttl) still stands as the fallback if nothing is touched.
 // An uncharged bomb barely has a blast at all — charging it up is what makes
-// it dangerous. Fully charged, the blast radius is half a character's height
-// (F_H below), i.e. a blast diameter of one character height.
-const BOMB_RADIUS0 = 8, BOMB_RADIUS1 = F_H / 2;
+// it dangerous. Fully charged, the blast radius is 150% of half a character's
+// height (F_H below); the uncharged floor is double its old starting radius.
+const BOMB_RADIUS0 = 16, BOMB_RADIUS1 = (F_H / 2) * 1.5;
 // A spiked bomb (thrown down while standing) reflects off the ground once
 // instead of settling flat, so it lands close and hops a little.
 const BOMB_BOUNCE_MIN = 60, BOMB_BOUNCE_REST = .35, BOMB_BOUNCE_CAP = 180;
+// Ground friction is light: a settled bomb keeps sliding for a while (and a
+// spiked bomb keeps most of its speed through each bounce) instead of
+// freezing dead the instant it touches down.
+const BOMB_GROUND_FRICTION = .94, BOMB_BOUNCE_FRICTION = .8;
 export function bombLaunch(x, y, facing, aimX, aimY, grounded, charge) {
   // Do not use truthiness for aimX: zero is the important straight-up case.
   let dx = aimX ?? facing ?? 1, dy = aimY ?? 0;
@@ -1828,12 +1832,26 @@ export class Game {
   }
 
   _throwBomb(f, dx, dy, k) {
-    // Bombs always get an upward arc. Aim changes its initial direction;
-    // charge stretches that same arc rather than shortening the fuse.
+    // Launches straight along the exact 8-way aim; charge buys blast power,
+    // not distance (see bombLaunch).
     const launch = bombLaunch(f.x, f.y, f.facing, dx, dy, f.grounded, k);
     this.projectiles.push({
       eid: nextEid++, kind: 'bomb', owner: f.id,
-      ...launch, arm: BOMB_ARM,
+      ...launch,
+      r: 13, bombR: BOMB_RADIUS0 + (BOMB_RADIUS1 - BOMB_RADIUS0) * k,
+      dmg: BOMB_DMG0 + (BOMB_DMG1 - BOMB_DMG0) * k,
+      kb: BOMB_KB0 + (BOMB_KB1 - BOMB_KB0) * k, ks: 18,
+    });
+  }
+
+  // Getting hit mid-charge knocks the bomb loose instead of just vanishing:
+  // it drops right where the wielder stood, carrying whatever charge they'd
+  // built up — same charge-scaled blast as a real throw, just no launch arc.
+  _dropBomb(f) {
+    const k = clamp(f.stateT / this._chargeMax(f), 0, 1);
+    this.projectiles.push({
+      eid: nextEid++, kind: 'bomb', owner: f.id,
+      x: f.x, y: f.y, vx: 0, vy: 0, grav: BOMB_GRAVITY, ttl: BOMB_FUSE, bounce: 0,
       r: 13, bombR: BOMB_RADIUS0 + (BOMB_RADIUS1 - BOMB_RADIUS0) * k,
       dmg: BOMB_DMG0 + (BOMB_DMG1 - BOMB_DMG0) * k,
       kb: BOMB_KB0 + (BOMB_KB1 - BOMB_KB0) * k, ks: 18,
@@ -2308,8 +2326,11 @@ export class Game {
   // before the hit can actually connect. The renderer draws exactly this.
   hitboxFor(f) {
     if (f.dead) return null;
-    // charging smash: telegraph with a 0..1 charge level for the renderer
-    if (f.state === 'charge' && f.atk) {
+    // charging smash: telegraph with a 0..1 charge level for the renderer.
+    // Bombs are the exception — their charge tells you nothing about a box,
+    // only where the throw will land, so the renderer's private trajectory
+    // preview is the only charge tell; no telegraph box to give away.
+    if (f.state === 'charge' && f.atk && f.atk !== 'bomb') {
       let a = ATTACKS[f.atk];
       if (!a) return null;              // move from a newer version — no box
       return { ...meleeHitbox(f, a, f.atkDir), active: false, chg: clamp(f.stateT / this._chargeMax(f), 0, 1) };
@@ -2566,6 +2587,9 @@ export class Game {
   }
 
   _applyHit(att, vic, spec, angRad, dirX, spike = false, pierce = false) {
+    // Interrupted mid-charge: the bomb doesn't vanish along with the wind-up,
+    // it drops right where the victim stood (see _dropBomb).
+    if (vic.state === 'charge' && vic.atk === 'bomb') this._dropBomb(vic);
     let dmg = spec.dmg * att.st.dmgMult;
     // brawler: the bare tap kit (jab string, dash attack, air spin) bites harder
     if (att.st.augments.includes('brawler') && spec.tap) {
@@ -2805,19 +2829,27 @@ export class Game {
       // platform from snapping through it. Include the radius at the edges.
       if (pr.x + pr.r <= pl.x || pr.x - pr.r >= pl.x + pl.w
           || prevY > top || pr.y < top) continue;
+      // Only interpolate the exact crossing point while actually falling
+      // through this tick (pr.y just moved). Once at rest, pr.y stops
+      // changing tick to tick, and re-running that same interpolation then
+      // degenerates to "stay exactly where you were" — silently freezing
+      // every settled bomb in place no matter how it was still sliding.
       const span = pr.x - prevX;
-      const hitX = span ? prevX + span * ((top - prevY) / (pr.y - prevY || 1)) : pr.x;
+      const hitX = (pr.y !== prevY && span)
+        ? prevX + span * ((top - prevY) / (pr.y - prevY || 1)) : pr.x;
       if (hitX + pr.r <= pl.x || hitX - pr.r >= pl.x + pl.w) continue;
       pr.x = hitX; pr.y = top;
       // A spiked bomb still moving fast keeps a bounce in the bank: reflect a
       // capped fraction of the impact upward and skate on, then settle flat on
-      // the next touch. Plain bombs (no bounce) settle immediately as before.
+      // the next touch. Plain bombs (no bounce) settle immediately, but low
+      // ground friction still lets any of them skid to a stop rather than
+      // freezing dead on contact.
       if (pr.bounce > 0 && pr.vy > BOMB_BOUNCE_MIN) {
         pr.vy = -Math.min(pr.vy * BOMB_BOUNCE_REST, BOMB_BOUNCE_CAP);
-        pr.vx *= .55; pr.bounce--;
+        pr.vx *= BOMB_BOUNCE_FRICTION; pr.bounce--;
         return;
       }
-      pr.vx *= .72; pr.vy = 0; pr.grav = 0;
+      pr.vx *= BOMB_GROUND_FRICTION; pr.vy = 0; pr.grav = 0;
       if (i > 0) { pr.plat = i - 1; pr.pox = pr.x - pl.x; }
       return;
     }
