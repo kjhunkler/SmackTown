@@ -564,6 +564,14 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const a = g.fighters[0];
   check('hammer has the slowest standard wind-up', g._chargeMax(a) > g._chargeMax(mkGame('magic').fighters[0]));
   check('hammer uses one directional launch on the ground', g._weaponAttack(a, 1, 0) === 'hthrust');
+
+  // The hammer's own mana fuel line trickles back at half the normal rate —
+  // magic (the other mana weapon) keeps the full rate.
+  const hammerRegen = mkGame('hammer'); hammerRegen.fighters[0].mana = 40;
+  const magicRegen = mkGame('magic'); magicRegen.fighters[0].mana = 40;
+  for (let i = 0; i < 60; i++) { hammerRegen.step(); magicRegen.step(); }   // one second
+  const hammerGain = hammerRegen.fighters[0].mana - 40, magicGain = magicRegen.fighters[0].mana - 40;
+  check('hammer mana regen runs at half the normal rate', Math.abs(hammerGain - magicGain / 2) < 0.5);
   g._startAttack(a, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
   const waves = g.projectiles.filter(p => p.kind === 'hammerwave');
   check('hammer releases one body-centered ground hex', waves.length === 1 && waves[0].x === a.x && waves[0].y === a.y);
@@ -571,8 +579,14 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   tapRadius._startAttack(tapRadius.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, 0);
   check('holding charge makes the hex much larger', waves[0].r > tapRadius.projectiles[0].r * 2);
   check('full charge makes the launch substantially stronger', a.vx > 1400 && a.vy === 0);
+  // Self-launch out of the cast hex was bumped slightly harder on both ends.
+  check('a tapped hex launch is slightly harder than before', tapRadius.fighters[0].vx > 650);
+  check('a fully-charged hex launch is slightly harder than before', a.vx > 1550);
   check('hammer release consumes charge-scaled mana', a.mana < tapRadius.fighters[0].mana);
-  check('a charged hex ticks much harder than a tap', waves[0].dps > tapRadius.projectiles[0].dps * 2);
+  // Touch damage no longer scales with charge — a fresh hex always starts
+  // at the same full-strength rate, charged or not. What decides the tick
+  // rate from here on is purely how much of the hex's life is left.
+  check('a fresh hex ticks the same rate whether tapped or charged', waves[0].dps === tapRadius.projectiles[0].dps);
   a.hammerFlight = null; // isolate the field from the damaging launched body
 
   // The hex never catches anyone anymore — nobody gets a hammerCatch field,
@@ -628,22 +642,25 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('an unoccupied hex decays away on its own', uvanished);
 
   // Radius is the energy gauge: it falls continuously with life and reaches
-  // a tiny spark before removal. The touch damage rate itself never fades —
-  // "consistent poison damage" for as long as any hex remains.
+  // a tiny spark before removal. Touch damage rides that exact same curve,
+  // from full strength (fresh) down to a bare trickle (decayed spark) —
+  // damage scales with size, not with how it was charged.
   const eg = mkGame('hammer');
   const eo = eg.fighters[0];
   eg._startAttack(eo, { kind: 'swipe', dx: 1, dy: 0 }, false, 1);
   const ehex = eg.projectiles.find(p => p.kind === 'hammerwave');
   const freshR = ehex.r, freshDps = ehex.dps;
+  check('a fresh hex ticks at its full-strength rate', freshDps === 4);
   ehex.ttl = ehex.life / 2;
   eg._stepProjectiles();
   check('a half-spent hex visibly shrinks', ehex.r < freshR && ehex.r > 8);
-  check('a shrunken hex still ticks at its original rate', ehex.dps === freshDps);
+  check('a shrunken hex ticks softer, right along with its size', ehex.dps < freshDps && ehex.dps > 1);
 
   ehex.ttl = 0.9 / 60;
   eg._stepProjectiles();
   check('a positive-energy hex remains as a tiny spark',
     eg.projectiles.some(p => p.eid === ehex.eid) && ehex.r < 16);
+  check('a nearly-spent hex ticks close to its minimum rate', ehex.dps > 1 && ehex.dps < 1.2);
   eg._stepProjectiles();
   check('a hex disappears only when its energy reaches zero',
     !eg.projectiles.some(p => p.eid === ehex.eid));

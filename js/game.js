@@ -673,6 +673,7 @@ const CAST_ROCKET_MIN = 0.3;         // charge needed for the down-cast rocket
 const CAST_ROCKET0 = 620, CAST_ROCKET1 = 1500;  // upward rocket speed vs charge
 const MANA_MAX = 100;
 const MANA_REGEN = 26;               // per second, always trickling back
+const HAMMER_MANA_REGEN_MULT = 0.5;  // the hammer's own fuel trickles back at half rate
 const MANA_COST = 35;                // mana at a standard (k=1) burst; scales with power
 // Boomerang weapon: the release hurls a returning blade along the 8-way aim.
 // Charge is range and bite. Only one rang can be out per fighter — catching
@@ -701,7 +702,9 @@ const SHIELD_CHG_DMG_TAKEN = 0.5;    // damage multiplier while the shield is ra
 const HAMMER_HEX_RADIUS0 = 36, HAMMER_HEX_RADIUS1 = 96;
 const HAMMER_HEX_RADIUS_MIN = 14;     // an empty hex expires as a (slightly larger) readable spark
 const HAMMER_HEX_DECAY_RATE = 0.5;    // hexes lose energy at half the normal rate — longer-lived gates
-const HAMMER_LAUNCH0 = 620, HAMMER_LAUNCH1 = 1460;
+// Slightly harder self-launch: casting a hammer attack throws the wielder
+// out through the hex it just planted.
+const HAMMER_LAUNCH0 = 680, HAMMER_LAUNCH1 = 1600;
 const HAMMER_HEX_LIFE0 = 2.2, HAMMER_HEX_LIFE1 = 4.8;
 const HAMMER_MANA_COST0 = 24, HAMMER_MANA_COST1 = 62;
 const HAMMER_CHAIN_WINDOW = .34;
@@ -711,7 +714,10 @@ const HAMMER_CHAIN_MAX = 4;
 // standing in it (never the caster) takes steady poison damage with no
 // knockback for as long as they overlap it; leaving the hitbox stops the
 // damage instantly, since it's a live per-tick check, not a lingering DoT.
-const HAMMER_HEX_DOT0 = 8, HAMMER_HEX_DOT1 = 22;   // touch damage per second vs charge
+// The rate itself isn't fixed at cast — it rides the same energy curve as
+// the radius, so a big fresh hex bites hardest and weakens right along with
+// its shrinking size.
+const HAMMER_HEX_DOT_MAX = 4, HAMMER_HEX_DOT_MIN = 1;   // touch damage/sec: full size -> decayed spark
 // The tick itself fires every frame (so leaving stops it instantly), but a
 // popup every frame would be an unreadable blur — batch the running total
 // into one floating number every HAMMER_HEX_POP_INTERVAL instead.
@@ -725,12 +731,15 @@ const HAMMER_HEX_POP_INTERVAL = 0.2;
 const WEAPON_FLOAT_DECAY = { hammer: 1.15, spear: 1.15, unarmed: 1.15 };
 
 // Hex energy is its remaining lifetime. Radius is the public energy gauge:
-// every gate shrinks continuously from its cast size to a tiny spark at zero.
+// every gate shrinks continuously from its cast size to a tiny spark at
+// zero. Touch damage rides that exact same energy curve, from HEX_DOT_MAX
+// while fresh down to HEX_DOT_MIN as it dwindles to nothing.
 function syncHammerHexRadius(hex) {
   const energy = clamp(hex.ttl / Math.max(hex.life || 0, TICK), 0, 1);
   hex.r = HAMMER_HEX_RADIUS_MIN
     + (clamp(hex.r0 || HAMMER_HEX_RADIUS_MIN, HAMMER_HEX_RADIUS_MIN, HAMMER_HEX_RADIUS1)
       - HAMMER_HEX_RADIUS_MIN) * energy;
+  hex.dps = HAMMER_HEX_DOT_MIN + (HAMMER_HEX_DOT_MAX - HAMMER_HEX_DOT_MIN) * energy;
 }
 // Charge no longer buys throw distance — every toss launches straight along
 // the exact 8-way aim (no added lift, so a side throw starts perfectly
@@ -1253,9 +1262,11 @@ export class Game {
     f.standT = Math.max(0, f.standT - TICK);
     // Mana refills fully on the ground and at half speed in the air. The
     // hammer shares that aerial trickle (it used to get none) so airborne
-    // hex casts aren't mana-starved.
+    // hex casts aren't mana-starved — but the hammer's own fuel line runs
+    // at half the normal rate on top of that, on the ground or in the air.
     const airRegen = 0.5;
-    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * (f.grounded ? 1 : airRegen) * TICK);
+    const weaponRegen = f.st.weapon === 'hammer' ? HAMMER_MANA_REGEN_MULT : 1;
+    f.mana = Math.min(MANA_MAX, f.mana + MANA_REGEN * weaponRegen * (f.grounded ? 1 : airRegen) * TICK);
     f.cds[0] = Math.max(0, f.cds[0] - TICK);
     f.cds[1] = Math.max(0, f.cds[1] - TICK);
     // regrowth: slowly knit back together — percent bleeds off in stock
@@ -1812,14 +1823,16 @@ export class Game {
     }
     f.mana -= cost;
     const life = HAMMER_HEX_LIFE0 + (HAMMER_HEX_LIFE1 - HAMMER_HEX_LIFE0) * charge;
-    // A one-shot cast: the hex's size, life, and touch damage are all fixed
-    // at throw time by the charge behind it. It just sits there and decays —
-    // there is no way to catch, feed, or otherwise maintain it afterward.
+    // A one-shot cast: the hex's size and life are fixed at throw time by
+    // the charge behind it. It just sits there and decays — there is no way
+    // to catch, feed, or otherwise maintain it afterward. Touch damage
+    // starts at full strength (fresh = full energy) and fades with its size
+    // from there — see syncHammerHexRadius, which keeps both in lockstep.
     this.projectiles.push({
       eid: nextEid++, kind: 'hammerwave', owner: f.id,
       x: f.x, y: f.y, vx: 0, vy: 0,
       r: radius, r0: radius, arm: 0, ttl: life, life,
-      dps: HAMMER_HEX_DOT0 + (HAMMER_HEX_DOT1 - HAMMER_HEX_DOT0) * charge,
+      dps: HAMMER_HEX_DOT_MAX,
     });
     const speed = HAMMER_LAUNCH0 + (HAMMER_LAUNCH1 - HAMMER_LAUNCH0) * charge;
     f.vx = nx * speed;
