@@ -1860,10 +1860,13 @@ export class Game {
   // Getting hit mid-charge knocks the bomb loose instead of just vanishing:
   // it drops right where the wielder stood, carrying whatever charge they'd
   // built up — same charge-scaled blast as a real throw, just no launch arc.
+  // Marked `dropped` so it can't be set off early by player contact (see the
+  // "projectiles vs fighters" skip in _resolveAttacks) — only its own fuse
+  // can trigger it, since it wasn't thrown at anyone.
   _dropBomb(f) {
     const k = clamp(f.stateT / this._chargeMax(f), 0, 1);
     this.projectiles.push({
-      eid: nextEid++, kind: 'bomb', owner: f.id,
+      eid: nextEid++, kind: 'bomb', owner: f.id, dropped: true,
       x: f.x, y: f.y, vx: 0, vy: 0, grav: BOMB_GRAVITY, ttl: BOMB_FUSE, bounce: 0,
       r: 13, bombR: BOMB_RADIUS0 + (BOMB_RADIUS1 - BOMB_RADIUS0) * k,
       dmg: BOMB_DMG0 + (BOMB_DMG1 - BOMB_DMG0) * k,
@@ -2418,6 +2421,11 @@ export class Game {
     // projectiles vs fighters
     for (const pr of this.projectiles) {
       if (pr.kind === 'anchor' || pr.arm > 0) continue;   // warnings are visible but harmless
+      // A bomb dropped by an interrupted charge is inert to players — no
+      // free contact detonation just because someone (often whoever landed
+      // the interrupting hit) is standing right where it fell. It still
+      // goes off on its own once the fuse runs out.
+      if (pr.kind === 'bomb' && pr.dropped) continue;
       // A lingering hammer hex never catches anyone. Anyone standing in it
       // (never its own caster) just takes steady poison damage with no
       // knockback for as long as the overlap lasts — a live per-tick check,

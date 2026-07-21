@@ -153,6 +153,19 @@ check('the dropped bomb sits right where the wielder stood, with no throw arc',
 const expectedR = 16 + (48 - 16) * 0.5;   // BOMB_RADIUS0 + (BOMB_RADIUS1 - BOMB_RADIUS0) * k
 check('the dropped bomb keeps the charge level it had reached', Math.abs(dropped.bombR - expectedR) < 0.01);
 check('getting hit still actually interrupts the charge', dropThrower.state === 'hitstun' && dropThrower.atk === null);
+check('a dropped bomb is flagged so player contact can\'t set it off', dropped.dropped === true);
+
+// A dropped bomb is inert to players — the attacker who caused the drop is
+// very likely standing right on top of it, and that shouldn't be a free hit.
+attacker.x = dropped.x; attacker.y = dropped.y; attacker.invuln = 0;
+dropGame._resolveAttacks();
+check('a dropped bomb does not detonate when a player touches it', dropped.ttl > 0 && !dropped.boomed);
+dropGame._stepProjectiles();
+check('a dropped bomb survives stepping too, still waiting on its fuse', dropped.ttl > 0 && !dropped.boomed);
+// It still goes off once its own fuse actually runs out.
+dropped.ttl = 0;
+dropGame._stepProjectiles();
+check('a dropped bomb still detonates once its fuse expires', dropped.boomed);
 
 console.log(`\n${n - fails}/${n} passed`);
 if (fails) process.exit(1);
