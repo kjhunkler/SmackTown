@@ -649,22 +649,6 @@ export class Renderer {
           ctx.strokeStyle = '#55e88d'; ctx.lineWidth = 7; ctx.stroke();
           ctx.strokeStyle = 'rgba(174,255,201,.65)'; ctx.lineWidth = 3;
           hex(r * .62); ctx.stroke();
-          // Launch-direction indicator: a bright, pulsing glow riding the rim
-          // toward where the pinned wielder is aimed to launch.
-          if (p.glow && (p.aimX || p.aimY)) {
-            const ga = Math.atan2(p.aimY, p.aimX);
-            ctx.save();
-            ctx.rotate(ga);
-            const flare = .7 + .3 * Math.sin(t * 16 + p.eid);
-            ctx.strokeStyle = `rgba(255,238,140,${flare.toFixed(2)})`;
-            ctx.lineWidth = 11; ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.arc(0, 0, r, -0.42, 0.42); ctx.stroke();
-            ctx.fillStyle = `rgba(255,246,190,${flare.toFixed(2)})`;
-            ctx.beginPath();
-            ctx.moveTo(r + 20, 0); ctx.lineTo(r - 12, -15); ctx.lineTo(r - 12, 15);
-            ctx.closePath(); ctx.fill();
-            ctx.restore();
-          }
         } else {
           ctx.strokeStyle = `rgba(72,226,132,${(.55 + .4 * pulse).toFixed(2)})`;
           ctx.lineWidth = 5; ctx.setLineDash([9, 6]); ctx.lineDashOffset = -t * 70;
