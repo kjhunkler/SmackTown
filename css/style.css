@@ -953,8 +953,8 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(159, 208, 255, .55) 78% 100%);
   box-shadow: 0 -8px 0 -1px rgba(159, 208, 255, .4);
 }
-.map-thumb-reactor { background: linear-gradient(#120616, #451f24); }
-.map-thumb-reactor::after { left: 6%; right: 6%; background: #2c2430; box-shadow: 0 -4px 6px rgba(94, 242, 192, .5); }
+.map-thumb-reactor { background: linear-gradient(#030a12, #123840); }
+.map-thumb-reactor::after { left: 6%; right: 6%; background: #232833; box-shadow: 0 -4px 6px rgba(94, 242, 192, .5); }
 /* catwalks and gantries climbing to the crane rail */
 .map-thumb-reactor::before {
   left: 6%; right: 6%; top: 12px;

@@ -145,12 +145,12 @@ const THEMES = {
     plat: '#3c415e', platTop: '#5c6488',
   },
   reactor: {
-    sky: ['#120616', '#2c1030', '#451f24'],
-    motif: 'forgesun',
-    stars: 0.15,
-    ambient: 'ashspark',
-    deck: '#2c2430', lip: '#463a4c', trim: '#5ef2c0',
-    plat: '#3a3040', platTop: '#57485e',
+    sky: ['#030a12', '#0a1e2c', '#123840'],
+    motif: 'cagedstar',
+    stars: 0.5,
+    ambient: 'ionspark',
+    deck: '#232833', lip: '#3c4454', trim: '#5ef2c0',
+    plat: '#2e3442', platTop: '#4a5468',
   },
   roots: {
     sky: ['#101c14', '#1c3324', '#3a4a20'],
@@ -1090,6 +1090,71 @@ export class Renderer {
         ctx.beginPath(); ctx.arc(mx, my, r * (0.16 - i * 0.05), 0, 7); ctx.fill();
       }
       ctx.globalAlpha = 1;
+    } else if (this.theme.motif === 'cagedstar') {
+      // caged star: a white-hot artificial sun seething inside slowly
+      // precessing magnetic containment rings, arcing against its cage
+      const sx = W * 0.7 - this.cam.x * 0.05 * this.dpr;
+      const sy = H * 0.3 - this.cam.y * 0.05 * this.dpr;
+      const R = r * 1.15;
+      const seethe = 1 + Math.sin(t * 2.3) * 0.04 + Math.sin(t * 5.1) * 0.02;
+      const halo = ctx.createRadialGradient(sx, sy, 0, sx, sy, R * 3.2 * seethe);
+      halo.addColorStop(0, 'rgba(190, 255, 235, .55)');
+      halo.addColorStop(0.3, 'rgba(94, 242, 192, .28)');
+      halo.addColorStop(1, 'rgba(94, 242, 192, 0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(sx - R * 3.2, sy - R * 3.2, R * 6.4, R * 6.4);
+      // three containment rings, each precessing at its own rate
+      const rings = [
+        { tilt: 0.5 + t * 0.05, squash: 0.34, rr: 1.9 },
+        { tilt: -0.9 + t * 0.037, squash: 0.3, rr: 1.62 },
+        { tilt: 0.15 - t * 0.043, squash: 0.42, rr: 2.18 },
+      ];
+      const ring = (rg, near) => {
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(rg.tilt);
+        ctx.strokeStyle = near ? 'rgba(205, 255, 238, .75)' : 'rgba(94, 242, 192, .26)';
+        ctx.lineWidth = R * (near ? 0.07 : 0.05);
+        ctx.beginPath();
+        // canvas y is down: 0..PI sweeps the lower (near) half of the ellipse
+        ctx.ellipse(0, 0, R * rg.rr, R * rg.rr * rg.squash, 0, near ? 0 : Math.PI, near ? Math.PI : Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      };
+      for (const rg of rings) ring(rg, false);         // far arcs behind the star
+      const core = ctx.createRadialGradient(sx - R * 0.15, sy - R * 0.15, 0, sx, sy, R * 0.75 * seethe);
+      core.addColorStop(0, '#ffffff');
+      core.addColorStop(0.55, '#bffff0');
+      core.addColorStop(1, '#3ee6b0');
+      ctx.fillStyle = core;
+      ctx.beginPath(); ctx.arc(sx, sy, R * 0.72 * seethe, 0, 7); ctx.fill();
+      for (const rg of rings) ring(rg, true);          // near arcs over the star
+      // plasma arcs: the star lashes out at a ring node now and then
+      for (let i = 0; i < rings.length; i++) {
+        if (Math.sin(t * (2.1 + i * 0.83) + i * 2.4) < 0.82) continue;
+        const rg = rings[i];
+        const a = t * (0.6 + i * 0.3) + i * 2.1;
+        const lx = Math.cos(a) * R * rg.rr, ly = Math.sin(a) * R * rg.rr * rg.squash;
+        const ex = sx + lx * Math.cos(rg.tilt) - ly * Math.sin(rg.tilt);
+        const ey = sy + lx * Math.sin(rg.tilt) + ly * Math.cos(rg.tilt);
+        const dx = ex - sx, dy = ey - sy, len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        ctx.strokeStyle = 'rgba(215, 255, 242, .85)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(sx + ux * R * 0.72, sy + uy * R * 0.72);
+        for (let s = 1; s <= 4; s++) {
+          const d = R * 0.72 + (len - R * 0.72) * (s / 4);
+          const jag = s === 4 ? 0 : Math.sin(t * 31 + i * 7 + s * 5) * R * 0.12;
+          ctx.lineTo(sx + ux * d - uy * jag, sy + uy * d + ux * jag);
+        }
+        ctx.stroke();
+        const spark = ctx.createRadialGradient(ex, ey, 0, ex, ey, R * 0.22);
+        spark.addColorStop(0, 'rgba(235, 255, 248, .9)');
+        spark.addColorStop(1, 'rgba(94, 242, 192, 0)');
+        ctx.fillStyle = spark;
+        ctx.fillRect(ex - R * 0.22, ey - R * 0.22, R * 0.44, R * 0.44);
+      }
     } else if (this.theme.motif === 'moon') {
       ctx.fillStyle = '#e8ecff';
       ctx.globalAlpha = 0.9;
@@ -3950,6 +4015,33 @@ export class Renderer {
         ctx.globalAlpha = (1 - k) * (e.soot ? 0.45 : 0.9) * Math.max(0.2, glow);
         ctx.fillStyle = e.soot ? '#6d6068' : (glow > 0.75 ? '#ffd23e' : '#ff8a2e');
         ctx.fillRect(x, e.y, e.r + (e.soot ? 0 : glow), e.r + (e.soot ? 0 : glow));
+      }
+      ctx.globalAlpha = 1;
+      this.ambient = this.ambient.filter(e => e.t < e.life);
+      return;
+    }
+    if (this.theme.ambient === 'ionspark') {
+      // charged motes shed by the caged star, flickering teal as they rise
+      while (this.ambient.length < 34) {
+        this.ambient.push({
+          x: this.cam.x + (Math.random() - 0.5) * 2200,
+          y: this.cam.y + 380 + Math.random() * 300,
+          vy: -(40 + Math.random() * 70),
+          sway: 10 + Math.random() * 22, ph: Math.random() * 7,
+          life: 4 + Math.random() * 4, t: 0, r: 2.2,
+        });
+      }
+      for (const e of this.ambient) {
+        e.t += dt;
+        e.y += e.vy * dt;
+        e.vy *= 1 - dt * 0.2;                      // motes ease off as they climb
+        const k = e.t / e.life;
+        if (k >= 1) continue;
+        const x = e.x + Math.sin(t * 1.3 + e.ph) * e.sway;
+        const glow = 0.5 + 0.5 * Math.sin(t * 7 + e.ph);
+        ctx.globalAlpha = (1 - k) * 0.85 * Math.max(0.25, glow);
+        ctx.fillStyle = glow > 0.7 ? '#bfffe8' : '#5ef2c0';
+        ctx.fillRect(x, e.y, e.r + glow, e.r + glow);
       }
       ctx.globalAlpha = 1;
       this.ambient = this.ambient.filter(e => e.t < e.life);
