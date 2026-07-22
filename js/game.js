@@ -217,6 +217,121 @@ export const MAPS = {
     spawns: [ -335, 335, -118, 118 ],
     respawnY: -290,
   },
+  // Cherry-blossom hilltop shrine, small. Stone steps flank a raised
+  // shrine roof over center: either step is a clean single jump off the
+  // courtyard, and the roof is a single jump up from either step.
+  shrine: {
+    name: 'Sakura Shrine',
+    size: 'small',
+    main: { x: -310, y: 0, w: 620, h: 46 },              // shrine courtyard
+    plats: [
+      { x: -280, y: -130, w: 140 },                      // west stone step
+      { x: 140,  y: -130, w: 140 },                      // east stone step
+      { x: -85,  y: -260, w: 170 },                      // shrine roof ridge
+    ],
+    blast: { l: -1130, r: 1130, t: -980, b: 500 },
+    spawns: [ -220, 220, -70, 70 ],
+    respawnY: -350,
+  },
+  // Pirate ship at anchor under a cold moon, small. Fore- and sterncastle
+  // hang off each lip of the main deck; the crow's nest sways on the mast
+  // over center, a single jump up from either castle.
+  galleon: {
+    name: 'Corsair Galleon',
+    size: 'small',
+    main: { x: -290, y: 0, w: 580, h: 46 },              // main deck
+    plats: [
+      { x: -420, y: -140, w: 150 },                      // forecastle (west lip)
+      { x: 270,  y: -140, w: 150 },                      // sterncastle (east lip)
+      // crow's nest: sways gently with the ship's roll
+      { x: -75,  y: -280, w: 150, move: { dx: 60, period: 7 } },
+    ],
+    blast: { l: -1120, r: 1120, t: -1000, b: 500 },
+    spawns: [ -200, 200, -60, 60 ],
+    respawnY: -360,
+  },
+  // Mountaintop observatory under a wheeling night sky, small. Two dome
+  // ledges are a clean single jump off the terrace, the telescope beam
+  // bridges them overhead, and a counterweight rides its cable off the
+  // west lip.
+  observatory: {
+    name: 'Star Observatory',
+    size: 'small',
+    main: { x: -330, y: 0, w: 660, h: 46 },              // observatory terrace
+    plats: [
+      { x: -260, y: -135, w: 150 },                      // west dome ledge
+      { x: 110,  y: -135, w: 150 },                      // east dome ledge
+      { x: -80,  y: -265, w: 160 },                      // telescope beam
+      // counterweight: rides its hoist cable off the west lip
+      { x: -470, y: -190, w: 110, move: { dy: 120, period: 8 } },
+    ],
+    blast: { l: -1140, r: 1140, t: -1020, b: 500 },
+    spawns: [ -230, 230, -70, 70 ],
+    respawnY: -370,
+  },
+  // Rain-lashed mountain fortress, large. West/east ramparts reach their
+  // watchtowers (clean single jumps), both towers reach the keep bridge at
+  // the apex, and a siege hoist bobs low over center — double jump only
+  // straight off the ground, like frostspire's floe.
+  citadel: {
+    name: 'Storm Citadel',
+    size: 'large',
+    main: { x: -820, y: 0, w: 1640, h: 46 },             // fortress courtyard
+    plats: [
+      { x: -740, y: -140, w: 300 },                      // west rampart
+      { x: 440,  y: -140, w: 300 },                      // east rampart
+      { x: -540, y: -280, w: 200 },                       // west watchtower
+      { x: 340,  y: -280, w: 200 },                       // east watchtower
+      // siege hoist: a chained platform winched up and down over center
+      { x: -80,  y: -250, w: 160, move: { dy: 70, period: 9 } },
+      { x: -210, y: -420, w: 420 },                       // keep bridge
+    ],
+    blast: { l: -1580, r: 1580, t: -1220, b: 520 },
+    spawns: [ -600, 600, -200, 200 ],
+    respawnY: -400,
+  },
+  // Humming fusion plant, large. West/east catwalks reach their gantries
+  // (clean single jumps), both gantries reach the crane rail at the apex,
+  // and a maintenance drone slides its pallet across center low — double
+  // jump only straight off the floor.
+  reactor: {
+    name: 'Fusion Core',
+    size: 'large',
+    main: { x: -780, y: 0, w: 1560, h: 46 },             // reactor hall floor
+    plats: [
+      { x: -700, y: -150, w: 280 },                      // west catwalk
+      { x: 420,  y: -150, w: 280 },                      // east catwalk
+      { x: -480, y: -290, w: 190 },                       // west gantry
+      { x: 290,  y: -290, w: 190 },                       // east gantry
+      // maintenance drone: ferries its pallet back and forth over the core
+      { x: -80,  y: -240, w: 160, move: { dx: 260, period: 10 } },
+      { x: -200, y: -430, w: 400 },                       // crane rail
+    ],
+    blast: { l: -1520, r: 1520, t: -1220, b: 520 },
+    spawns: [ -560, 560, -190, 190 ],
+    respawnY: -390,
+  },
+  // The roots of a world-tree, large. West/east root shelves reach their
+  // boughs (clean single jumps), both boughs reach the canopy bridge at
+  // the apex, and a hanging vine platform bobs low over center — double
+  // jump only straight off the loam.
+  roots: {
+    name: 'World Tree Roots',
+    size: 'large',
+    main: { x: -850, y: 0, w: 1700, h: 46 },             // tangled root floor
+    plats: [
+      { x: -770, y: -145, w: 320 },                      // west root shelf
+      { x: 450,  y: -145, w: 320 },                      // east root shelf
+      { x: -520, y: -285, w: 210 },                       // west bough
+      { x: 310,  y: -285, w: 210 },                       // east bough
+      // vine swing: a woven platform bobbing on its creeper
+      { x: -75,  y: -245, w: 150, move: { dy: 75, period: 11 } },
+      { x: -220, y: -425, w: 440 },                       // canopy bridge
+    ],
+    blast: { l: -1620, r: 1620, t: -1230, b: 530 },
+    spawns: [ -620, 620, -210, 210 ],
+    respawnY: -400,
+  },
   training: {
     name: 'Training Room',
     hidden: true,                     // never in the vote grid or random rotation

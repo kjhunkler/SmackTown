@@ -631,8 +631,9 @@ export function renderLobby(net, onVote = null, fightOn = false) {
   grid.innerHTML = '';
   const active = roster.filter(m => m.status !== 'gone');
   const myVote = net.members.get(net.myId)?.vote || null;
-  for (const [id, map] of Object.entries(MAPS)) {
-    if (map.hidden) continue;               // training room isn't votable
+  // grouped small → medium → large so the long list stays scannable
+  for (const id of MAP_SIZES.flatMap(mapsOfSize)) {
+    const map = MAPS[id];
     const votes = active.filter(m => m.vote === id).length;
     const card = document.createElement('button');
     card.className = 'map-card' + (myVote === id ? ' voted' : '');

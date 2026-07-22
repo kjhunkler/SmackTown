@@ -912,6 +912,69 @@ input[type=text]:focus { border-color: var(--accent); }
     rgba(255, 184, 74, .55) 44% 56%, transparent 56% 74%,
     rgba(255, 184, 74, .55) 74% 100%);
 }
+.map-thumb-shrine { background: linear-gradient(#2c1030, #e88aa0); }
+.map-thumb-shrine::after { left: 22%; right: 22%; background: #ff9ec0; }
+/* two stone steps with the shrine roof hinted above */
+.map-thumb-shrine::before {
+  left: 22%; right: 22%; top: 15px;
+  background: linear-gradient(90deg,
+    rgba(255, 214, 230, .7) 0 30%, transparent 30% 70%,
+    rgba(255, 214, 230, .7) 70% 100%);
+  box-shadow: 0 -7px 0 -1px rgba(255, 214, 230, .55);
+}
+.map-thumb-galleon { background: linear-gradient(#081020, #1c3a4a); }
+.map-thumb-galleon::after { left: 24%; right: 24%; background: #6a4a30; }
+/* fore/sterncastle off each lip, crow's nest hinted above */
+.map-thumb-galleon::before {
+  left: 12%; right: 12%; top: 15px;
+  background: linear-gradient(90deg,
+    rgba(255, 208, 106, .6) 0 24%, transparent 24% 76%,
+    rgba(255, 208, 106, .6) 76% 100%);
+  box-shadow: 0 -7px 0 -1px rgba(255, 208, 106, .5);
+}
+.map-thumb-observatory { background: linear-gradient(#0a0a24, #241a4a); }
+.map-thumb-observatory::after { left: 20%; right: 20%; background: #3e4472; box-shadow: 0 0 6px #b48aff; }
+/* two dome ledges with the telescope beam hinted above */
+.map-thumb-observatory::before {
+  left: 20%; right: 20%; top: 15px;
+  background: linear-gradient(90deg,
+    rgba(180, 138, 255, .65) 0 32%, transparent 32% 68%,
+    rgba(180, 138, 255, .65) 68% 100%);
+  box-shadow: 0 -7px 0 -1px rgba(180, 138, 255, .5);
+}
+.map-thumb-citadel { background: linear-gradient(#0b0d1c, #2c3050); }
+.map-thumb-citadel::after { left: 6%; right: 6%; background: #4a4f6e; }
+/* ramparts and towers climbing to the keep bridge */
+.map-thumb-citadel::before {
+  left: 6%; right: 6%; top: 12px;
+  background: linear-gradient(90deg,
+    rgba(159, 208, 255, .55) 0 22%, transparent 22% 40%,
+    rgba(159, 208, 255, .55) 40% 60%, transparent 60% 78%,
+    rgba(159, 208, 255, .55) 78% 100%);
+  box-shadow: 0 -8px 0 -1px rgba(159, 208, 255, .4);
+}
+.map-thumb-reactor { background: linear-gradient(#120616, #451f24); }
+.map-thumb-reactor::after { left: 6%; right: 6%; background: #2c2430; box-shadow: 0 -4px 6px rgba(94, 242, 192, .5); }
+/* catwalks and gantries climbing to the crane rail */
+.map-thumb-reactor::before {
+  left: 6%; right: 6%; top: 12px;
+  background: linear-gradient(90deg,
+    rgba(94, 242, 192, .55) 0 22%, transparent 22% 40%,
+    rgba(94, 242, 192, .55) 40% 60%, transparent 60% 78%,
+    rgba(94, 242, 192, .55) 78% 100%);
+  box-shadow: 0 -8px 0 -1px rgba(94, 242, 192, .4);
+}
+.map-thumb-roots { background: linear-gradient(#101c14, #3a4a20); }
+.map-thumb-roots::after { left: 5%; right: 5%; background: #57462f; }
+/* root shelves and boughs climbing to the canopy bridge */
+.map-thumb-roots::before {
+  left: 6%; right: 6%; top: 12px;
+  background: linear-gradient(90deg,
+    rgba(143, 227, 122, .55) 0 22%, transparent 22% 40%,
+    rgba(143, 227, 122, .55) 40% 60%, transparent 60% 78%,
+    rgba(143, 227, 122, .55) 78% 100%);
+  box-shadow: 0 -8px 0 -1px rgba(143, 227, 122, .4);
+}
 .map-thumb-garden { background: linear-gradient(#3c2b5c, #14251a); }
 .map-thumb-garden::after { left: 10%; right: 10%; background: #5fae4e; }
 /* log bridge centered, two flower pads at the edges */
