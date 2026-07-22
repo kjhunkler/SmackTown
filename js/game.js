@@ -470,8 +470,8 @@ const JUMP_V = 860, JUMP2_V = 780;
 // time — never in hitstun, so launch knockback keeps its exact physics.
 const JUMP_CUT = 0.45;               // fraction of the remaining rise kept on release
 const JUMP_CUT_GRACE = 0.08;         // liftoff seconds before a release can cut
-const APEX_GRAV = 0.55;              // gravity multiplier through the apex band (eased further for more hang time)
-const APEX_BAND = 190;               // |vy| below this counts as the apex (widened for more hang time)
+const APEX_GRAV = 0.62;              // gravity multiplier through the apex band (nudged back up — hang time trimmed slightly)
+const APEX_BAND = 165;               // |vy| below this counts as the apex (narrowed slightly — less hang time)
 const JUMP_FF_LOCK = 0.1;            // brief window after a jump before fast fall can trigger
 const SPIKE_BOUNCE = 640;            // attacker's upward spring off a landed spike
 const AIR_RISE_CD = 1.1;             // min seconds between aerial up-smash lifts
