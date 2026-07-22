@@ -631,7 +631,20 @@ export function renderLobby(net, onVote = null, fightOn = false) {
   grid.innerHTML = '';
   const active = roster.filter(m => m.status !== 'gone');
   const myVote = net.members.get(net.myId)?.vote || null;
-  // grouped small → medium → large so the long list stays scannable
+  // size cards first: back a whole size class and let fate pick the arena
+  for (const size of MAP_SIZES) {
+    const votes = active.filter(m => m.vote === size).length;
+    const card = document.createElement('button');
+    card.className = 'map-card size-card' + (myVote === size ? ' voted' : '');
+    card.innerHTML = `
+      <span class="map-thumb size-thumb size-thumb-${size}"></span>
+      <span class="map-name">Any ${size[0].toUpperCase()}${size.slice(1)}</span>
+      <span class="map-votes${votes ? '' : ' none'}">${votes ? '🗳️ ' + votes : mapsOfSize(size).length + ' maps'}</span>`;
+    card.addEventListener('click', () => onVote?.(size));
+    grid.appendChild(card);
+  }
+
+  // then individual maps, grouped small → medium → large
   for (const id of MAP_SIZES.flatMap(mapsOfSize)) {
     const map = MAPS[id];
     const votes = active.filter(m => m.vote === id).length;
@@ -642,19 +655,6 @@ export function renderLobby(net, onVote = null, fightOn = false) {
       <span class="map-name">${esc(map.name)}</span>
       <span class="map-votes${votes ? '' : ' none'}">${votes ? '🗳️ ' + votes : '—'}</span>`;
     card.addEventListener('click', () => onVote?.(id));
-    grid.appendChild(card);
-  }
-
-  // size cards: back a whole size class and let fate pick the arena
-  for (const size of MAP_SIZES) {
-    const votes = active.filter(m => m.vote === size).length;
-    const card = document.createElement('button');
-    card.className = 'map-card size-card' + (myVote === size ? ' voted' : '');
-    card.innerHTML = `
-      <span class="map-thumb size-thumb size-thumb-${size}"></span>
-      <span class="map-name">Any ${size[0].toUpperCase()}${size.slice(1)}</span>
-      <span class="map-votes${votes ? '' : ' none'}">${votes ? '🗳️ ' + votes : mapsOfSize(size).length + ' maps'}</span>`;
-    card.addEventListener('click', () => onVote?.(size));
     grid.appendChild(card);
   }
 
