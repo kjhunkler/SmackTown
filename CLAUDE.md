@@ -24,6 +24,5 @@
   host-authoritative sim shared by host, client prediction, and host
   handoff — sim behavior must stay a pure function of inputs + seed, and
   gameplay changes belong there, never in the renderer.
-- Builds/credits: `sanitizeBuild` caps at the PvP purse (1000) by default;
-  co-op expedition contexts must pass `MAX_BUILD_COST` instead. Expedition
-  CR is a spend-on-buy wallet enforced host-side in `Game.updateBuild`.
+- Builds/credits: battle and co-op expedition player builds share the 1000-CR
+  `sanitizeBuild` cap. Expedition CR is score only; kits survive death.

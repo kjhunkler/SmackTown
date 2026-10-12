@@ -86,15 +86,18 @@
       </div>
     </header>
     <div class="builder-scroll">
-      <p class="expedition-note">🌌 Expedition run — spend the credits you’ve earned. Your saved character is untouched.</p>
+      <p class="expedition-note">🌌 Expedition run — choose any build up to 1000 CR. Your saved character is untouched.</p>
       <div class="builder-profile-only">
       <h3 class="section-title">Fighter Name <span class="hint">how the town knows you</span></h3>
       <input id="builder-name" type="text" maxlength="14" autocomplete="off"
              placeholder="e.g. KnuckleDuke" spellcheck="false">
       <p id="builder-name-error" class="error hidden"></p>
 
+      </div>
+
       <h3 class="section-title">Saved Builds <span class="hint">stash setups by nickname, tap to load</span></h3>
       <div id="builder-loadouts" class="loadout-list"></div>
+      <div class="builder-profile-only">
       <div class="loadout-save-row">
         <input id="loadout-name" type="text" maxlength="16" placeholder="Nickname this build"
                autocomplete="off" spellcheck="false">
@@ -225,27 +228,10 @@
     <button id="ability-btn-1" class="ability-btn hidden"><span class="ab-icon"></span><svg viewBox="0 0 40 40"><circle class="cd-ring" cx="20" cy="20" r="18"/></svg></button>
   </div>
   <div id="game-toast" class="hidden"></div>
-  <div id="game-credits" class="hidden">💰 <span id="game-credits-val">0</span> cr</div>
+  <div id="game-credits" class="hidden">💰 <span id="game-credits-val">0</span> cr earned</div>
   <div id="game-expedition" class="hidden"><b id="expedition-biome">The Long Road</b><span id="expedition-progress"></span></div>
-  <div id="loot-hud" class="hidden">
-    <button id="loot-box-btn" aria-label="Open a loot box">🎁<b id="loot-count" class="hidden">0</b></button>
-    <div id="loot-bar"><div id="loot-fill"></div></div>
-  </div>
   <button id="game-quit" class="btn tiny ghost">✕</button>
   <button id="game-edit" class="btn tiny ghost hidden" aria-label="Edit your fighter">✏️</button>
-  <div id="loot-overlay" class="hidden">
-    <div class="loot-stage">
-      <h3 id="loot-title">Loot Box!</h3>
-      <button id="loot-chest" aria-label="Open the box">🎁</button>
-      <p id="loot-hint">Tap the box!</p>
-      <div id="loot-cards"></div>
-      <div id="loot-actions" class="hidden">
-        <button id="loot-again" class="btn ghost hidden">🎁 Open Another</button>
-        <button id="loot-equip" class="btn ghost">✏️ Equip Now</button>
-        <button id="loot-done" class="btn primary">Keep Fighting</button>
-      </div>
-    </div>
-  </div>
   <div id="game-help" class="hidden">
     <div class="help-card">
       <h3>How to fight</h3>

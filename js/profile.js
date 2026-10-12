@@ -73,7 +73,7 @@ export const WEAPONS = [
 export const DEFAULT_WEAPON = 'unarmed';
 
 // Abilities and augments can carry a `pveDesc` where the effect differs in
-// expeditions; the shop and loot cards show whichever matches the mode.
+// expeditions; the shop show whichever matches the mode.
 export const AUGMENTS = [
   { id: 'vampiric',    icon: '🩸', name: 'Vampiric',     cost: 170,
     desc: 'Heal 12% of the damage you deal',
@@ -121,11 +121,8 @@ export const AUGMENTS = [
 export const MAX_ABILITIES = 2;
 export const MAX_AUGMENTS = 5;
 
-// The priciest a fully-legal build can ever cost (every stat maxed, dearest
-// weapon, the dearest abilities & augments a build can carry). Co-op
-// expeditions cap spending
-// at accumulated credits instead of the 1000 PvP budget, so their builds are
-// validated against this structural ceiling rather than the standard purse.
+// Structural ceiling used for derived stats and simulation fixtures.
+// Player builds in both battle and expedition use TOTAL_CREDITS.
 export const MAX_BUILD_COST = (() => {
   let c = 0;
   for (const s of STATS) c += s.max * s.cost;
@@ -244,10 +241,7 @@ export function buildCost(build) {
   return total;
 }
 
-// Clamp/repair an incoming build (also used by the host to validate remote
-// players so nobody joins with an over-budget build). The cap defaults to the
-// PvP purse; co-op expeditions pass MAX_BUILD_COST so bigger, earned builds
-// survive (their real limit is enforced against accumulated credits elsewhere).
+// Clamp/repair incoming builds. Battle and expedition players share this cap.
 export function sanitizeBuild(raw, cap = TOTAL_CREDITS) {
   const b = emptyBuild();
   if (raw && typeof raw === 'object') {
@@ -325,11 +319,8 @@ export function validName(name) {
   return n.length >= 2 && n.length <= 14 && /^[\w \-'!.]+$/.test(n);
 }
 
-// Derived combat stats used by the sim (must match on host & clients).
-// Sanitized against the structural ceiling, not the PvP purse: budget
-// enforcement happens where builds enter (host validation, workshop save),
-// and expedition run builds legitimately cost more than 1000 cr — capping
-// here used to silently strip such fighters to an empty kit.
+// Combat math accepts structurally legal builds; player entry and swaps
+// enforce the fixed purse before reaching this function.
 export function derivedStats(build) {
   const b = sanitizeBuild(build, MAX_BUILD_COST);
   const has = id => b.augments.includes(id);

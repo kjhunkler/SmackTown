@@ -4,12 +4,11 @@ import {
   loadProfile, saveProfile, validName, COLORS, emptyBuild, sanitizeBuild, saveLoadout, sanitizeHat,
   loadHats, hatArt, saveHat, deleteHat, loadLoadouts, selectedLoadout, selectLoadout,
   seedDefaultCharacters, restoreDefaultCharacters,
-  HAT_CHARS, HAT_PALETTE, buildCost, earnedCredits, MAX_BUILD_COST,
-  WEAPONS, ABILITIES, AUGMENTS, DEFAULT_WEAPON,
+  HAT_CHARS, HAT_PALETTE, buildCost, earnedCredits, TOTAL_CREDITS,
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, LOOT_CR_BONUS, EXPEDITION_ACTS } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -62,7 +61,7 @@ const BTN_SFX = {
   'hat-save': 'save', 'hat-dup': 'save',
   'login-go': 'ready',
 };
-const BTN_SILENT = new Set(['ability-btn-0', 'ability-btn-1', 'lobby-ready', 'lobby-start', 'loot-chest']);
+const BTN_SILENT = new Set(['ability-btn-0', 'ability-btn-1', 'lobby-ready', 'lobby-start']);
 document.addEventListener('click', e => {
   const b = e.target.closest(
     'button, [role="button"], .color-swatch, .loadout-chip, .shop-item, .map-card, .stat-pips');
@@ -317,9 +316,7 @@ let builderReturn = 'menu';        // 'menu' | 'lobby' | 'game' — where Save g
 function openBuilder(firstRun = false, returnTo = 'menu') {
   builderFirstRun = firstRun;
   builderReturn = returnTo;
-  // In a co-op expedition the workshop edits your run build against earned
-  // credits — your saved character (and its 1000-cr purse) is left untouched.
-  // 'game' returns re-enter the run directly (mid-run ✏️ edits, loot equips).
+  // Expedition retunes use the same fixed purse as saved battle builds.
   const pve = (returnTo === 'lobby' || returnTo === 'game') &&
     !!session && !session.ended && session.coop;
   builderWork = {
@@ -327,11 +324,6 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
     build: JSON.parse(JSON.stringify(pve ? session.myRunBuild() : profile.build)),
     hatId: profile.hatId,
     pve,
-    // Loot-box gating: gear outside this set renders sealed in the shop.
-    unlocked: pve ? session.loot.unlocked : null,
-    // Wallet plus the sell-back value of the current kit: swapping pieces
-    // one-for-one stays budget-neutral in the shop's math.
-    budget: pve ? session.myCredits() + buildCost(session.myRunBuild()) : undefined,
   };
   $('#screen-builder').classList.toggle('pve', pve);
   $('#builder-name').value = profile.name;
@@ -362,12 +354,12 @@ $('#loadout-save').addEventListener('click', () => {
 });
 
 $('#builder-save').addEventListener('click', () => {
-  // Co-op run build: apply to my fighter against earned credits, then straight
+  // Co-op run build: apply to my fighter within the 1000-CR cap, then straight
   // back to the lobby. Never persisted to my profile or saved characters.
   if (builderWork.pve) {
     if (!session || session.ended) { UI.showScreen('menu'); return; }
     if (!session.applyRunBuild(builderWork.build)) {
-      UI.banner('That build costs more than you’ve earned!', 'bad');
+      UI.banner('Builds are capped at 1000 CR!', 'bad');
       return;
     }
     if (builderReturn === 'game') {
@@ -806,12 +798,11 @@ $('#menu-pve').addEventListener('click', () => {
 });
 
 function startExpedition() {
-  // Expeditions start from scratch: a stock fighter with 0 credits, earned and
-  // spent over the run. Your saved character supplies only name/color/hat.
+  // Enter with the selected saved fighter, under the normal battle budget.
   const players = [
     {
       id: net.myId, pid: profile.pid || null, name: profile.name, color: profile.color,
-      build: emptyBuild(), hat: sanitizeHat(profile.hat),
+      build: sanitizeBuild(profile.build), hat: sanitizeHat(profile.hat),
     },
   ];
   const seed = (Math.random() * 1e9) | 0;
@@ -893,10 +884,7 @@ function enterRoom(joinCode) {
     // A player walked in while a fight is running: as host, drop them into
     // the live game and re-broadcast the player list so everyone syncs up.
     if (!session || session.ended || !net.isHost || session.mode === 'solo') return;
-    // Co-op newcomers start stock with 0 credits, same as everyone did — only
-    // a returning player (matched by pid in addPlayer) keeps their run build.
-    const coop = !!MAPS[session.map]?.coop;
-    const build = coop ? emptyBuild() : sanitizeBuild(rec.build);
+    const build = sanitizeBuild(rec.build);
     session.addPlayer({ id: rec.peerId, pid: rec.pid || null, name: rec.name, color: rec.color, build, hat: sanitizeHat(rec.hat) });
     session.broadcastPlayers();
     UI.banner(`${rec.name} joined the fight!`, 'good');
@@ -909,15 +897,14 @@ function enterRoom(joinCode) {
   net.on('game:start', (msg, pid) => {
     if (pid !== net.hostId) return;
     const map = MAPS[msg.map] ? msg.map : DEFAULT_MAP;
-    const cap = MAPS[map]?.coop ? MAX_BUILD_COST : undefined;
-    const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build, cap), hat: sanitizeHat(p.hat) }));
+
+    const players = msg.players.map(p => ({ ...p, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) }));
     if (session) { session.syncPlayers(players, map, msg.trying || null); return; }  // mid-game roster update
     startSession({ mode: 'client', myId: net.myId, players, seed: msg.seed, map });
   });
   net.on('game:input', (msg, pid) => session?.onRemoteInput(pid, msg.inp, msg.seq));
   net.on('game:snap', (msg, pid) => session?.onSnapshot(msg.s, pid));
   net.on('game:park', (msg, pid) => session?.onPark(pid, msg.on));
-  net.on('game:lootbonus', (msg, pid) => session?.onLootBonus(pid, msg.kind));
   net.on('game:try', (msg, pid) => session?.onTry(pid, msg.target));
   net.on('game:try-self', (msg, pid) => session?.onTrySelf(pid));
 
@@ -1158,17 +1145,6 @@ class PerfStats {
   stop() { this.observer?.disconnect(); }
 }
 
-// One-time loot cards: consumed on pick, applied to the live fighter via the
-// host. Dealt at LOOT_BONUS_CHANCE per card slot from the very first box, and
-// the only stock left once every piece of gear has been unlocked.
-const LOOT_BONUS_CHANCE = 0.18;
-const LOOT_BONUS_CARDS = [
-  { id: 'bonus-heal', type: 'bonus', bonus: 'heal', icon: '💖', name: 'Patch Up',
-    desc: 'Instantly heal half your max HP' },
-  { id: 'bonus-cr', type: 'bonus', bonus: 'cr', icon: '💰', name: 'Windfall',
-    desc: `Pocket ${LOOT_CR_BONUS} CR on the spot` },
-];
-
 class Session {
   constructor({ mode, myId, players, seed = 1, map = DEFAULT_MAP }) {
     this.mode = mode;               // 'solo' | 'host' | 'client'
@@ -1196,11 +1172,6 @@ class Session {
     this.pendActs = {};             // client: actions waiting for a sim tick
     this.acks = new Map();          // host: last input seq processed per client
     this.trying = new Map();        // player id -> {targetId, build, hat} until next life
-    // Expedition loot: filling the credit bar banks a box; boxes stack
-    // unopened. Cracking one deals three cards (locked gear + one-time
-    // bonuses) and the player keeps exactly one. `unlocked` seeds lazily
-    // from my run build so a rejoin keeps its kit.
-    this.loot = { unlocked: null, progress: 0, boxes: 0, boxesEarned: 0, seenCr: null };
     this.running = false;
     this.ended = false;
     this.raf = 0;
@@ -1218,9 +1189,7 @@ class Session {
     this.buildHud();
     $('#game-credits').classList.toggle('hidden', !this.coop);
     $('#game-edit').classList.toggle('hidden', !this.coop);
-    $('#loot-hud').classList.toggle('hidden', !this.coop);
-    $('#loot-overlay').classList.add('hidden');
-    UI.setupAbilityButtons(sanitizeBuild(me.build, this.coop ? MAX_BUILD_COST : undefined).abilities);
+    UI.setupAbilityButtons(sanitizeBuild(me.build).abilities);
     touch.setEnabled(true);
     this.running = true;
     this.lastT = performance.now();
@@ -1266,14 +1235,13 @@ class Session {
     const p = this.meta.get(pid);
     p.name = m.name;
     p.color = m.color;
-    const b = sanitizeBuild(m.build, this.coop ? MAX_BUILD_COST : undefined);
-    // The sim settles the swap against the fighter's CR wallet and may refuse
-    // it (host is authoritative); only an accepted swap sticks to the roster.
+    const b = sanitizeBuild(m.build);
+    // The host validates live swaps against the normal battle budget.
     const applied = this.game ? !!this.game.updateBuild(pid, b) : true;
     if (applied) p.build = b;
     p.hat = sanitizeHat(m.hat);
     this.trying.delete(pid);
-    this.pred?.updateBuild(pid, p.build, false);
+    this.pred?.updateBuild(pid, p.build);
     if (pid === this.myId) UI.setupAbilityButtons(p.build.abilities);
     // host: re-broadcast the roster so clients repaint colors/hats/builds
     if (this.mode === 'host' && net) this.broadcastPlayers();
@@ -1300,8 +1268,7 @@ class Session {
   buildHud() {
     UI.buildHud(this.players, {
       myId: this.myId,
-      // no Try in co-op: expedition builds are bought with run CR, and
-      // borrowing someone's kit would walk straight around the wallet
+      // Expedition players use their own selected kit.
       onTry: this.coop ? null : id => this.requestTry(id),
       onTrySelf: this.coop ? null : () => this.requestTrySelf(),
       tryingId: this.trying.get(this.myId)?.targetId || null,
@@ -1368,117 +1335,15 @@ class Session {
     return rows ? this.rowsToFighters(rows).find(f => f.id === this.myId) : null;
   }
 
-  // Credits earned so far this run, straight from my authoritative score.
-  myCredits() { return earnedCredits(this.myFighter()?.score); }
+  // Retunes and saved loadouts share the fixed battle purse; score CR is
+  // a run statistic, never additional purchasing power.
+  myRunBuild() { return sanitizeBuild(this.meta.get(this.myId)?.build); }
 
-  // The build I'm currently running (my in-session loadout, not my profile).
-  myRunBuild() { return sanitizeBuild(this.meta.get(this.myId)?.build, MAX_BUILD_COST); }
-
-  // Re-tune my run character in the workshop. Swaps settle against the CR
-  // wallet — only the upgrade delta over the current kit's value must be
-  // affordable; otherwise it broadcasts and my fighter adopts it live.
   applyRunBuild(build) {
-    const b = sanitizeBuild(build, MAX_BUILD_COST);
-    if (buildCost(b) - buildCost(this.myRunBuild()) > this.myCredits()) return false;
-    net?.updateProfile({ ...profile, build: b });   // fans out via profile-changed → onProfileChanged
+    if (buildCost(build) > TOTAL_CREDITS) return false;
+    const b = sanitizeBuild(build);
+    net?.updateProfile({ ...profile, build: b });
     return true;
-  }
-
-  // ----- loot boxes: expedition gear unlocks & one-time bonuses -----
-
-  // Gear the run hasn't unlocked yet. Base stats are never gated.
-  lootLocked() {
-    const u = this.loot.unlocked;
-    const pool = [];
-    for (const list of [WEAPONS, ABILITIES, AUGMENTS])
-      for (const it of list) if (!u || !u.has(it.id)) pool.push(it.id);
-    return pool;
-  }
-
-  // Box pricing: the first three come cheap to hook the run, then each one
-  // costs ~35% more than the last, climbing toward a 1000 CR ceiling.
-  lootNeed() {
-    const n = this.loot.boxesEarned;
-    if (n < 3) return 30;
-    return Math.min(1000, Math.round(30 * Math.pow(1.35, n - 2)));
-  }
-
-  // Per-frame: bank credit gains into the progress bar, mint boxes when it
-  // fills (they stack), and repaint the HUD only when something changed.
-  // Boxes never run dry — once all gear is unlocked they deal bonus cards.
-  lootFrame(cr) {
-    const L = this.loot;
-    if (!L.unlocked) {
-      // First sight of my fighter: whatever's already on my back (a rejoin
-      // keeps its run build) counts as unlocked, plus the stock fists.
-      const b = this.myRunBuild();
-      L.unlocked = new Set([DEFAULT_WEAPON, b.weapon, ...b.abilities, ...b.augments]);
-    }
-    if (L.seenCr !== null && cr > L.seenCr) L.progress += cr - L.seenCr;
-    L.seenCr = cr;                      // spending drops cr; only gains feed the bar
-    while (L.progress >= this.lootNeed()) {
-      L.progress -= this.lootNeed();
-      L.boxes++; L.boxesEarned++;
-      UI.toast('🎁 Loot box ready — tap it to open!', 2200);
-      SFX.play('loot');
-    }
-    const pct = Math.round(Math.min(1, L.progress / this.lootNeed()) * 100);
-    if (pct !== L._pct) { L._pct = pct; $('#loot-fill').style.width = pct + '%'; }
-    if (L.boxes !== L._boxes) {
-      L._boxes = L.boxes;
-      $('#loot-count').textContent = L.boxes;
-      $('#loot-count').classList.toggle('hidden', !L.boxes);
-      $('#loot-box-btn').classList.toggle('ready', L.boxes > 0);
-    }
-  }
-
-  // Crack a box: deal three random cards — still-locked gear with the odd
-  // one-time bonus mixed in (and only bonuses once everything's unlocked).
-  // Nothing is granted yet: the player keeps exactly one via lootChoose.
-  lootOpen() {
-    const L = this.loot;
-    if (!L.boxes || !L.unlocked) return null;
-    L.boxes--;
-    const pool = this.lootLocked();
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = (Math.random() * (i + 1)) | 0;
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    // bonuses deal round-robin off a shuffled deck, so an all-bonus box
-    // shows the variety instead of three copies of the same card
-    const bonusDeck = [...LOOT_BONUS_CARDS].sort(() => Math.random() - 0.5);
-    let bi = 0;
-    const cards = [];
-    for (let k = 0; k < 3; k++) {
-      if (pool.length && Math.random() >= LOOT_BONUS_CHANCE) {
-        const id = pool.pop();
-        const w = WEAPONS.find(x => x.id === id);
-        const a = w || ABILITIES.find(x => x.id === id);
-        cards.push(w ? { ...w, type: 'weapon' }
-          : a ? { ...a, type: 'ability' }
-          : { ...AUGMENTS.find(x => x.id === id), type: 'augment' });
-      } else {
-        cards.push({ ...bonusDeck[bi++ % bonusDeck.length] });
-      }
-    }
-    return cards;
-  }
-
-  // Commit the player's pick: gear unlocks in the shop (still bought with
-  // CR there); one-time bonuses apply to my live fighter on the spot, via
-  // the host since fighter state is sim-authoritative.
-  lootChoose(card) {
-    if (card.type !== 'bonus') { this.loot.unlocked.add(card.id); return; }
-    // Bonus CR must not feed the loot bar (a box funding the next box
-    // snowballs) — pre-advance the watermark so only real bounties count.
-    if (card.bonus === 'cr' && this.loot.seenCr !== null) this.loot.seenCr += LOOT_CR_BONUS;
-    if (this.game) this.game.applyLootBonus(this.myId, card.bonus);
-    else net?.sendToHost({ t: 'lootbonus', kind: card.bonus });
-  }
-
-  // Host: a client picked a one-time bonus card.
-  onLootBonus(pid, kind) {
-    if (this.game && this.meta.has(pid)) this.game.applyLootBonus(pid, kind);
   }
 
   endTry(pid) {
@@ -1489,7 +1354,7 @@ class Session {
     this.game?.clearTryBuild(pid);
     this.pred?.clearTryBuild(pid);
     if (pid === this.myId) {
-      UI.setupAbilityButtons(sanitizeBuild(p.build, this.coop ? MAX_BUILD_COST : undefined).abilities);
+      UI.setupAbilityButtons(sanitizeBuild(p.build).abilities);
       UI.toast('Back to your fighter!');
     }
     this.buildHud();
@@ -1671,7 +1536,6 @@ class Session {
       const camp = view.campaign;
       const actTag = camp?.won ? '🏆 Cleared' : `Act ${Math.min(EXPEDITION_ACTS, (camp?.acts || 0) + 1)}/${EXPEDITION_ACTS}`;
       $('#expedition-progress').textContent = `${Math.max(0, Math.floor((mine?.x || 0) / 100)) * 100}m · Tier ${Math.floor((view.tick || 0) / 900) + 1} · ${actTag}`;
-      this.lootFrame(cr);
     } else {
       $('#game-expedition').classList.add('hidden');
     }
@@ -1823,14 +1687,14 @@ class Session {
             cur.build = p.build;
             cur.hat = p.hat;
           }
-          const cap = this.coop ? MAX_BUILD_COST : undefined;
-          if (activeChanged) this.trying.set(p.id, { targetId, build: sanitizeBuild(p.build, cap), hat: sanitizeHat(p.hat) });
+          const cap = TOTAL_CREDITS;
+          if (activeChanged) this.trying.set(p.id, { targetId, build: sanitizeBuild(p.build), hat: sanitizeHat(p.hat) });
           else this.trying.delete(p.id);
           this.pred?.updateBuild(p.id, cur.build);
           this.game?.updateBuild(p.id, cur.build);
           if (activeChanged) {
-            this.pred?.tryBuild(p.id, sanitizeBuild(p.build, cap));
-            this.game?.tryBuild(p.id, sanitizeBuild(p.build, cap));
+            this.pred?.tryBuild(p.id, sanitizeBuild(p.build));
+            this.game?.tryBuild(p.id, sanitizeBuild(p.build));
           }
           if (p.id === this.myId) UI.setupAbilityButtons(sanitizeBuild(activeChanged ? p.build : cur.build, cap).abilities);
           changed = true;
@@ -1961,19 +1825,6 @@ class Session {
         if (navigator.vibrate && ev.id === this.myId) navigator.vibrate(80);
         this.endTry(ev.id);
       }
-      if (ev.e === 'rebuild') {
-        // Expedition death penalty: the sim dropped this fighter's kit and
-        // re-bought what the wallet covered — mirror it into the roster/HUD.
-        const p = this.meta.get(ev.id);
-        if (p) p.build = sanitizeBuild(ev.build, MAX_BUILD_COST);
-        this.pred?.updateBuild(ev.id, p?.build, false);
-        if (ev.id === this.myId) {
-          UI.setupAbilityButtons(p?.build.abilities || []);
-          UI.toast('Kit lost! Re-bought what your CR could cover.', 2600);
-        }
-        this.buildHud();
-        if (this.mode === 'host' && net) this.broadcastPlayers();
-      }
       if (ev.e === 'boss') UI.toast(`⚠️ ${ev.name} bars the road!`, 2600);
       if (ev.e === 'bossdown') UI.toast(`🏆 ${ev.name || 'Boss'} defeated — act cleared!`, 2600);
       if (ev.e === 'roadclear') UI.toast('🏆 THE ROAD IS CLEARED!', 3400);
@@ -2097,7 +1948,7 @@ $('#lobby-rejoin').addEventListener('click', () => {
   presence?.update();
 });
 
-// ---------------- expedition: mid-run workshop & loot boxes ----------------
+// ---------------- expedition: mid-run workshop ----------------
 // The ✏️ button parks the fighter (asleep & untouchable in the sim — safe
 // from every creep) and opens the run workshop right from the game screen;
 // Save wakes them and drops straight back into the run.
@@ -2107,99 +1958,6 @@ function openRunWorkshop() {
   openBuilder(false, 'game');
 }
 $('#game-edit').addEventListener('click', openRunWorkshop);
-
-// Tapping a banked 🎁 parks the fighter too, then stages the reveal.
-$('#loot-box-btn').addEventListener('click', () => {
-  if (!session || session.ended || !session.coop || !session.loot.boxes) return;
-  session.setBackgrounded(true);
-  stageLootBox();
-});
-
-// Reset the overlay to its "sealed box" stage.
-function stageLootBox() {
-  lootTable = null;
-  const chest = $('#loot-chest');
-  chest.classList.remove('hidden', 'burst');
-  $('#loot-title').textContent = session?.loot.boxes > 1
-    ? `Loot Box! ×${session.loot.boxes}` : 'Loot Box!';
-  $('#loot-hint').textContent = 'Tap the box!';
-  $('#loot-hint').classList.remove('hidden');
-  $('#loot-cards').innerHTML = '';
-  $('#loot-actions').classList.add('hidden');
-  $('#loot-overlay').classList.remove('hidden');
-}
-
-const LOOT_TYPE_LABEL = { weapon: '⚔️ Weapon', ability: '✨ Ability', augment: '🧬 Augment', bonus: '🎁 One-Time Bonus' };
-let lootTable = null;   // cards dealt from the open box, awaiting the pick
-
-// Burst the box and deal its three cards. `instant` skips the chest burst
-// beat ("Open Another" goes straight to fresh cards).
-function dealLootCards(instant = false) {
-  if (lootTable) return;              // cards already on the table
-  const cards = session?.lootOpen();
-  if (!cards) return;
-  lootTable = cards;
-  SFX.play('lootopen');
-  const chest = $('#loot-chest');
-  if (instant) chest.classList.add('hidden');
-  else chest.classList.add('burst');
-  $('#loot-title').textContent = session.loot.boxes > 0
-    ? `Loot Box! ×${session.loot.boxes + 1}` : 'Loot Box!';
-  $('#loot-hint').textContent = 'Pick ONE card to keep!';
-  $('#loot-hint').classList.remove('hidden');
-  $('#loot-actions').classList.add('hidden');
-  const lead = instant ? 0.05 : 0.45;
-  const box = $('#loot-cards');
-  box.innerHTML = '';
-  cards.forEach((c, i) => {
-    const el = document.createElement('div');
-    el.className = `loot-card lc-${c.type}`;
-    el.style.animationDelay = `${lead + i * 0.35}s`;
-    el.innerHTML = `
-      <span class="lc-new">${c.type === 'bonus' ? 'USE!' : 'NEW!'}</span>
-      <span class="lc-icon">${c.icon}</span>
-      <span class="lc-name">${c.name}</span>
-      <span class="lc-type">${LOOT_TYPE_LABEL[c.type]}</span>
-      <span class="lc-desc">${c.pveDesc || c.desc}</span>`;
-    el.addEventListener('click', () => pickLootCard(c, el));
-    box.appendChild(el);
-  });
-  if (!instant) setTimeout(() => chest.classList.add('hidden'), 450);
-}
-
-$('#loot-chest').addEventListener('click', () => dealLootCards(false));
-
-// The pick seals the deal: the chosen card glows, the rest fade, and only
-// then do the exit buttons appear.
-function pickLootCard(card, el) {
-  if (!lootTable || !session) return;
-  lootTable = null;
-  session.lootChoose(card);
-  SFX.play('save');
-  for (const c of document.querySelectorAll('.loot-card'))
-    c.classList.add(c === el ? 'chosen' : 'passed');
-  $('#loot-hint').classList.add('hidden');
-  $('#loot-actions').classList.remove('hidden');
-  $('#loot-again').classList.toggle('hidden', !(session.loot.boxes > 0));
-  $('#loot-again').textContent = session.loot.boxes > 1
-    ? `🎁 Open Another ×${session.loot.boxes}` : '🎁 Open Another';
-  // bonuses apply instantly — there's nothing new to equip
-  $('#loot-equip').classList.toggle('hidden', card.type === 'bonus');
-}
-
-// no ceremony the second time: deal the next box's cards immediately
-$('#loot-again').addEventListener('click', () => dealLootCards(true));
-
-$('#loot-done').addEventListener('click', () => {
-  $('#loot-overlay').classList.add('hidden');
-  session?.setBackgrounded(false);
-});
-
-// Straight from the reveal into the workshop — still parked; Save returns.
-$('#loot-equip').addEventListener('click', () => {
-  $('#loot-overlay').classList.add('hidden');
-  openBuilder(false, 'game');
-});
 
 $('#results-again').addEventListener('click', () => {
   if (net) {

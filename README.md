@@ -41,3 +41,12 @@ Room discovery uses the free PeerJS cloud broker for the initial WebRTC
 handshake only — all gameplay traffic is peer-to-peer data channels. To use
 your own broker, run [peerjs-server](https://github.com/peers/peerjs-server)
 and pass its host/port where `new Peer(...)` is created in `js/net.js`.
+
+## Co-op expeditions
+
+Select a saved fighter on the menu and enter Expedition with that build.
+The same **1000-CR cap** as battle applies to hosts, joining players, and
+workshop swaps. All gear is available immediately; there are no loot boxes
+or gradual gear unlocks. Defeated fighters keep their kit when revived.
+CR earned from enemies tracks run performance and does not expand the build
+budget. The expedition workshop can switch to any saved build within the cap.

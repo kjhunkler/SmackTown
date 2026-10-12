@@ -2,7 +2,7 @@
 // everyone's latest inputs and broadcasts snapshots; clients interpolate.
 // All tuning constants live here so host handoff resumes identical rules.
 
-import { derivedStats, buildCost, emptyBuild, STATS, WEAPONS, ABILITIES, AUGMENTS, MAX_ABILITIES, MAX_AUGMENTS } from './profile.js';
+import { derivedStats, buildCost, sanitizeBuild, TOTAL_CREDITS } from './profile.js';
 
 export const TICK = 1 / 60;
 export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
@@ -576,9 +576,6 @@ const REGROWTH_PCT = 1;              // regrowth augment: percent shaved per sec
 const REGROWTH_HP = 0.5;             // regrowth augment: hp knit per second (expedition)
 const SCAVENGER_CR = 1.3;            // scavenger augment: bounty multiplier on defeats
 const SCAVENGER_HEART = 1.5;         // scavenger augment: heart heal multiplier
-const LOOT_HEAL_FRACTION = 0.5;      // "Patch Up" loot card: heal half of max HP
-export const LOOT_CR_BONUS = 200;    // "Windfall" loot card: CR straight into the wallet
-const EXPEDITION_START_CR = 160;     // co-op wallet balance at the start of a run
 const ENEMY_SEP_PUSH = 300;          // max px/s creeps shoulder each other apart (beats any chase speed)
 const ENEMY_SEP_GAP = 0.9;           // fraction of summed half-widths creeps keep between centers
 const ENEMY_DESPAWN = 2700;          // cull creeps this far behind the group
@@ -1105,10 +1102,11 @@ export class Game {
   }
 
   _spawnFighter(p, i) {
-    const st = derivedStats(p.build);
+    const build = this.coop ? sanitizeBuild(p.build) : p.build;
+    const st = derivedStats(build);
     return {
       id: p.id, name: p.name, color: p.color, isBot: !!p.isBot, sandbag: !!p.sandbag, st,
-      baseBuild: p.build, tryBuild: null,
+      baseBuild: build, tryBuild: null,
       x: this.stage.infinite ? Math.max(0, this.stage.spawns[i % this.stage.spawns.length]) : this.stage.spawns[i % this.stage.spawns.length], y: -F_H / 2,
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
       grounded: true, jumps: st.maxJumps, fastfall: false,
@@ -1145,7 +1143,7 @@ export class Game {
       parked: false,                // owner stepped out to the lobby: asleep, untouchable
       dead: false,
       lastDir: { x: 1, y: 0 },
-      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: this.coop ? EXPEDITION_START_CR : 0, elite: 0 }, // podium stats + expedition credits
+      score: { ko: 0, fall: 0, sd: 0, dmg: 0, taken: 0, maxHit: 0, cr: 0, elite: 0 }, // podium stats + expedition credits
     };
   }
 
@@ -1181,7 +1179,9 @@ export class Game {
     f.id = p.id;
     f.name = p.name;
     f.color = p.color;
-    f.st = derivedStats(p.build);        // rejoiners may bring a new character
+    f.baseBuild = this.coop ? sanitizeBuild(p.build) : p.build;
+    f.tryBuild = null;
+    f.st = derivedStats(f.baseBuild);     // rejoiners may bring a new character
     f.jumps = Math.min(f.jumps, f.st.maxJumps);
     f.maxHp = f.st.maxHp; f.hp = Math.min(f.hp, f.maxHp);
     this.inputs.delete(oldId);
@@ -1211,16 +1211,13 @@ export class Game {
   // Swap a live fighter's kit (lobby workshop edit applied on rejoin):
   // derived stats refresh in place and anything the new kit shrinks
   // (air jumps) clamps to fit. Percent, stocks and cooldowns ride along.
-  updateBuild(id, build, enforce = true) {
+  updateBuild(id, build) {
     const f = this.fighters.find(x => x.id === id);
     if (!f) return null;
-    // Co-op economy: a swap settles against the CR wallet — upgrades spend,
-    // downsizes refund. A swap the wallet can't cover is refused outright.
-    // (Prediction mirrors pass enforce=false: the host already settled it.)
-    if (this.coop && enforce) {
-      const delta = buildCost(build) - buildCost(f.baseBuild || emptyBuild());
-      if (delta > (f.score.cr || 0)) return null;
-      f.score.cr = (f.score.cr || 0) - delta;
+    // Score credits never enlarge the battle purse, even for live swaps.
+    if (this.coop) {
+      if (buildCost(build) > TOTAL_CREDITS) return null;
+      build = sanitizeBuild(build);
     }
     f.baseBuild = build;
     f.tryBuild = null;
@@ -1265,16 +1262,6 @@ export class Game {
       if (others.length) f.stocks = Math.min(f.stocks, Math.min(...others.map(o => o.stocks)));
     }
     f.parked = !!on;
-  }
-
-  // One-time loot-card bonuses — like setParked, a host-authoritative nudge
-  // from outside the input stream. Expedition-only.
-  applyLootBonus(id, kind) {
-    if (!this.coop) return;
-    const f = this.fighters.find(x => x.id === id);
-    if (!f || f.dead) return;
-    if (kind === 'heal') f.hp = Math.min(f.maxHp, f.hp + Math.ceil(f.maxHp * LOOT_HEAL_FRACTION));
-    else if (kind === 'cr') f.score.cr = (f.score.cr || 0) + LOOT_CR_BONUS;
   }
 
   setInput(id, inp) {
@@ -3149,42 +3136,7 @@ export class Game {
     if (credit) credit.score.ko++; else f.score.sd++;
     f.lastHitBy = null;
     this.events.push({ e: 'ko', x: f.x, y: f.y, id: f.id, stocks: 1 });
-    // Death drops the kit: the CR sunk into it is gone — no sell-back — and
-    // the wallet immediately re-buys as much of the same build as it can
-    // afford, base stats first, then weapon, abilities, augments.
-    const redo = this._rebuyBuild(f.baseBuild || emptyBuild(), f.score.cr || 0);
-    f.score.cr = redo.cr;
-    f.baseBuild = redo.build;
-    f.tryBuild = null;
-    f.st = derivedStats(redo.build);
-    f.jumps = Math.min(f.jumps, f.st.maxJumps);
-    f.maxHp = f.st.maxHp;                       // hp is 0; revive tops up to the new ceiling
-    this.events.push({ e: 'rebuild', id: f.id, build: redo.build, cr: redo.cr });
-  }
-
-  // Greedily re-purchase a lost kit from a wallet: stat levels first (round-
-  // robin across the four stats so partial funds spread evenly), then the
-  // weapon, then abilities and augments in owned order. Unaffordable pieces
-  // are skipped, not queued — whatever CR remains stays in the wallet.
-  _rebuyBuild(old, wallet) {
-    const build = emptyBuild();
-    let cr = wallet;
-    for (let lvl = 1; lvl <= 5; lvl++) {
-      for (const s of STATS) {
-        if ((old.stats?.[s.id] || 0) >= lvl && cr >= s.cost) { build.stats[s.id]++; cr -= s.cost; }
-      }
-    }
-    const w = WEAPONS.find(x => x.id === old.weapon);
-    if (w && w.cost <= cr) { build.weapon = w.id; cr -= w.cost; }
-    for (const id of old.abilities || []) {
-      const a = ABILITIES.find(x => x.id === id);
-      if (a && a.cost <= cr && build.abilities.length < MAX_ABILITIES) { build.abilities.push(id); cr -= a.cost; }
-    }
-    for (const id of old.augments || []) {
-      const a = AUGMENTS.find(x => x.id === id);
-      if (a && a.cost <= cr && build.augments.length < MAX_AUGMENTS) { build.augments.push(id); cr -= a.cost; }
-    }
-    return { build, cr };
+    // The selected kit survives death and revival.
   }
 
   _stepCoop() {
