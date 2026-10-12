@@ -1009,7 +1009,8 @@ const CHARGE_KB = 0.35;              // +35% knockback at full charge
 // A grounded tap converts to a dash attack above this speed (~85% of base
 // run, same bar the momentum augment uses) — you need a genuine run-up.
 const DASH_ATK_MIN = 320;
-const DASH_ATK_FRICTION = 0.3;       // slide keeps rolling through the swing
+const WAVELAND_FRICTION = 0.3;       // waveland slide traction
+const LIGHT_ATK_STEER = 0.4;        // grounded light swings steer at 40% run acceleration
 
 // Tap combo: taps chain jab → cross → knee → roundhouse as long as each tap
 // lands inside the window (timed from the previous swing's start). Every
@@ -1388,6 +1389,7 @@ export class Game {
     const inHitstun = f.state === 'hitstun';
     const inAttack = f.state === 'attack';
     const inCharge = f.state === 'charge';
+    const mobileLight = inAttack && !!ATTACKS[f.atk]?.tap && !f.lowJab;
     const inDuck = f.state === 'duck';
     const inCrush = f.state === 'crush';
     const canAct = !inHitstun && !inAttack && !inCharge && !inCrush;
@@ -1438,18 +1440,21 @@ export class Game {
     if (!inHitstun && !inCrush && f.dashT <= 0) {
       const want = inp.mx * RUN * f.st.speedMult;
       if (f.grounded) {
-        if (Math.abs(inp.mx) > 0.15 && canAct && !ducking) {
-          // reversing gets extra accel so direction changes bite instead of skate
+        if (Math.abs(inp.mx) > 0.15 && (canAct || mobileLight) && !ducking) {
+          // Light swings retain movement with gentler steering. The swing's
+          // facing/aim stays committed until recovery ends.
           const turn = f.vx !== 0 && Math.sign(want) === -Math.sign(f.vx) ? TURN_ACCEL : 1;
-          f.vx = approach(f.vx, want, GROUND_ACCEL * turn * TICK);
-          f.facing = Math.sign(inp.mx) || f.facing;
-          f.state = 'run';
+          const steer = mobileLight ? LIGHT_ATK_STEER : turn;
+          f.vx = approach(f.vx, want, GROUND_ACCEL * steer * TICK);
+          if (canAct) {
+            f.facing = Math.sign(inp.mx) || f.facing;
+            f.state = 'run';
+          }
         } else {
-          // dash attacks and wavelands slide on reduced friction; charging
-          // keeps more momentum too, so skating into a charged swing (or
-          // sliding to a stop while winding one up) carries you farther
-          const slick = (inAttack && f.atk === 'dash') || f.slideT > 0;
-          const frictionMult = slick ? DASH_ATK_FRICTION : inCharge ? CHARGE_FRICTION : 1;
+          // Releasing the stick brakes light attacks normally. Wavelands
+          // and charging retain their existing reduced traction.
+          const slick = f.slideT > 0;
+          const frictionMult = slick ? WAVELAND_FRICTION : inCharge ? CHARGE_FRICTION : 1;
           f.vx = approach(f.vx, 0, FRICTION * frictionMult * TICK);
           if (canAct && !ducking) f.state = 'idle';
         }
@@ -1863,14 +1868,12 @@ export class Game {
     f.lowJab = fromDuck && name === 'jab';
     f.atkHit.clear();
     f.atkSpd = Math.hypot(f.vx, f.vy);   // momentum: judge the run-up, not the plant
-    // dash attacks keep their slide; so do attacks thrown mid-waveland and
-    // lunging tap-combo stages, whose step merges with momentum instead of
-    // planting. A combo stage only lunges while a direction is held — a
-    // neutral string stands its ground — except the roundhouse sendoff,
-    // which always throws its weight forward.
+    // Standing light attacks keep momentum; heavy and crouching attacks
+    // retain their plant. Combo lunges add a step only with directional aim,
+    // except the roundhouse sendoff, which always steps forward.
     const comboLunge = !swipe && !fromDuck && COMBO_CHAIN.includes(name)
       && !!(dx || dy || name === 'roundh');
-    if (f.grounded && name !== 'dash' && !comboLunge && f.slideT <= 0) f.vx *= 0.35;
+    if (f.grounded && (swipe || fromDuck) && !comboLunge && f.slideT <= 0) f.vx *= 0.35;
     // upward smash in the air boosts you like an air jump — and costs none.
     // The lift itself is on a short cooldown so chained up-smashes can't be
     // spammed to fly forever; the swing still comes out either way.

@@ -259,10 +259,10 @@ const players = [
   const v0 = a.vx;
   g._startAttack(a, { kind: 'tap', dx: 0, dy: 0 });
   check('waveland attack keeps its glide', a.vx === v0);
-  // a neutral tap plants: no direction held means the string stands its ground
+  // A neutral light tap preserves entry momentum; releasing input brakes on subsequent ticks.
   c.grounded = true; c.vx = 250; c.facing = 1;
   g._startAttack(c, { kind: 'tap', dx: 0, dy: 0 });
-  check('neutral grounded tap plants in place', c.vx === 250 * 0.35);
+  check('neutral grounded tap preserves momentum', c.vx === 250);
 }
 
 // --- 11b. jab combo: neutral stages stand still, held stages step ---
