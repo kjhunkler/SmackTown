@@ -5,3 +5,11 @@ compatibility_date = "2024-09-23"
 [[routes]]
 pattern = "smacktownarena.com/api/turn-credentials"
 zone_name = "smacktownarena.com"
+
+[[ratelimits]]
+name = "TURN_ISSUANCE_LIMITER"
+namespace_id = "20617"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60
