@@ -45,6 +45,7 @@ export class Net {
     this.hbTimer = null;
     this.closed = false;
     this.openTimer = null;
+    this.reconnectTimer = null;
     this._visHandler = () => {
       this.status = document.visibilityState === 'hidden' ? 'away' : 'online';
       this._broadcastHeartbeat();
@@ -120,6 +121,7 @@ export class Net {
   leave() {
     this.closed = true;
     clearTimeout(this.openTimer);
+    clearTimeout(this.reconnectTimer);
     clearInterval(this.hbTimer);
     document.removeEventListener('visibilitychange', this._visHandler);
     try { this.broadcast({ t: 'bye' }); } catch (_) {}
@@ -146,14 +148,14 @@ export class Net {
     if (this.closed) return;
     const p = id ? new Peer(id, opts) : new Peer(opts);
     this.peer = p;
-    p.on('open', () => {
+    p.once('open', () => {
       clearTimeout(this.openTimer);
       this.openTimer = null;
       onOpen();
     });
     p.on('connection', conn => this._acceptConn(conn));
     p.on('error', err => {
-      if (p !== this.peer) return;
+      if (this.closed || p !== this.peer) return;
       if (err.type === 'unavailable-id') {
         // Room code collision (or stale registration) — reroll and retry.
         if (this.joinOrder <= 0 && !this.members.size) {
@@ -162,16 +164,28 @@ export class Net {
         }
       } else if (err.type === 'peer-unavailable') {
         this.emit('error', 'Room not found — is the host online?');
-      } else if (err.type === 'network' || err.type === 'disconnected') {
-        this.emit('banner', 'Reconnecting to matchmaking…', 'warn');
-        if (!this.closed) setTimeout(() => { try { this.peer.reconnect(); } catch (_) {} }, 1500);
+      } else if (['network', 'disconnected', 'socket-error', 'socket-closed'].includes(err.type)) {
+        retry();
       } else {
         this.emit('error', 'Network error: ' + err.type);
       }
     });
-    p.on('disconnected', () => {
-      if (!this.closed && p === this.peer) { try { p.reconnect(); } catch (_) {} }
-    });
+    const retry = () => {
+      if (this.closed || p !== this.peer || this.reconnectTimer) return;
+      this.emit('banner', 'Reconnecting to matchmaking…', 'warn');
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        if (this.closed || p !== this.peer || p.open) return;
+        if (!this.myId) {
+          this.peer = null;
+          p.destroy();
+          this._openPeer(id, onOpen);
+        } else if (!p.destroyed && p.disconnected) {
+          p.reconnect();
+        }
+      }, 1500);
+    };
+    p.on('disconnected', retry);
   }
 
   _acceptConn(conn) {

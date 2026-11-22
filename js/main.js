@@ -88,8 +88,6 @@ let session = null;         // active game session
 let voice = null;           // lobby voice chat channel (lives with net)
 let presence = null;        // town-square presence (menu roster + invites)
 let pendingInvite = null;   // {id, name} to ping once our fresh room opens
-let pendingTraining = false; // start the training room once our room opens
-let pendingExpedition = false; // start a PvE expedition once our room opens
 const touch = new TouchInput(document);
 touch.onPad = on => UI.banner(
   on ? '🎮 Controller connected — stick moves · A jumps · X quick · B/Y smash · bumpers = abilities'
@@ -822,8 +820,7 @@ $('#menu-solo').addEventListener('click', () => {
 // starts straight on the hidden training map with an endlessly
 // respawning sandbag. Friends can drop in like any running fight.
 $('#menu-training').addEventListener('click', () => {
-  pendingTraining = true;
-  enterRoom(null);
+  enterRoom(null, 'training');
 });
 
 function startTraining() {
@@ -841,20 +838,21 @@ function startTraining() {
 // Expedition (PvE co-op): auto-hosts a joinable room and drops the player
 // straight into Lantern Market. Friends can join the current district by code.
 $('#menu-pve').addEventListener('click', () => {
-  pendingExpedition = true;
-  enterRoom(null);
+  enterRoom(null, 'expedition');
 });
 
 function startExpedition() {
+  const myId = net?.myId || 'me';
   // Enter with the selected saved fighter, under the normal battle budget.
   const players = [
     {
-      id: net.myId, pid: profile.pid || null, name: profile.name, color: profile.color,
+      id: myId, pid: profile.pid || null, name: profile.name, color: profile.color,
       build: sanitizeBuild(profile.build), hat: sanitizeHat(profile.hat),
     },
   ];
   const seed = (Math.random() * 1e9) | 0;
-  startSession({ mode: 'host', myId: net.myId, players, seed, map: 'nightcity' });
+  startSession({ mode: net ? 'host' : 'solo', myId, players, seed, map: 'nightcity' });
+  if (!net) UI.banner('Matchmaking unavailable. Playing Expedition solo.', 'warn', 5000);
 }
 
 $('#menu-join').addEventListener('click', () => {
@@ -872,7 +870,7 @@ function menuError(text) {
 }
 
 // ---------------- room / lobby ----------------
-function enterRoom(joinCode) {
+function enterRoom(joinCode, startMode = null) {
   if (net) { net.leave(); net = null; }
   voice?.destroy(); voice = null;
   net = new Net(profile);
@@ -890,13 +888,11 @@ function enterRoom(joinCode) {
   net.on('room', () => {
     // training: skip the lobby — the room exists purely so friends can
     // drop into the session, which starts the moment the room opens
-    if (pendingTraining && net.isHost) {
-      pendingTraining = false;
+    if (startMode === 'training' && net.isHost) {
       startTraining();
       return;
     }
-    if (pendingExpedition && net.isHost) {
-      pendingExpedition = false;
+    if (startMode === 'expedition' && net.isHost) {
       startExpedition();
       return;
     }
@@ -918,13 +914,15 @@ function enterRoom(joinCode) {
   net.on('profile-changed', (pid, m) => session?.onProfileChanged(pid, m));
   net.on('error', text => {
     if (session) return;
-    UI.showScreen('menu');
-    menuError(text);
     voice?.destroy(); voice = null;
     net?.leave(); net = null;
     pendingInvite = null;
-    pendingTraining = false;
-    pendingExpedition = false;
+    if (startMode === 'expedition') {
+      startExpedition();
+      return;
+    }
+    UI.showScreen('menu');
+    menuError(text);
     presence?.update();
   });
   net.on('banner', (text, kind) => UI.banner(text, kind));
@@ -1974,6 +1972,7 @@ class Session {
       if (runSummary) summary.innerHTML = `<b>Expedition Report</b><span>${runSummary.progress}</span><span>${runSummary.defeats} defeated · ${runSummary.elites} elite${runSummary.elites === 1 ? '' : 's'} · 💰 ${runSummary.credits} CR</span>`;
       UI.renderResults(this.players, winnerId, finalFighters, { myId: this.myId, onCopy: copyCharacter, coop: this.coop, outcome, city: !!city });
       $('#results-again').textContent = this.mode === 'solo' ? 'Rematch' : 'Back to Lobby';
+      $('#results-again').dataset.map = this.map;
       UI.showScreen('results');
       session = null;
       presence?.update();
@@ -2078,6 +2077,8 @@ $('#results-again').addEventListener('click', () => {
   if (net) {
     renderLobby();
     UI.showScreen('lobby');
+  } else if ($('#results-again').dataset.map === 'nightcity') {
+    startExpedition();
   } else {
     $('#menu-solo').click();
   }

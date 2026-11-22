@@ -30,7 +30,7 @@ export async function peerOptions() {
     return { debug: 0, config: { iceServers: FALLBACK_ICE_SERVERS } };
   }
 
-  inflight ||= fetch(TURN_ENDPOINT, { cache: 'no-store' })
+  inflight ||= fetch(TURN_ENDPOINT, { cache: 'no-store', signal: AbortSignal.timeout(4000) })
     .then(async r => {
       if (!r.ok) throw new Error(`TURN endpoint ${r.status}`);
       const data = await r.json();
