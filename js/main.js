@@ -8,7 +8,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { CITY_ROOMS, cityDoors, cityOpen, relayCount } from './city.js';
+import { CITY_ROOMS } from './city.js';
 import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, NEW_MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
@@ -1240,7 +1240,7 @@ class Session {
     touch.setEnabled(true);
     this.running = true;
     this.lastT = performance.now();
-    if (this.map === 'nightcity') UI.banner('Last Train · restore both relays to ride home', 'good', 3000);
+    if (this.map === 'nightcity') UI.banner('Last Train · Run against either edge together to travel', 'good', 3000);
 
     // one-time controls explainer
     if (!localStorage.getItem('smacktown.helped')) {
@@ -1491,7 +1491,10 @@ class Session {
               cache = { p: new Map(), en: new Map(), ht: new Map() };
               this.snapshotCaches.set(pid, cache);
             }
-            const s = this.game.snapshotDelta(cache, fighter?.x ?? null, SNAPSHOT_INTEREST_RADIUS);
+            // A city host handoff resumes the latest delta, including pursuers
+            // and bosses at the far end of the freight line.
+            const center = this.game.cityRun ? null : fighter?.x;
+            const s = this.game.snapshotDelta(cache, center, SNAPSHOT_INTEREST_RADIUS);
             s.eb = packEnemyDelta(s.den);
             delete s.den;
             s.ev = ev;
@@ -1599,21 +1602,10 @@ class Session {
       $('#game-expedition').classList.remove('hidden');
       if (view.city) {
         const state = view.city, room = CITY_ROOMS[state.room];
-        const standing = view.fighters.filter(f => !f.parked && f.stocks > 0);
-        const doors = cityDoors(state);
-        const nearby = Math.max(...doors.map(d => standing.filter(f => !f.dead &&
-          Math.abs(f.x - d.x) <= 80 && Math.abs(f.y + 32) <= 85).length));
-        const remaining = Math.max(0, (state.finale === 1 ? 1 : room.foes.length) - state.sent)
-          + view.enemies.filter(e => !e.ally && e.hp > 0).length;
-        const objective = cityOpen(state)
-          ? (nearby ? `At door · ${nearby}/${standing.length}` :
-            state.finale === 2 ? 'Board the last train together' :
-            state.room === 'market' ? (state.clear === 3 ? 'Next · Storm drain' : state.clear === 5 ? 'Next · Roof lift' : 'Choose a door together') : 'Return to Lantern Market')
-          : state.relayReady ? 'Jump to the relay to restore power' :
-            state.room === 'cistern' && state.pumpTick >= 295 && state.pumpTick <= 395 ? 'Pressure surge · get above the water!' :
-            state.finale === 1 ? 'Defeat the gatekeeper' : `Clear the district · ${remaining} left`;
-        $('#expedition-biome').textContent = room.name + ' · ' + relayCount(state) + '/2 relays';
-        $('#expedition-progress').textContent = objective;
+        $('#expedition-biome').textContent = room.name + ' · Wave ' + Math.max(1, state.wave);
+        $('#expedition-progress').textContent = state.locked ? 'Defeat the boss to travel'
+          : state.room === 'train' ? (state.boarding ? 'Boarding…' : 'Hold down together at center to finish · edges to continue')
+          : state.room === 'cistern' && state.pumpTick >= 295 ? 'Pressure rising · get above the water!' : '';
       } else {
         const biome = expanseBiomeAt(this.seed, mine?.x || 0);
         $('#expedition-biome').textContent = MAPS[biome.id].name;
@@ -1936,8 +1928,6 @@ class Session {
         this.endTry(ev.id);
       }
       if (ev.e === 'district') UI.toast(CITY_ROOMS[ev.room].name, 1300);
-      if (ev.e === 'districtclear') UI.toast(ev.finale === 2 ? 'Last train boarding!' :
-        ev.room === 'market' ? 'Gates open · restore both relays' : 'Relay online · return to street level', 1750);
       if (ev.e === 'boss') UI.toast(this.map === 'nightcity' ? `Gatekeeper · ${ev.name}` : `⚠️ ${ev.name} bars the road!`, 2600);
       if (ev.e === 'bossdown' && this.map !== 'nightcity') UI.toast(`🏆 ${ev.name || 'Boss'} defeated — act cleared!`, 2600);
       if (ev.e === 'roadclear') UI.toast('🏆 THE ROAD IS CLEARED!', 3400);
@@ -1960,7 +1950,7 @@ class Session {
     const tier = Math.floor((this.game?.tick || this.lastSnap?.tk || 0) / 900) + 1;
     const biomes = Math.max(1, Math.floor(distance / 3600) + 1);
     const runSummary = this.coop && mine ? {
-      progress: city ? `${CITY_ROOMS[city.room].name} · ${relayCount(city)}/2 relays restored`
+      progress: city ? `${CITY_ROOMS[city.room].name} · Wave ${Math.max(1, city.wave || 0)}`
         : `${distance}m · Tier ${tier} · ${biomes} biome${biomes === 1 ? '' : 's'} · Act ${acts}/${EXPEDITION_ACTS}`,
       defeats: mine.score?.ko || 0, elites: mine.score?.elite || 0, credits: earnedCredits(mine.score),
     } : null;

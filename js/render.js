@@ -244,9 +244,6 @@ export class Renderer {
     for (const ev of events || []) {
       SFX.event(ev);   // every cosmetic event makes its sound exactly once
       switch (ev.e) {
-        case 'cityspawn':
-          this.burst(ev.x, ev.y, 18, ev.color, 210);
-          break;
         case 'hit':
           this.burst(ev.x, ev.y, ev.heavy ? 18 : 8, ev.heavy ? '#ffdd55' : '#ffffff', ev.heavy ? 420 : 220);
           this.shake = Math.max(this.shake, ev.heavy ? 14 : 5);
@@ -602,9 +599,19 @@ export class Renderer {
     // --- camera: frame all live fighters ---
     const live = view.fighters.filter(f => !f.dead);
     if (view.city) {
-      this.cam.x = 0; this.cam.y = -138;
-      this.cam.zoom = Math.min(W / 1230, H / 550);
-      this.shake = 0;
+      const room = CITY_ROOMS[view.city.room];
+      const crew = live.filter(f => !f.parked);
+      const local = crew.find(f => f.id === myId) || crew[0];
+      const focus = room.limit > 1000 && local ? [local] : crew;
+      const xs = focus.length ? focus.map(f => f.x) : [0];
+      const lo = Math.min(...xs), hi = Math.max(...xs);
+      const zoom = Math.min(W / Math.max(930, hi - lo + 210), H / 555);
+      const k = this.cityVisit === view.city.visit ? 1 - Math.pow(.0001, dt) : 1;
+      this.cityVisit = view.city.visit;
+      const bound = Math.max(0, room.limit + 68 - W / (2 * zoom));
+      this.cam.x += (clamp((lo + hi) / 2, -bound, bound) - this.cam.x) * k;
+      this.cam.y += ((local ? clamp(local.y * .32 - 125, -245, -135) : -135) - this.cam.y) * k;
+      this.cam.zoom += (zoom - this.cam.zoom) * k;
     } else if (live.length) {
       let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
       for (const f of live) {
@@ -4593,7 +4600,7 @@ export class Renderer {
     const k = clamp(f.hb?.chg || 0, 0, 1);
     const launch = bombLaunch(f.x, f.y, f.facing, f.aim?.x, f.aim?.y,
       Math.abs(f.vy || 0) < 1, k);
-    const surfaces = [this.stage.main, ...(this.stage.infinite
+    const surfaces = [this.cityRoom ? CITY_ROOMS[this.cityRoom].main : this.stage.main, ...(this.stage.infinite
       ? expansePlats(this.expanseSeed >>> 0, launch.x - 1200, launch.x + 1200)
       : this.cityRoom ? CITY_ROOMS[this.cityRoom].plats : platsAt(this.mapId, tick))];
     ctx.save();

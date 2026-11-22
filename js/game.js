@@ -5,7 +5,7 @@
 import { derivedStats, buildCost, sanitizeBuild, TOTAL_CREDITS } from './profile.js';
 
 import { ARENAS } from './arenas.js';
-import { CITY_LIMIT, CITY_ROOMS, arrive, newCity, stepCity } from './city.js';
+import { CITY_ROOMS, arrive, newCity, stepCity } from './city.js';
 
 export const TICK = 1 / 60;
 export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
@@ -1074,14 +1074,18 @@ const SUMMON_GROUND_KINDS = ['grunt', 'runner', 'brute', 'hopper', 'slinger'];
 
 let nextEid = 1;
 
+const cityStages = Object.fromEntries(Object.entries(CITY_ROOMS).map(([id, room]) =>
+  [id, { ...MAPS.nightcity, main: room.main, blast: room.blast, plats: room.plats }]));
+
 export class Game {
+  get stage() { return this.cityRun ? cityStages[this.cityRun.room] : MAPS[this.map]; }
+
   // players: [{id, name, color, build, isBot}]
   constructor(players, seed = 1, mapId = DEFAULT_MAP) {
     this.map = MAPS[mapId] ? mapId : DEFAULT_MAP;
-    this.stage = MAPS[this.map];
     this.seed = seed >>> 0;                 // run seed (world gen + spawns)
-    this.coop = !!this.stage.coop;          // PvE co-op rules (HP, no match end)
     this.cityRun = this.map === 'nightcity' ? newCity() : null;
+    this.coop = !!this.stage.coop;          // PvE co-op rules (HP, no match end)
     this.tick = 0;
     this.over = false;
     this.winner = null;
@@ -1277,7 +1281,7 @@ export class Game {
 
   rallyCityFighter(f) {
     const companion = this.fighters.find(o => o !== f && !o.dead && !o.parked);
-    arrive(f, companion ? companion.x + (companion.x > 0 ? -48 : 48) : 0);
+    arrive(f, companion ? companion.x + (companion.x > 0 ? -48 : 48) : 0, CITY_ROOMS[this.cityRun.room].limit);
     this.inputs.set(f.id, blankInput());
   }
 
@@ -1601,7 +1605,8 @@ export class Game {
     f.y += f.vy * TICK;
 
     if (this.cityRun) {
-      f.x = clamp(f.x, -CITY_LIMIT, CITY_LIMIT);
+      const limit = CITY_ROOMS[this.cityRun.room].limit;
+      f.x = clamp(f.x, -limit, limit);
       if (f.y < -382) { f.y = -382; f.vy = Math.max(0, f.vy); }
     }
     this._collide(f);
@@ -3256,14 +3261,13 @@ export class Game {
     this._stepBeacon(live);
     if (this.over) return;               // the beacon banked the run this tick
     const level = this._difficulty();
-    const plats = this.platsNow();
 
     let bossAlive = false;
     for (const e of this.enemies) {
       if (e.hp > 0 && (ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt).boss) { bossAlive = true; break; }
     }
 
-    if (this.cityRun) stepCity(this, live, TICK);
+    if (this.cityRun) stepCity(this, live, TICK, bossAlive);
     else if (live.length) {
       this.runT += TICK;
       // spawn: faster and up to a bigger swarm the longer the run goes —
@@ -3307,6 +3311,7 @@ export class Game {
     }
 
     if (this.over) return;
+    const plats = this.platsNow();
     const floor = this.stage.main.y;
     for (const e of this.enemies) {
       if (e.ally) continue;   // summons run on their own clock — see _stepAllies
@@ -3320,6 +3325,13 @@ export class Game {
         e.stagger = Math.max(0, e.stagger - TICK);
         e.windup = 0;
         e.vx = approach(e.vx, 0, t.accel * TICK);
+        if (!t.fly) e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
+      } else if (this.cityRun && Math.abs(e.x) > CITY_ROOMS[this.cityRun.room].limit) {
+        // Finish the entrance before taking a firing position or queuing.
+        // Otherwise a slinger can kite outside a wall the crew cannot cross.
+        e.facing = -Math.sign(e.x);
+        e.windup = 0;
+        e.vx = approach(e.vx, e.facing * Math.max(185, t.speed), t.accel * TICK);
         if (!t.fly) e.vy = Math.min(MAX_FALL, e.vy + GRAV * TICK);
       } else if (e.rushT > 0) {
         // boss mid-rush (charge / dive): barrel along, clipping whoever it hits
@@ -3414,8 +3426,9 @@ export class Game {
       e.y += e.vy * TICK;
 
       if (this.cityRun) {
-        e.x = clamp(e.x, -CITY_LIMIT, CITY_LIMIT);
-        e.y = clamp(e.y, -365, floor - e.hh);
+        const extent = CITY_ROOMS[this.cityRun.room].limit + 1050;
+        e.x = clamp(e.x, -extent, extent);
+        e.y = Math.min(e.y, floor - e.hh);
       }
       // ground contact: the main floor or any platform below the feet
       if (!t.fly) {
@@ -3476,7 +3489,7 @@ export class Game {
       if (!!to.fly !== !!t.fly) continue;
       if (Math.abs(o.y - e.y) > e.hh + o.hh) continue;
       const dx = o.x - e.x;
-      if (Math.sign(dx) === dir && Math.abs(dx) < e.hw + o.hw + 10) return true;
+      if (Math.sign(dx) === dir && Math.abs(dx) < (this.cityRun ? (e.hw + o.hw) * .65 : e.hw + o.hw + 10)) return true;
     }
     return false;
   }
@@ -3493,7 +3506,7 @@ export class Game {
         if (b.hp <= 0) continue;
         const fb = !!(ENEMY_TYPES[b.kind] || ENEMY_TYPES.grunt).fly;
         if (fa !== fb) continue;                         // different layers pass freely
-        const minD = (a.hw + b.hw) * ENEMY_SEP_GAP;
+        const minD = (a.hw + b.hw) * (this.cityRun ? .62 : ENEMY_SEP_GAP);
         const dx = b.x - a.x;
         if (Math.abs(dx) >= minD || Math.abs(a.y - b.y) > a.hh + b.hh) continue;
         const dir = dx !== 0 ? Math.sign(dx) : (a.eid < b.eid ? 1 : -1);
@@ -3546,7 +3559,8 @@ export class Game {
     // champions; on the victory lap the gate opens and elites flood in
     elite = elite || ((this.won || level >= ENEMY_ELITE_LEVEL)
       && this.rng() < (this.won ? VICTORY_ELITE_CHANCE : ENEMY_ELITE_CHANCE));
-    const hp = Math.round(t.hp * (1 + Math.min(ENEMY_HP_CAP, level * ENEMY_HP_RAMP)) * (elite ? 1.65 : 1));
+    const healthScale = this.cityRun ? 0.45 : 1 + Math.min(ENEMY_HP_CAP, level * ENEMY_HP_RAMP);
+    const hp = Math.round(t.hp * healthScale * (elite ? 1.65 : 1));
     const cr = Math.floor((1 + Math.floor(level / 2) + ({ flyer: 1, slinger: 1, brute: 2 }[kind] || 0) + (elite ? 3 : 0)) * 5 / 2);
     const hh = t.h / 2, hw = t.w / 2;
     const formationOffset = (slot - (count - 1) / 2) * 72;
@@ -3578,7 +3592,8 @@ export class Game {
     const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
     const hw = t.w / 2, hh = t.h / 2;
     const hp = Math.round(t.hp * v.hp * (1 + Math.min(1, level * 0.05)));
-    const x = this.cityRun ? CITY_ROOMS[this.cityRun.room].entry[0] : cx + 900;
+    const limit = this.cityRun && CITY_ROOMS[this.cityRun.room].limit;
+    const x = this.cityRun ? clamp(cx + (cx > 0 ? -360 : 360), -limit, limit) : cx + 900;
     const y = t.fly ? this.stage.main.y - 220 : this.stage.main.y - hh;
     this.enemies.push({
       eid: nextEid++, kind, hw, hh, x, y,
