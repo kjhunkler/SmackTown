@@ -4,6 +4,8 @@
 
 import { derivedStats, buildCost, sanitizeBuild, TOTAL_CREDITS } from './profile.js';
 
+import { CITY_LIMIT, CITY_ROOMS, arrive, newCity, stepCity } from './city.js';
+
 export const TICK = 1 / 60;
 export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
 
@@ -343,13 +345,13 @@ export const MAPS = {
     spawns: [ -140, 140, -300, 300 ],
     respawnY: -320,
   },
-  // Expedition (PvE co-op): an endless procedurally-generated side-scroller.
-  // The ground is one continuous floor stretching effectively forever; the
-  // floating platforms are a deterministic function of the run's seed and
-  // world x (see expansePlats), so the host and every client build the exact
-  // same world without syncing geometry. 'infinite' switches the sim into
-  // co-op rules: no horizontal blast KOs, the match never ends, and (later
-  // phases) HP + credits replace stocks & percent.
+  nightcity: {
+    name: 'Last Train', hidden: true, coop: true,
+    main: { x: -640, y: 0, w: 1280, h: 50 }, plats: [],
+    blast: { l: -760, r: 760, t: -700, b: 360 },
+    spawns: [-65, 65, -140, 140], respawnY: -210,
+  },
+  // Kept for an existing Long Road room or snapshot from a previous build.
   expanse: {
     name: 'The Long Road',
     hidden: true,
@@ -1075,6 +1077,7 @@ export class Game {
     this.stage = MAPS[this.map];
     this.seed = seed >>> 0;                 // run seed (world gen + spawns)
     this.coop = !!this.stage.coop;          // PvE co-op rules (HP, no match end)
+    this.cityRun = this.map === 'nightcity' ? newCity() : null;
     this.tick = 0;
     this.over = false;
     this.winner = null;
@@ -1165,6 +1168,7 @@ export class Game {
     f.state = 'respawn';
     f.stateT = 0;
     f.invuln = RESPAWN_INVULN;
+    if (this.cityRun) this.rallyCityFighter(f);
     this.fighters.push(f);
     this.inputs.set(f.id, blankInput());
     return f;
@@ -1206,6 +1210,7 @@ export class Game {
       f.jumps = f.st.maxJumps;
       f.atk = null; f.atkDir = null; f.melee = null; f.chg = 0; f.chgAim = null;
     }
+    if (this.cityRun) { f.parked = false; this.rallyCityFighter(f); }
     return f;
   }
 
@@ -1257,12 +1262,19 @@ export class Game {
   // preserve a lead.
   setParked(id, on) {
     const f = this.fighters.find(x => x.id === id);
-    if (!f || f.dead) return;
+    if (!f || (f.dead && !this.cityRun)) return;
+    if (this.cityRun && f.parked !== !!on) this.rallyCityFighter(f);
     if (f.parked && !on) {
       const others = this.fighters.filter(o => o.id !== id && !o.dead && !o.sandbag && !o.parked);
       if (others.length) f.stocks = Math.min(f.stocks, Math.min(...others.map(o => o.stocks)));
     }
     f.parked = !!on;
+  }
+
+  rallyCityFighter(f) {
+    const companion = this.fighters.find(o => o !== f && !o.dead && !o.parked);
+    arrive(f, companion ? companion.x + (companion.x > 0 ? -48 : 48) : 0);
+    this.inputs.set(f.id, blankInput());
   }
 
   setInput(id, inp) {
@@ -1297,7 +1309,9 @@ export class Game {
   platsNow() {
     if (this._pc?.tick !== this.tick) {
       let plats;
-      if (this.stage.infinite) {
+      if (this.cityRun) {
+        plats = CITY_ROOMS[this.cityRun.room].plats;
+      } else if (this.stage.infinite) {
         // window generation to a band around the fighters — collision only
         // ever needs the platforms anyone could be standing on
         let lo = Infinity, hi = -Infinity;
@@ -1349,6 +1363,7 @@ export class Game {
   // ---------- fighter physics & actions ----------
 
   _stepFighter(f, inp) {
+    if (this.cityRun && f.parked) { f.invuln = 1.2; return; }
     f.stateT += TICK;
     // a parked fighter sleeps untouchable until their player comes back
     if (f.parked) f.invuln = Math.max(f.invuln, 0.1);
@@ -1581,6 +1596,10 @@ export class Game {
     f.x += f.vx * TICK;
     f.y += f.vy * TICK;
 
+    if (this.cityRun) {
+      f.x = clamp(f.x, -CITY_LIMIT, CITY_LIMIT);
+      if (f.y < -382) { f.y = -382; f.vy = Math.max(0, f.vy); }
+    }
     this._collide(f);
     this._tryLedgeGrab(f);
     this._decayInput(inp);
@@ -3240,7 +3259,8 @@ export class Game {
       if (e.hp > 0 && (ENEMY_TYPES[e.kind] || ENEMY_TYPES.grunt).boss) { bossAlive = true; break; }
     }
 
-    if (live.length) {
+    if (this.cityRun) stepCity(this, live, TICK);
+    else if (live.length) {
       this.runT += TICK;
       // spawn: faster and up to a bigger swarm the longer the run goes —
       // but while a boss holds the field, the trickle slows to a drip so
@@ -3282,6 +3302,7 @@ export class Game {
       this.enemySpawnT = Math.max(this.enemySpawnT, PARK_SPAWN_GRACE);
     }
 
+    if (this.over) return;
     const floor = this.stage.main.y;
     for (const e of this.enemies) {
       if (e.ally) continue;   // summons run on their own clock — see _stepAllies
@@ -3388,6 +3409,10 @@ export class Game {
       e.x += e.vx * TICK;
       e.y += e.vy * TICK;
 
+      if (this.cityRun) {
+        e.x = clamp(e.x, -CITY_LIMIT, CITY_LIMIT);
+        e.y = clamp(e.y, -365, floor - e.hh);
+      }
       // ground contact: the main floor or any platform below the feet
       if (!t.fly) {
         e.grounded = false;
@@ -3411,7 +3436,8 @@ export class Game {
     // Recycle stragglers behind the forward-only party so the encounter keeps
     // pressure ahead instead of wasting the active swarm off-screen to the left.
     // Skipped while everyone is parked — no party position to measure against.
-    if (live.length) {
+    if (this.cityRun) this.enemies = this.enemies.filter(e => e.hp > 0);
+    else if (live.length) {
       let cx = 0;
       for (const f of live) cx += f.x;
       cx /= live.length;
@@ -3548,7 +3574,7 @@ export class Game {
     const cx = live.reduce((s, f) => s + f.x, 0) / live.length;
     const hw = t.w / 2, hh = t.h / 2;
     const hp = Math.round(t.hp * v.hp * (1 + Math.min(1, level * 0.05)));
-    const x = cx + 900;
+    const x = this.cityRun ? CITY_ROOMS[this.cityRun.room].entry[0] : cx + 900;
     const y = t.fly ? this.stage.main.y - 220 : this.stage.main.y - hh;
     this.enemies.push({
       eid: nextEid++, kind, hw, hh, x, y,
@@ -4229,6 +4255,7 @@ export class Game {
       this.events.push({ e: 'bossdown', x: e.x, y: e.y, kind: e.kind, variant: e.variant || 0, name: this._bossVar(e).name });
       // campaign beat: the act is cleared; the third boss wins the run
       this.bossesDown++;
+      if (this.cityRun) return;
       if (!this.won && this.bossesDown >= EXPEDITION_ACTS) {
         this.won = true;
         this.events.push({ e: 'roadclear', x: e.x, y: e.y });
@@ -4324,6 +4351,7 @@ export class Game {
       over: this.over,
       win: this.winner ? this.winner.id : null,
       map: this.map,
+      ...(this.cityRun && { city: { ...this.cityRun } }),
       rt: r1(this.runT),               // difficulty clock survives host handoff
       // campaign state rides along too: acts cleared, the win flag, how the
       // run ended, and any live extraction beacon — so clients can draw it
@@ -4396,6 +4424,7 @@ export class Game {
 export function gameFromSnapshot(players, snap, seed = 2) {
   const g = new Game(players, seed, snap?.map || DEFAULT_MAP);
   if (!snap) return g;
+  if (g.cityRun && CITY_ROOMS[snap.city?.room]) Object.assign(g.cityRun, snap.city);
   g.tick = snap.tk || 0;
   g.runT = +snap.rt || 0;             // resume the difficulty ramp where it stood
   g.bossesDown = snap.bd | 0;         // …and the campaign exactly where it stood
@@ -4427,6 +4456,10 @@ export function gameFromSnapshot(players, snap, seed = 2) {
     hid: r[0], x: r[1], y: r[2], vx: 0, vy: 0, grounded: true, taken: false,
     t: Math.max(0, HEART_LIFE - (r[3] || 0)),
   }));
+  if (g.cityRun) {
+    for (const e of g.enemies) nextEid = Math.max(nextEid, e.eid + 1);
+    for (const h of g.hearts) nextEid = Math.max(nextEid, h.hid + 1);
+  }
   return g;
 }
 

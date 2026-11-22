@@ -238,3 +238,26 @@ function rr(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
+
+// ---------- pixel hats ----------
+// Rasterize a hat string once to a tiny offscreen canvas; scaled draws stay
+// pixel-crisp with imageSmoothing off. Shared by the renderer and previews.
+const hatCache = new Map();
+export function hatImage(hat) {
+  const s = sanitizeHat(hat);
+  if (!s) return null;
+  let img = hatCache.get(s);
+  if (img) return img;
+  img = document.createElement('canvas');
+  img.width = HAT_W;
+  img.height = HAT_H;
+  const x = img.getContext('2d');
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '.') continue;
+    x.fillStyle = HAT_PALETTE[HAT_CHARS.indexOf(s[i])] || '#fff';
+    x.fillRect(i % HAT_W, (i / HAT_W) | 0, 1, 1);
+  }
+  if (hatCache.size > 64) hatCache.clear();   // hats are tiny; cap anyway
+  hatCache.set(s, img);
+  return img;
+}

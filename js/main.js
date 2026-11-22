@@ -8,6 +8,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
+import { CITY_ROOMS, cityDoors, cityOpen, relayCount } from './city.js';
 import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
@@ -824,8 +825,7 @@ function startTraining() {
 }
 
 // Expedition (PvE co-op): auto-hosts a joinable room and drops the player
-// straight onto the endless map — no lobby, no vote. Friends walk in like any
-// running fight and fight alongside you; the run never ends.
+// straight into Lantern Market. Friends can join the current district by code.
 $('#menu-pve').addEventListener('click', () => {
   pendingExpedition = true;
   enterRoom(null);
@@ -840,7 +840,7 @@ function startExpedition() {
     },
   ];
   const seed = (Math.random() * 1e9) | 0;
-  startSession({ mode: 'host', myId: net.myId, players, seed, map: 'expanse' });
+  startSession({ mode: 'host', myId: net.myId, players, seed, map: 'nightcity' });
 }
 
 $('#menu-join').addEventListener('click', () => {
@@ -1205,6 +1205,7 @@ class Session {
     this.corr = { x: 0, y: 0 };     // client: reconciliation smoothing offset
     this.pendActs = {};             // client: actions waiting for a sim tick
     this.acks = new Map();          // host: last input seq processed per client
+    this.workshopParks = new Map();
     this.trying = new Map();        // player id -> {targetId, build, hat} until next life
     this.running = false;
     this.ended = false;
@@ -1227,6 +1228,7 @@ class Session {
     touch.setEnabled(true);
     this.running = true;
     this.lastT = performance.now();
+    if (this.map === 'nightcity') UI.banner('Last Train · restore both relays to ride home', 'good', 3000);
 
     // one-time controls explainer
     if (!localStorage.getItem('smacktown.helped')) {
@@ -1251,6 +1253,7 @@ class Session {
   // drops their stocks to match the lowest fighter still brawling.
   setBackgrounded(on) {
     this.backgrounded = on;
+    this.cityParked = !!on;
     touch.setEnabled(!on && this.running);
     if (this.game) this.game.setParked(this.myId, on);       // solo/host: authoritative
     else net?.sendToHost({ t: 'park', on: !!on });           // client: ask the host
@@ -1258,7 +1261,10 @@ class Session {
 
   // Host: a client stepped out to (or back from) the lobby.
   onPark(pid, on) {
-    if (this.game && this.meta.has(pid)) this.game.setParked(pid, !!on);
+    if (this.game && this.meta.has(pid)) {
+      if (this.game.cityRun) this.workshopParks.set(pid, !!on);
+      this.game.setParked(pid, !!on);
+    }
   }
 
   // A player re-tuned their character in the lobby workshop mid-fight:
@@ -1423,8 +1429,22 @@ class Session {
   }
 
   // ----- authoritative loop (solo & host) -----
+  pollFightInput() {
+    const inp = touch.poll();
+    if (this.map === 'nightcity') {
+      if (inp.mx || inp.my || inp.jump || inp.atk || inp.chg || inp.roll || inp.ab0 || inp.ab1) noteActivity();
+      const sleeping = !!(this.backgrounded || document.hidden || isIdle());
+      if (sleeping !== !!this.cityParked) {
+        this.cityParked = sleeping;
+        if (this.game) this.game.setParked(this.myId, sleeping);
+        else net?.sendToHost({ t: 'park', on: sleeping });
+      }
+    }
+    return inp;
+  }
+
   hostFrame(t, dt) {
-    this.game.setInput(this.myId, touch.poll());
+    this.game.setInput(this.myId, this.pollFightInput());
     this.acc += dt;
     while (this.acc >= TICK) {
       this.acc -= TICK;
@@ -1480,7 +1500,7 @@ class Session {
       if (this.game.over) break;
     }
     const view = {
-      tick: this.game.tick,
+      tick: this.game.tick, city: this.game.cityRun,
       fighters: this.game.fighters.map(f => ({
         id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, facing: f.facing,
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
@@ -1495,7 +1515,7 @@ class Session {
       enemies: this.game.enemies.map(e => ({
         eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing,
         hurt: e.hurt > 0, kind: e.kind, windup: e.windup || 0, temperament: e.temperament, elite: e.elite,
-        ally: !!e.ally,
+        ally: !!e.ally, variant: e.variant, atkKind: e.atkKind, aimX: e.aimX, aimY: e.aimY,
       })),
       hearts: this.game.hearts.map(h => ({ hid: h.hid, x: h.x, y: h.y, tLeft: HEART_LIFE - h.t })),
       beacon: this.game.beacon ? { ...this.game.beacon } : null,
@@ -1507,7 +1527,7 @@ class Session {
 
   // ----- predicted loop (client) -----
   clientFrame(t, dt) {
-    const inp = touch.poll();
+    const inp = this.pollFightInput();
 
     // Predict our own fighter locally at the sim rate so controls feel
     // instant; the host remains authoritative and corrects us via snapshots.
@@ -1564,12 +1584,31 @@ class Session {
       const cr = earnedCredits(mine?.score);
       const el = $('#game-credits-val');
       if (el && el.textContent !== '' + cr) el.textContent = cr;
-      const biome = expanseBiomeAt(this.seed, mine?.x || 0);
       $('#game-expedition').classList.remove('hidden');
-      $('#expedition-biome').textContent = MAPS[biome.id].name;
-      const camp = view.campaign;
-      const actTag = camp?.won ? '🏆 Cleared' : `Act ${Math.min(EXPEDITION_ACTS, (camp?.acts || 0) + 1)}/${EXPEDITION_ACTS}`;
-      $('#expedition-progress').textContent = `${Math.max(0, Math.floor((mine?.x || 0) / 100)) * 100}m · Tier ${Math.floor((view.tick || 0) / 900) + 1} · ${actTag}`;
+      if (view.city) {
+        const state = view.city, room = CITY_ROOMS[state.room];
+        const standing = view.fighters.filter(f => !f.parked && f.stocks > 0);
+        const doors = cityDoors(state);
+        const nearby = Math.max(...doors.map(d => standing.filter(f => !f.dead &&
+          Math.abs(f.x - d.x) <= 80 && Math.abs(f.y + 32) <= 85).length));
+        const remaining = Math.max(0, (state.finale === 1 ? 1 : room.foes.length) - state.sent)
+          + view.enemies.filter(e => !e.ally && e.hp > 0).length;
+        const objective = cityOpen(state)
+          ? (nearby ? `At door · ${nearby}/${standing.length}` :
+            state.finale === 2 ? 'Board the last train together' :
+            state.room === 'market' ? (state.clear === 3 ? 'Next · Storm drain' : state.clear === 5 ? 'Next · Roof lift' : 'Choose a door together') : 'Return to Lantern Market')
+          : state.relayReady ? 'Jump to the relay to restore power' :
+            state.room === 'cistern' && state.pumpTick >= 295 && state.pumpTick <= 395 ? 'Pressure surge · get above the water!' :
+            state.finale === 1 ? 'Defeat the gatekeeper' : `Clear the district · ${remaining} left`;
+        $('#expedition-biome').textContent = room.name + ' · ' + relayCount(state) + '/2 relays';
+        $('#expedition-progress').textContent = objective;
+      } else {
+        const biome = expanseBiomeAt(this.seed, mine?.x || 0);
+        $('#expedition-biome').textContent = MAPS[biome.id].name;
+        const camp = view.campaign;
+        const actTag = camp?.won ? '🏆 Cleared' : `Act ${Math.min(EXPEDITION_ACTS, (camp?.acts || 0) + 1)}/${EXPEDITION_ACTS}`;
+        $('#expedition-progress').textContent = `${Math.max(0, Math.floor((mine?.x || 0) / 100)) * 100}m · Tier ${Math.floor((view.tick || 0) / 900) + 1} · ${actTag}`;
+      }
     } else {
       $('#game-expedition').classList.add('hidden');
     }
@@ -1596,6 +1635,14 @@ class Session {
       this.snaps.length = 0;
       this.tickLog.length = 0;
       this.corr = { x: 0, y: 0 };
+    }
+    if (s.city && this.pred?.cityRun) {
+      if (s.city.visit !== this.pred.cityRun.visit) {
+        this.snaps.length = this.tickLog.length = 0;
+        this.corr = { x: 0, y: 0 };
+      }
+      this.pred.cityRun = { ...s.city };
+      this.pred._pc = null;
     }
     if (s.full) {
       for (const type of ['p', 'en', 'ht']) {
@@ -1659,13 +1706,19 @@ class Session {
       // Host dropped mid-fight and we won the election: resurrect the sim
       // from the freshest snapshot and carry on as the authority.
       this.mode = 'host';
-      this.game = gameFromSnapshot(this.players, this.lastFullSnap || this.lastSnap, this.seed + 1);
+      this.game = gameFromSnapshot(this.players, this.lastSnap?.city ? this.lastSnap : this.lastFullSnap || this.lastSnap, this.seed + 1);
       this.map = this.game.map;
       renderer.setMap(this.map);
       this.pred = null;
       this.tickLog = [];
       this.acc = 0;
       this.pendingEv = [];
+      if (this.game.cityRun) {
+        for (const f of this.game.fighters) {
+          const member = net.members.get(f.id);
+          if (f.parked && member?.act && member.act !== 'fighting') this.workshopParks.set(f.id, true);
+        }
+      }
       // Drop the departed host's fighter if they're no longer around.
       this.onRoster();
       UI.toast('You are now the host!');
@@ -1674,7 +1727,12 @@ class Session {
 
   // Host: admit a late joiner into the running fight.
   addPlayer(p) {
-    if (this.meta.has(p.id) || this.ended || this.game?.over) return;
+    if (this.ended || this.game?.over) return;
+    if (this.meta.has(p.id)) {
+      const seat = this.game?.fighters.find(f => f.id === p.id);
+      if (this.game?.cityRun && seat && !seat.stocks) this.rebindPlayer(p.id, p);
+      return;
+    }
     // Same human back under a fresh peer id? Hand them their old fighter
     // so the results screen doesn't seat a ghost duplicate of them.
     const old = p.pid ? this.players.find(x => x.pid && x.pid === p.pid && x.id !== p.id) : null;
@@ -1692,6 +1750,7 @@ class Session {
     this.meta.delete(oldId);
     this.meta.set(p.id, p);
     this.acks.delete(oldId);
+    this.workshopParks.delete(oldId);
     this.game?.rebindFighter(oldId, p);
     this.buildHud();
   }
@@ -1759,9 +1818,14 @@ class Session {
     if (!net || !this.game || this.mode === 'solo' || this.ended) return;
     for (const f of this.game.fighters) {
       // sandbags and bots have no peer to lose — never forfeit them
-      if (f.dead || f.isBot || f.sandbag || f.id === this.myId) continue;
+      if (f.isBot || f.sandbag || f.id === this.myId || (f.dead && !this.game.cityRun)) continue;
       const m = net.members.get(f.id);
       const connLost = !m || (m.status === 'gone' && !net.conns.get(f.id)?.open);
+      if (this.game.cityRun) {
+        if (connLost && !f.stocks) continue;
+        this.game.setParked(f.id, connLost || this.workshopParks.get(f.id) || m?.idle || m?.status === 'away' || m?.status === 'gone');
+        if (connLost) f.downT = 0;
+      }
       if (connLost) {
         f.dead = true;
         f.stocks = 0;
@@ -1821,7 +1885,7 @@ class Session {
       // HP, downed state and score are authoritative-only (prediction never
       // runs combat) — carry them from the latest snapshot row for my fighter
       const auth = fb.find(f => f.id === this.myId);
-      if (auth) { pv.hp = auth.hp; pv.maxHp = auth.maxHp; pv.downT = auth.downT; pv.score = auth.score; pv.dead = auth.dead; }
+      if (auth) { pv.hp = auth.hp; pv.maxHp = auth.maxHp; pv.downT = auth.downT; pv.score = auth.score; pv.dead = auth.dead; pv.parked = auth.parked; }
       const i = fighters.findIndex(f => f.id === this.myId);
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
     }
@@ -1844,7 +1908,7 @@ class Session {
     // campaign extras ride the latest snapshot as-is (no interpolation needed)
     const beacon = b.s.bc ? { x: +b.s.bc[0] || 0, y: +b.s.bc[1] || 0, t: +b.s.bc[2] || 0, charge: +b.s.bc[3] || 0 } : null;
     const campaign = this.coop ? { acts: b.s.bd | 0, won: !!b.s.wn } : null;
-    return { fighters, projectiles, tick, enemies, hearts, beacon, campaign };
+    return { fighters, projectiles, tick, enemies, hearts, beacon, campaign, city: b.s.city };
   }
 
   // ----- events & endgame -----
@@ -1859,8 +1923,11 @@ class Session {
         if (navigator.vibrate && ev.id === this.myId) navigator.vibrate(80);
         this.endTry(ev.id);
       }
-      if (ev.e === 'boss') UI.toast(`⚠️ ${ev.name} bars the road!`, 2600);
-      if (ev.e === 'bossdown') UI.toast(`🏆 ${ev.name || 'Boss'} defeated — act cleared!`, 2600);
+      if (ev.e === 'district') UI.toast(CITY_ROOMS[ev.room].name, 1300);
+      if (ev.e === 'districtclear') UI.toast(ev.finale === 2 ? 'Last train boarding!' :
+        ev.room === 'market' ? 'Gates open · restore both relays' : 'Relay online · return to street level', 1750);
+      if (ev.e === 'boss') UI.toast(this.map === 'nightcity' ? `Gatekeeper · ${ev.name}` : `⚠️ ${ev.name} bars the road!`, 2600);
+      if (ev.e === 'bossdown' && this.map !== 'nightcity') UI.toast(`🏆 ${ev.name || 'Boss'} defeated — act cleared!`, 2600);
       if (ev.e === 'roadclear') UI.toast('🏆 THE ROAD IS CLEARED!', 3400);
       if (ev.e === 'beacon') UI.toast(ev.won
         ? '⛺ The way home is lit — stand in the beacon to end the run, or fight on into the dark!'
@@ -1876,22 +1943,22 @@ class Session {
     this.ended = true;
     const mine = finalFighters.find(f => f.id === this.myId);
     const acts = Math.min(EXPEDITION_ACTS, this.game?.bossesDown ?? this.lastSnap?.bd ?? 0);
+    const city = this.game?.cityRun || this.lastSnap?.city;
+    const distance = Math.max(0, Math.floor((mine?.x || 0) / 100)) * 100;
+    const tier = Math.floor((this.game?.tick || this.lastSnap?.tk || 0) / 900) + 1;
+    const biomes = Math.max(1, Math.floor(distance / 3600) + 1);
     const runSummary = this.coop && mine ? {
-      distance: Math.max(0, Math.floor(mine.x / 100)) * 100,
-      tier: Math.floor((this.game?.tick || this.lastSnap?.tk || 0) / 900) + 1,
-      biomes: Math.max(1, Math.floor(Math.max(0, mine.x) / 3600) + 1),
-      acts,
-      defeats: mine.score?.ko || 0,
-      elites: mine.score?.elite || 0,
-      credits: earnedCredits(mine.score),
+      progress: city ? `${CITY_ROOMS[city.room].name} · ${relayCount(city)}/2 relays restored`
+        : `${distance}m · Tier ${tier} · ${biomes} biome${biomes === 1 ? '' : 's'} · Act ${acts}/${EXPEDITION_ACTS}`,
+      defeats: mine.score?.ko || 0, elites: mine.score?.elite || 0, credits: earnedCredits(mine.score),
     } : null;
     for (const pid of [...this.trying.keys()]) this.endTry(pid);
     setTimeout(() => {
       this.stop();
       const summary = $('#results-expedition');
       summary.classList.toggle('hidden', !runSummary);
-      if (runSummary) summary.innerHTML = `<b>Expedition Report</b><span>${runSummary.distance}m · Tier ${runSummary.tier} · ${runSummary.biomes} biome${runSummary.biomes === 1 ? '' : 's'} · Act ${runSummary.acts}/${EXPEDITION_ACTS}</span><span>${runSummary.defeats} defeated · ${runSummary.elites} elite${runSummary.elites === 1 ? '' : 's'} · 💰 ${runSummary.credits} CR</span>`;
-      UI.renderResults(this.players, winnerId, finalFighters, { myId: this.myId, onCopy: copyCharacter, coop: this.coop, outcome });
+      if (runSummary) summary.innerHTML = `<b>Expedition Report</b><span>${runSummary.progress}</span><span>${runSummary.defeats} defeated · ${runSummary.elites} elite${runSummary.elites === 1 ? '' : 's'} · 💰 ${runSummary.credits} CR</span>`;
+      UI.renderResults(this.players, winnerId, finalFighters, { myId: this.myId, onCopy: copyCharacter, coop: this.coop, outcome, city: !!city });
       $('#results-again').textContent = this.mode === 'solo' ? 'Rematch' : 'Back to Lobby';
       UI.showScreen('results');
       session = null;

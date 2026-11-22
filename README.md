@@ -44,6 +44,15 @@ and pass its host/port where `new Peer(...)` is created in `js/net.js`.
 
 ## Co-op expeditions
 
+**Last Train** starts in Lantern Market. Clear the block, then take the roof lift
+to Signal Heights or the storm drain to Undertow Works. Clear each district and
+jump to its relay to restore power. The pump flush in Undertow Works hits
+fighters and enemies at street level. Use the platforms to ride it out.
+Bring both relays online, defeat the market gatekeeper and board the train.
+
+Stand together at a lit doorway to travel. Sleeping teammates travel with the
+crew, and friends who join mid-run arrive in the current district.
+
 Select a saved fighter on the menu and enter Expedition with that build.
 The same **1000-CR cap** as battle applies to hosts, joining players, and
 workshop swaps. All gear is available immediately; there are no loot boxes

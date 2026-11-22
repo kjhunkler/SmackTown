@@ -4,35 +4,14 @@ import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS, WEAPONS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
   loadLoadouts, deleteLoadout, hatArt, loadHats, selectedLoadout, selectLoadout,
-  HAT_W, HAT_H, HAT_PX, HAT_FACE_ROWS, HAT_CHARS, HAT_PALETTE, sanitizeHat,
+  HAT_W, HAT_H,
 } from './profile.js';
 import { MAPS, MAP_SIZES, mapsOfSize } from './game.js';
-import { BOX_X, BOX_Y, BOX_W, BOX_H } from './hat.js';
+import { BOX_X, BOX_Y, BOX_W, BOX_H, hatImage } from './hat.js';
+export { hatImage } from './hat.js';
+import { Renderer } from './render.js';
 import { SFX } from './sfx.js';
 import { settings, KEY_ACTIONS, PAD_ACTIONS, padBtnLabel } from './settings.js';
-
-// ---------- pixel hats ----------
-// Rasterize a hat string once to a tiny offscreen canvas; scaled draws stay
-// pixel-crisp with imageSmoothing off. Shared by the renderer and previews.
-const hatCache = new Map();
-export function hatImage(hat) {
-  const s = sanitizeHat(hat);
-  if (!s) return null;
-  let img = hatCache.get(s);
-  if (img) return img;
-  img = document.createElement('canvas');
-  img.width = HAT_W;
-  img.height = HAT_H;
-  const x = img.getContext('2d');
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '.') continue;
-    x.fillStyle = HAT_PALETTE[HAT_CHARS.indexOf(s[i])] || '#fff';
-    x.fillRect(i % HAT_W, (i / HAT_W) | 0, 1, 1);
-  }
-  if (hatCache.size > 64) hatCache.clear();   // hats are tiny; cap anyway
-  hatCache.set(s, img);
-  return img;
-}
 
 const $ = s => document.querySelector(s);
 
@@ -83,71 +62,14 @@ export function renderColorGrid(container, selected, onPick) {
 
 // ---------- fighter preview (menu card) ----------
 
-// Menu portrait in a boxing stance. The crown starts at the same height
-// as the fighter it depicts, so saved hats sit on its head and face.
-const portraitPixels = [
-  '         ###########',
-  '       ##hhhhhhhcccc##',
-  '      #hhcccccccccscss#',
-  '     #hhcccccccccccscs#',
-  '     #hcccccccccccccss#',
-  '     #hccccccc##ccc##s#',
-  '     #hccccccccw#ccw#s#',
-  '     #hcccccccc##cc##s#',
-  '     #hcccccccccccccss#    ####',
-  '    ##ccccccccccccsssd#   #hhcc#',
-  '  ##hh##cccccccccssssd#  #hccccs#',
-  ' #hhcccc#cccccccsssssd####cccsss#',
-  ' #hccccss#cccccssssdd#ww##cccss#',
-  ' #cccssss#cccssssddd##wwww#ddd#',
-  '  #sssss#ccssssssddd#  #######',
-  '  ##www#ccsssssssddd#',
-  '   #www#cccccccssssd#',
-  '   ##dd##wwwwwwwyyww#',
-  '     ###ddddddddyydd#',
-  '      #cccsssdddddss#',
-  '     #cccssss####ssss#',
-  '     #ssssss#    #sss#',
-  '    #wwwddd#     #wwwd#',
-  '   #ddddddd#     #ddddd##',
-  '   #########     ########',
-];
-
-export function drawPreview(canvas, color, hat = null) {
+export function drawPreview(canvas, color, hat = null, weapon = null) {
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
-  ctx.translate(W / 2, H / 2 + 8);
-  const pixel = 3;
-  ctx.scale(Math.min(1, W / 108), Math.min(1, H / 108));
-  const palette = {
-    '#': '#161325', d: '#333044', w: '#f8edde', y: '#f4b34b',
-    c: color, h: color, s: color,
-  };
-  portraitPixels.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      const tone = row[x];
-      if (tone === ' ') continue;
-      const left = (x - 14) * pixel, top = (y - 11) * pixel;
-      ctx.fillStyle = palette[tone];
-      ctx.fillRect(left, top, pixel, pixel);
-      if (tone === 'h' || tone === 's') {
-        ctx.fillStyle = tone === 'h' ? 'rgba(255,250,221,.52)' : 'rgba(34,17,59,.3)';
-        ctx.fillRect(left, top, pixel, pixel);
-      }
-    }
-  });
-  const img = hatImage(hat);
-  if (img) {
-    // preview body is 52x68 vs the in-game 46x64 — scale the hat to match.
-    // Same brim-anchored box as hat.js: crown rows above y=-16, face rows below.
-    const s = 68 / 64;
-    const bw = HAT_W * HAT_PX, bh = HAT_H * HAT_PX;
-    const by = -32 + 16 - (HAT_H - HAT_FACE_ROWS) * HAT_PX;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, (-bw / 2) * s, by * s, bw * s, bh * s);
-  }
+  ctx.translate(canvas.width / 2, canvas.height * .64);
+  const scale = Math.min(canvas.width / 104, canvas.height / 116);
+  ctx.scale(scale, scale);
+  Renderer.drawFighter(ctx, { x: 0, y: 0, facing: 1, vy: 0, color, hat, weapon, state: 'idle' }, false, 0);
   ctx.restore();
 }
 function rr(ctx, x, y, w, h, r) {
@@ -301,7 +223,7 @@ function renderWeaponShop(box, work, left) {
 // Live fighter preview in the workshop: the fighter wearing work.hatId,
 // with a label placing that hat in the library cycle (arrows flip through).
 export function renderBuilderPreview(work) {
-  drawPreview($('#builder-preview-canvas'), work.color, hatArt(work.hatId));
+  drawPreview($('#builder-preview-canvas'), work.color, hatArt(work.hatId), work.build.weapon);
   const label = $('#builder-hat-label');
   const hats = loadHats();
   const i = work.hatId ? hats.findIndex(h => h.id === work.hatId) : -1;
@@ -401,12 +323,12 @@ function appendHat(box, hat) {
   box.appendChild(c);
 }
 
-function fighterThumb(color, hat) {
+function fighterThumb(color, hat, weapon) {
   const c = document.createElement('canvas');
   c.width = 72;
   c.height = 72;
   c.className = 'r-fighter';
-  drawPreview(c, color || '#f5f5f5', hat);
+  drawPreview(c, color || '#f5f5f5', hat, weapon);
   return c;
 }
 
@@ -579,7 +501,7 @@ export function renderLobbyCard(profile) {
 function renderCharacterCard(prefix, profile) {
   $('#' + prefix + '-name').textContent = profile.name;
   $('#' + prefix + '-build').textContent = buildSummary(profile.build);
-  drawPreview($('#' + prefix + '-preview'), profile.color, profile.hat);
+  drawPreview($('#' + prefix + '-preview'), profile.color, profile.hat, profile.build?.weapon);
   // Selected character label + arrow availability. The arrows cycle saved
   // builds; from an unsaved fighter the first tap lands on a saved one.
   const list = loadLoadouts();
@@ -624,7 +546,7 @@ export function renderOnline(entries, ready, { onJoin, onInvite, root = 'menu', 
       <span class="presence-dot ${e.idle ? 'away' : 'online'}"></span>
       <span class="r-fig"></span>
       <span class="r-name">${esc(e.name)}<span class="r-where">${where}</span></span>`;
-    li.querySelector('.r-fig').appendChild(fighterThumb(e.color, e.hat));
+    li.querySelector('.r-fig').appendChild(fighterThumb(e.color, e.hat, e.build?.weapon));
     if (inviteOnly) {
       const b = document.createElement('button');
       b.className = 'btn tiny ghost';
@@ -920,9 +842,9 @@ const RUN_OUTCOMES = {
   wiped: '💀 The Road Wins',
 };
 
-export function renderResults(players, winnerId, finalFighters, { myId = null, onCopy = null, coop = false, outcome = null } = {}) {
+export function renderResults(players, winnerId, finalFighters, { myId = null, onCopy = null, coop = false, outcome = null, city = false } = {}) {
   $('#results-title').textContent = coop
-    ? RUN_OUTCOMES[outcome] || 'Expedition Over'
+    ? (city ? { cleared: 'Last train caught!', wiped: 'Crew down' }[outcome] : RUN_OUTCOMES[outcome]) || 'Expedition Over'
     : winnerId
     ? `${esc(players.find(p => p.id === winnerId)?.name || '???')} wins!`
     : players.length === 1 ? 'Practice complete!'
@@ -965,7 +887,7 @@ export function renderResults(players, winnerId, finalFighters, { myId = null, o
         </span>
       </div>
       <div class="r-build-detail">${buildDetailHtml(p.build)}</div>`;
-    li.querySelector('.r-fig').appendChild(fighterThumb(p.color, p.hat));
+    li.querySelector('.r-fig').appendChild(fighterThumb(p.color, p.hat, p.build?.weapon));
     if (onCopy && p.id !== myId) {
       const copy = document.createElement('button');
       copy.className = 'r-copy';

@@ -2,8 +2,9 @@
 // (particles, screen shake, KO bursts) from interpolated view state.
 
 import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, bombLaunch, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE } from './game.js';
-import { hatImage } from './ui.js';
-import { BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
+import { drawCity } from './city-art.js';
+import { CITY_ROOMS } from './city.js';
+import { hatImage, BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
 
 const F_W = 46, F_H = 64;
@@ -236,6 +237,9 @@ export class Renderer {
     for (const ev of events || []) {
       SFX.event(ev);   // every cosmetic event makes its sound exactly once
       switch (ev.e) {
+        case 'cityspawn':
+          this.burst(ev.x, ev.y, 18, ev.color, 210);
+          break;
         case 'hit':
           this.burst(ev.x, ev.y, ev.heavy ? 18 : 8, ev.heavy ? '#ffdd55' : '#ffffff', ev.heavy ? 420 : 220);
           this.shake = Math.max(this.shake, ev.heavy ? 14 : 5);
@@ -590,7 +594,11 @@ export class Renderer {
 
     // --- camera: frame all live fighters ---
     const live = view.fighters.filter(f => !f.dead);
-    if (live.length) {
+    if (view.city) {
+      this.cam.x = 0; this.cam.y = -138;
+      this.cam.zoom = Math.min(W / 1230, H / 550);
+      this.shake = 0;
+    } else if (live.length) {
       let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
       for (const f of live) {
         minX = Math.min(minX, f.x); maxX = Math.max(maxX, f.x);
@@ -612,28 +620,30 @@ export class Renderer {
     const shy = (Math.random() - 0.5) * this.shake * this.dpr;
 
     // --- background (themed per map) ---
-    const biomeTheme = this.mapId === 'expanse' ? expanseBiomeAt(this.expanseSeed, this.cam.x) : null;
-    const th = biomeTheme?.blend ? blendTheme(THEMES[biomeTheme.id], THEMES[biomeTheme.next], biomeTheme.blend)
-      : biomeTheme ? THEMES[biomeTheme.id] : this.theme;
-    const grd = ctx.createLinearGradient(0, 0, 0, H);
-    grd.addColorStop(0, th.sky[0]);
-    grd.addColorStop(0.6, th.sky[1]);
-    grd.addColorStop(1, th.sky[2]);
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, 0, W, H);
-
     const t = performance.now() / 1000;
-    this._motif(ctx, W, H, t);
+    if (!view.city) {
+      const biomeTheme = this.mapId === 'expanse' ? expanseBiomeAt(this.expanseSeed, this.cam.x) : null;
+      const th = biomeTheme?.blend ? blendTheme(THEMES[biomeTheme.id], THEMES[biomeTheme.next], biomeTheme.blend)
+        : biomeTheme ? THEMES[biomeTheme.id] : this.theme;
+      const grd = ctx.createLinearGradient(0, 0, 0, H);
+      grd.addColorStop(0, th.sky[0]);
+      grd.addColorStop(0.6, th.sky[1]);
+      grd.addColorStop(1, th.sky[2]);
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, W, H);
 
-    ctx.fillStyle = '#ffffff';
-    for (const s of this.stars) {
-      const px = W / 2 + (s.x - this.cam.x * 0.15) * this.dpr * 0.5;
-      const py = H / 2 + (s.y - this.cam.y * 0.15) * this.dpr * 0.5;
-      if (px < 0 || px > W || py < 0 || py > H) continue;
-      ctx.globalAlpha = (0.3 + 0.3 * Math.sin(t * 2 + s.tw)) * th.stars;
-      ctx.fillRect(px, py, s.s * this.dpr, s.s * this.dpr);
+      this._motif(ctx, W, H, t);
+
+      ctx.fillStyle = '#ffffff';
+      for (const s of this.stars) {
+        const px = W / 2 + (s.x - this.cam.x * 0.15) * this.dpr * 0.5;
+        const py = H / 2 + (s.y - this.cam.y * 0.15) * this.dpr * 0.5;
+        if (px < 0 || px > W || py < 0 || py > H) continue;
+        ctx.globalAlpha = (0.3 + 0.3 * Math.sin(t * 2 + s.tw)) * th.stars;
+        ctx.fillRect(px, py, s.s * this.dpr, s.s * this.dpr);
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
 
     ctx.save();
     ctx.translate(W / 2 + shx, H / 2 + shy);
@@ -645,8 +655,10 @@ export class Renderer {
     if (this.flora) this._floraBackdrop(ctx, t);
     if (this.isles) this._isleBackdrop(ctx, t);
     if (this.works) this._worksBackdrop(ctx, t);
-    this._stage(ctx, view.tick ?? 0, t);
-    if (this.theme.ambient) this._ambient(ctx, dt, t);
+    this.cityRoom = view.city?.room;
+    if (view.city) drawCity(ctx, view, this.cam, canvas, t);
+    else this._stage(ctx, view.tick ?? 0, t);
+    if (!view.city && this.theme.ambient) this._ambient(ctx, dt, t);
 
     // tick down hit flashes
     for (const [id, v] of this.flash) {
@@ -860,7 +872,7 @@ export class Renderer {
     }
     if (view.beacon) this._beacon(ctx, view.beacon, t, view.fighters);
 
-    for (const f of view.fighters) if (!f.dead) this._fighter(ctx, f, f.id === myId, t);
+    for (const f of view.fighters) if (!f.dead) Renderer.drawFighter(ctx, f, f.id === myId, t, this.squash.get(f.id), this.flash.get(f.id));
 
     // attack hitboxes — the exact rects the sim tests, drawn in world space
     // so squash & stretch never distorts them
@@ -4257,7 +4269,7 @@ export class Renderer {
     this.ambient = this.ambient.filter(e => e.t < e.life);
   }
 
-  _fighter(ctx, f, isMe, t) {
+  static drawFighter(ctx, f, isMe, t, sq = null, flash = 0) {
     ctx.save();
     ctx.translate(f.x, f.y);
 
@@ -4298,7 +4310,6 @@ export class Renderer {
     // squash & stretch by vertical speed, plus a touchdown squash pulse:
     // deepest at impact, easing back up while the feet stay planted.
     // The spin also tucks into a tight crouch for its whole duration.
-    const sq = this.squash.get(f.id);
     const squish = sq ? 1 - sq.a * (sq.t / LAND_SQUASH_T) : 1;
     const stretch = clamp(1 + Math.abs(f.vy) / 3500, 1, 1.25) * squish * (spinning ? 0.7 : 1);
     if (squish < 1) ctx.translate(0, (1 - squish) * F_H / 2);
@@ -4433,7 +4444,6 @@ export class Renderer {
     ctx.stroke();
 
     // hit flash: body whites out for a blink when damage lands
-    const flash = this.flash.get(f.id) || 0;
     if (flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(1, flash / 0.16) * 0.85})`;
       roundRect(ctx, -bw / 2, bTop, bw, bh, 14);
@@ -4567,7 +4577,7 @@ export class Renderer {
       Math.abs(f.vy || 0) < 1, k);
     const surfaces = [this.stage.main, ...(this.stage.infinite
       ? expansePlats(this.expanseSeed >>> 0, launch.x - 1200, launch.x + 1200)
-      : platsAt(this.mapId, tick))];
+      : this.cityRoom ? CITY_ROOMS[this.cityRoom].plats : platsAt(this.mapId, tick))];
     ctx.save();
     ctx.fillStyle = `rgba(255,210,62,${(.65 + .25 * Math.sin(t * 8)).toFixed(2)})`;
     let prevX = launch.x, prevY = launch.y;

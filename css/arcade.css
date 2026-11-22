@@ -125,7 +125,7 @@
 }
 .mode-card::after { background: linear-gradient(10deg,#0b0c18f5,#0b0c1844 52%,transparent 75%); }
 #menu-solo { --poster: url("../art/impact.webp"); grid-column: span 2; border-color: #ffad56; }
-#menu-pve { --poster: url("../art/expedition.webp"); }
+#menu-pve { --poster: url("../art/city-market.webp"); }
 #menu-training { --poster: url("../art/dojo.webp"); }
 .mode-kind {
   padding: 2px 6px; background: #101220da; color: #ffe6b8;
