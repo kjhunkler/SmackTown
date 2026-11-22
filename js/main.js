@@ -9,7 +9,7 @@ import {
 import { Net } from './net.js';
 import { Presence } from './presence.js';
 import { CITY_ROOMS, cityDoors, cityOpen, relayCount } from './city.js';
-import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
+import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, NEW_MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -804,7 +804,7 @@ $('#menu-solo').addEventListener('click', () => {
   startSession({
     mode: 'solo',
     myId: 'me',
-    map: MAP_IDS[(Math.random() * MAP_IDS.length) | 0],
+    map: NEW_MAP_IDS[(Math.random() * NEW_MAP_IDS.length) | 0],
     players: [
       { id: 'me', name: profile.name, color: profile.color, build: profile.build, hat: profile.hat },
       {

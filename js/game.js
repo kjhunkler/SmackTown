@@ -370,6 +370,7 @@ export const MAPS = { ...ORIGINAL_MAPS, ...ARENAS };
 export const DEFAULT_MAP = 'battlefield';
 // Rotation/votes skip hidden maps (training is reachable only by mode)
 export const MAP_IDS = Object.keys(MAPS).filter(id => !MAPS[id].hidden);
+export const NEW_MAP_IDS = MAP_IDS.filter(id => !LEGACY_MAP_IDS.includes(id));
 // Size classes double as vote tokens: a lobby vote is either a map id or
 // one of these, and the two kinds never collide.
 export const MAP_SIZES = ['small', 'medium', 'large'];

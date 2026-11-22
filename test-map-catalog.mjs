@@ -1,13 +1,14 @@
 // Exercise every illustrated stage through voting, simulation and host handoff.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { Game, MAPS, MAP_IDS, MAP_SIZES, LEGACY_MAP_IDS, mapsOfSize, tallyMapVotes,
+import { Game, MAPS, MAP_IDS, NEW_MAP_IDS, MAP_SIZES, LEGACY_MAP_IDS, mapsOfSize, tallyMapVotes,
   gameFromSnapshot, platsAt, hazardsAt, blankInput } from './js/game.js';
 import { ARENA_ART, arenaImage } from './js/arena-art.js';
 
 const originals = 'battlefield skyline foundry shrine galleon observatory flatlands ruins garden docks canyon market temple frostspire coliseum citadel reactor roots'.split(' ');
 assert.deepEqual([...LEGACY_MAP_IDS].sort(), originals.sort());
-const additions = MAP_IDS.filter(id => !LEGACY_MAP_IDS.includes(id));
+const additions = NEW_MAP_IDS;
+assert.deepEqual(additions, MAP_IDS.filter(id => !LEGACY_MAP_IDS.includes(id)));
 assert.equal(additions.length, 18);
 assert.deepEqual(Object.keys(ARENA_ART).sort(), [...additions].sort());
 const serviceWorker = readFileSync(new URL('./sw.js', import.meta.url), 'utf8');
