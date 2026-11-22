@@ -44,6 +44,7 @@ export class Net {
     this.handlers = {};
     this.hbTimer = null;
     this.closed = false;
+    this.openTimer = null;
     this._visHandler = () => {
       this.status = document.visibilityState === 'hidden' ? 'away' : 'online';
       this._broadcastHeartbeat();
@@ -118,6 +119,7 @@ export class Net {
 
   leave() {
     this.closed = true;
+    clearTimeout(this.openTimer);
     clearInterval(this.hbTimer);
     document.removeEventListener('visibilitychange', this._visHandler);
     try { this.broadcast({ t: 'bye' }); } catch (_) {}
@@ -129,12 +131,26 @@ export class Net {
   }
 
   async _openPeer(id, onOpen) {
+    // A failed initial signaling connection cannot start a room. Bound the
+    // wait, including TURN configuration, so the menu remains usable.
+    if (!this.openTimer) {
+      this.openTimer = setTimeout(() => {
+        this.openTimer = null;
+        if (!this.closed && !this.myId) {
+          this.emit('error', 'Could not connect to matchmaking. Check your connection and try again.');
+        }
+      }, 15000);
+    }
     // Default PeerJS cloud for signaling; media never touches it (WebRTC is P2P).
     const opts = await peerOptions();
     if (this.closed) return;
     const p = id ? new Peer(id, opts) : new Peer(opts);
     this.peer = p;
-    p.on('open', onOpen);
+    p.on('open', () => {
+      clearTimeout(this.openTimer);
+      this.openTimer = null;
+      onOpen();
+    });
     p.on('connection', conn => this._acceptConn(conn));
     p.on('error', err => {
       if (p !== this.peer) return;
