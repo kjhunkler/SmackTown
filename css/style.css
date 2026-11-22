@@ -1322,3 +1322,122 @@ input[type=text]:focus { border-color: var(--accent); }
 #net-banner.bad { background: var(--bad); color: #fff; }
 #net-banner.good { background: var(--good); color: #06210f; }
 #net-banner.tappable { cursor: pointer; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+
+/* The cabinet surrounds menu screens only. Its display and controls stay
+   put while a long inventory, map ballot or roster scrolls inside it. */
+.screen:not(#screen-game) {
+  --panel: #152629;
+  --panel-2: #243c40;
+  --ink-dim: #b0c5bb;
+  --accent: #ffe36b;
+  --radius: 7px;
+  padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
+  background: repeating-linear-gradient(135deg, #1f3436 0 2px, #203739 2px 7px);
+}
+.screen:not(#screen-game) > .panel {
+  border: 4px ridge #607a75;
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 30% 0%, #244040, transparent 68%), #112427;
+  box-shadow: 0 5px 0 #0a191b, 0 18px 48px #07151699;
+}
+.screen:not(#screen-game) .btn {
+  border-radius: 6px;
+  box-shadow: inset 0 -3px #0003;
+}
+.screen:not(#screen-game) .btn.primary { background: #ffe36b; color: #23271a; }
+.screen:not(#screen-game) :focus-visible { outline: 3px solid #8fffd8; outline-offset: -3px; }
+.screen .logo-word { color: #f6ffda; text-shadow: 2px 3px #1a554c, 4px 5px #071c20; }
+:is(#screen-menu,#screen-lobby,#screen-builder) > .panel {
+  display: flex;
+  flex-direction: column;
+  max-width: 960px;
+  height: min(100%, 650px);
+  overflow: hidden;
+  gap: 10px;
+}
+.console-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.2fr);
+  gap: clamp(8px, 2vw, 24px);
+}
+.fighter-bay,.deck-page,.deck { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.fighter-bay,.deck-page,.builder-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #718f82 #132728;
+  padding: clamp(8px, 1.6vw, 18px);
+  border: 1px solid #49615c;
+  background: #0d2022;
+  border-radius: 7px;
+}
+.deck-page { flex: 1; }
+.fighter-bay > *, .deck-page > * { flex-shrink: 0; }
+.fighter-bay .menu-char-row { margin: 0; }
+.fighter-bay .fighter-card { min-width: 0; background: #24453f; border-color: #638779; }
+.deck-nav,.gear-tabs { display: flex; gap: 4px; }
+.deck-nav button,.gear-tab {
+  flex: 1; min-width: 0; min-height: 36px;
+  font: bold 13px/1.1 ui-monospace, monospace;
+  color: #c8dbd2; background: #233b3c;
+  border: 1px solid #536d65; border-radius: 5px; cursor: pointer;
+}
+.deck-nav button[aria-pressed=true],.gear-tab.on { color: #142729; background: #a7eed1; border-color: #baf9df; }
+.gear-tabs { flex: none; position: static; background: none; margin: 0; padding: 0; }
+.gear-tab.on .gt-badge { color: #193e33; }
+.gear-pane { display: grid; align-content: start; gap: 8px; }
+.builder-scroll { display: block; min-height: 0; }
+.builder-foot,.builder-head { flex: none; }
+.shop-grid { grid-template-columns: repeat(auto-fit,minmax(min(220px,100%),1fr)); }
+#screen-menu .logo { font-size: clamp(26px,5vmin,50px); }
+#screen-lobby .lobby-panel { align-items: stretch; }
+#screen-lobby .lobby-panel > h2 { align-self: center; }
+#screen-lobby .lobby-panel > .tagline { text-align: center; }
+@media (orientation: landscape) {
+  #menu-play { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-content: start; }
+  #menu-solo,#menu-play .join-row,#menu-play .join-hint { grid-column: span 2; }
+  #screen-menu .fighter-card { flex-direction: column; align-items: center; text-align: center; }
+  #screen-menu .fighter-card canvas { width: clamp(60px,22vh,150px); height: auto; }
+  #screen-menu .fighter-card-info { min-width: 0; }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  :is(#screen-menu,#screen-builder,#screen-lobby) > .panel { gap: 5px; padding: 7px 12px; }
+  .fighter-bay,.deck-page { padding: 7px; gap: 5px; }
+  .console-body .btn,.builder-foot .btn { padding: 8px; min-height: 34px; font-size: 14px; }
+  .gear-tab .gt-icon { display: none; }
+  .builder-preview-fig canvas { width: 68px; height: 68px; }
+  #screen-lobby .fighter-bay { display: grid; grid-template-columns: 1fr 1fr; align-content: start; }
+  #screen-lobby .menu-char-row,#lobby-ready,#lobby-start,#lobby-rejoin { grid-column: span 2; grid-area: auto / span 2; }
+  #screen-lobby .fighter-bay > button { grid-area: auto; }
+  #screen-lobby #lobby-ready,#screen-lobby #lobby-start,#screen-lobby #lobby-rejoin { grid-column: span 2; }
+}
+@media (max-width: 580px) and (orientation: portrait) {
+  .console-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); }
+  .fighter-bay { max-height: 34vh; }
+  .gear-tabs { display: grid; grid-template-columns: repeat(3,1fr); }
+}
+.modal-card {
+  --panel: #152629;
+  --panel-2: #243c40;
+  --accent: #ffe36b;
+  --ink-dim: #b0c5bb;
+  border: 4px ridge #607a75;
+  border-radius: 12px;
+}
+.settings-body,.hatlib-body { min-height: 0; }
+#screen-results .panel { overflow: hidden; }
+#results-list { overflow: auto; min-height: 0; }
+#screen-results .btn { flex: none; }
+@media (orientation: landscape) and (max-height: 560px) {
+  .settings-card,.modal-card { max-width: 680px; padding: 10px; gap: 6px; }
+  .settings-foot #settings-restore-chars { flex-basis: auto; }
+  #screen-login .panel {
+    display: grid;
+    max-width: 720px;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+  }
+  #screen-login .logo,#screen-login .tagline,#login-error,#login-go { grid-column: span 2; }
+  #screen-builder .builder-head { padding-inline-start: 32px; }
+}

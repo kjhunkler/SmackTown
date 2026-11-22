@@ -34,41 +34,57 @@
 <section id="screen-menu" class="screen hidden">
   <div class="panel narrow">
     <h1 class="logo small"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version"></small></span></h1>
-    <div class="menu-char-row">
-      <button id="menu-char-prev" class="hat-arrow" aria-label="Previous character">◀</button>
-      <div id="menu-card" class="fighter-card" role="button" tabindex="0"
-           aria-label="Edit this character" title="Tap to edit">
-        <canvas id="menu-preview" width="120" height="120"></canvas>
-        <div class="fighter-card-info">
-          <div id="menu-name" class="fighter-name"></div>
-          <div id="menu-loadout" class="fighter-loadout"></div>
-          <div id="menu-build" class="fighter-build"></div>
+    <div class="console-body">
+      <aside class="fighter-bay">
+        <div class="menu-char-row">
+          <button id="menu-char-prev" class="hat-arrow" aria-label="Previous character">◀</button>
+          <div id="menu-card" class="fighter-card" role="button" tabindex="0" aria-label="Edit this character" title="Tap to edit">
+            <canvas id="menu-preview" width="120" height="120"></canvas>
+            <div class="fighter-card-info">
+              <div id="menu-name" class="fighter-name"></div>
+              <div id="menu-loadout" class="fighter-loadout"></div>
+              <div id="menu-build" class="fighter-build"></div>
+            </div>
+            <span class="fighter-card-edit" aria-hidden="true">✏️</span>
+          </div>
+          <button id="menu-char-next" class="hat-arrow" aria-label="Next character">▶</button>
         </div>
-        <span class="fighter-card-edit" aria-hidden="true">✏️</span>
+        <button id="menu-builder" class="btn ghost">Edit Fighter &amp; Build</button>
+      </aside>
+      <div class="deck">
+        <nav class="deck-nav" aria-label="menu views">
+          <button type="button" aria-controls="menu-play" aria-pressed="true">Play</button>
+          <button type="button" aria-controls="menu-social" aria-pressed="false">Online</button>
+          <button type="button" aria-controls="menu-options" aria-pressed="false">Options</button>
+        </nav>
+        <div id="menu-play" class="deck-page">
+          <button id="menu-solo" class="btn primary big">Practice vs Bot</button>
+          <button id="menu-pve" class="btn big ghost">🌌 Expedition (Co-op)</button>
+          <button id="menu-training" class="btn big ghost">🥋 Training Room</button>
+          <div class="join-row">
+            <input id="menu-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters"
+              spellcheck="false">
+            <button id="menu-join" class="btn primary">Join / Host</button>
+          </div>
+          <p class="join-hint">Enter a code to join a room — leave it blank to host a new one.</p>
+        </div>
+        <div id="menu-social" class="deck-page hidden">
+          <div id="menu-online" class="online-box">
+            <h3 class="section-title">Fighters online <span id="menu-online-count" class="hint"></span></h3>
+            <ul id="menu-online-list" class="roster online-list"></ul>
+            <p id="menu-online-empty" class="online-empty">Looking for fighters…</p>
+          </div>
+        </div>
+        <div id="menu-options" class="deck-page hidden">
+          <button id="menu-settings" class="btn ghost">⚙️ Settings</button>
+          <button id="menu-install" class="btn ghost install hidden">📲 Install App</button>
+          <p id="install-hint" class="install-hint hidden">
+            On iPhone/iPad: tap <b>Share</b> <span class="share-glyph">⎋</span> then
+            <b>Add to Home Screen</b> to install.
+          </p>
+        </div>
       </div>
-      <button id="menu-char-next" class="hat-arrow" aria-label="Next character">▶</button>
     </div>
-    <button id="menu-solo"    class="btn primary big">Practice vs Bot</button>
-    <button id="menu-pve"     class="btn big ghost">🌌 Expedition (Co-op)</button>
-    <button id="menu-training" class="btn big ghost">🥋 Training Room</button>
-    <div class="join-row">
-      <input id="menu-code" type="text" maxlength="4" placeholder="CODE"
-             autocomplete="off" autocapitalize="characters" spellcheck="false">
-      <button id="menu-join" class="btn primary">Join / Host</button>
-    </div>
-    <p class="join-hint">Enter a code to join a room — leave it blank to host a new one.</p>
-    <div id="menu-online" class="online-box">
-      <h3 class="section-title">Fighters online <span id="menu-online-count" class="hint"></span></h3>
-      <ul id="menu-online-list" class="roster online-list"></ul>
-      <p id="menu-online-empty" class="online-empty">Looking for fighters…</p>
-    </div>
-    <button id="menu-builder" class="btn ghost">Edit Fighter &amp; Build</button>
-    <button id="menu-settings" class="btn ghost">⚙️ Settings</button>
-    <button id="menu-install" class="btn ghost install hidden">📲 Install App</button>
-    <p id="install-hint" class="install-hint hidden">
-      On iPhone/iPad: tap <b>Share</b> <span class="share-glyph">⎋</span> then
-      <b>Add to Home Screen</b> to install.
-    </p>
     <p id="menu-error" class="error hidden"></p>
   </div>
 </section>
@@ -85,56 +101,61 @@
         <span id="builder-credits">0</span><span class="credits-label">cr left</span>
       </div>
     </header>
+    <div id="gear-tabs" class="gear-tabs">
+      <button class="gear-tab" data-gear="fighter">Fighter</button>
+      <button class="gear-tab" data-gear="hats">Hats</button>
+      <button class="gear-tab" data-gear="traits">Traits</button>
+      <button class="gear-tab" data-gear="weapons">
+        <span class="gt-icon">⚔️</span><span class="gt-name">Weapons</span><span class="gt-badge" id="gear-badge-weapons"></span>
+      </button>
+      <button class="gear-tab" data-gear="abilities">
+        <span class="gt-icon">✨</span><span class="gt-name">Abilities</span><span class="gt-badge" id="gear-badge-abilities"></span>
+      </button>
+      <button class="gear-tab" data-gear="augments">
+        <span class="gt-icon">🧬</span><span class="gt-name">Augments</span><span class="gt-badge" id="gear-badge-augments"></span>
+      </button>
+    </div>
     <div class="builder-scroll">
-      <p class="expedition-note">🌌 Expedition run — choose any build up to 1000 CR. Your saved character is untouched.</p>
-      <div class="builder-profile-only">
-      <h3 class="section-title">Fighter Name <span class="hint">how the town knows you</span></h3>
-      <input id="builder-name" type="text" maxlength="14" autocomplete="off"
-             placeholder="e.g. KnuckleDuke" spellcheck="false">
-      <p id="builder-name-error" class="error hidden"></p>
+      <div id="gear-pane-fighter" class="gear-pane">
+        <p class="expedition-note">🌌 Expedition run — choose any build up to 1000 CR. Your saved character is untouched.</p>
+        <div class="builder-profile-only">
+          <h3 class="section-title">Fighter Name <span class="hint">how the town knows you</span></h3>
+          <input id="builder-name" type="text" maxlength="14" autocomplete="off" placeholder="e.g. KnuckleDuke" spellcheck="false">
+          <p id="builder-name-error" class="error hidden"></p>
 
-      </div>
-
-      <h3 class="section-title">Saved Builds <span class="hint">stash setups by nickname, tap to load</span></h3>
-      <div id="builder-loadouts" class="loadout-list"></div>
-      <div class="builder-profile-only">
-      <div class="loadout-save-row">
-        <input id="loadout-name" type="text" maxlength="16" placeholder="Nickname this build"
-               autocomplete="off" spellcheck="false">
-        <button id="loadout-save" class="btn">💾 Save</button>
-      </div>
-      <p id="loadout-error" class="error hidden"></p>
-      </div>
-
-      <h3 class="section-title">Color</h3>
-      <div id="builder-colors" class="color-grid"></div>
-
-      <h3 class="section-title">Hat <span class="hint">arrows swap hats from your library</span></h3>
-      <div class="builder-preview">
-        <button id="builder-hat-prev" class="hat-arrow" aria-label="Previous hat">◀</button>
-        <div class="builder-preview-fig">
-          <canvas id="builder-preview-canvas" width="140" height="140"></canvas>
-          <div id="builder-hat-label" class="hat-cycle-label">No hat</div>
         </div>
-        <button id="builder-hat-next" class="hat-arrow" aria-label="Next hat">▶</button>
+
+        <h3 class="section-title">Saved Builds <span class="hint">stash setups by nickname, tap to load</span></h3>
+        <div id="builder-loadouts" class="loadout-list"></div>
+        <div class="builder-profile-only">
+          <div class="loadout-save-row">
+            <input id="loadout-name" type="text" maxlength="16" placeholder="Nickname this build" autocomplete="off" spellcheck="false">
+            <button id="loadout-save" class="btn">💾 Save</button>
+          </div>
+          <p id="loadout-error" class="error hidden"></p>
+        </div>
+
+        <h3 class="section-title">Color</h3>
+        <div id="builder-colors" class="color-grid"></div>
+
       </div>
-      <button id="builder-hat-library" class="btn ghost">🎩 Hat Library</button>
+      <div id="gear-pane-hats" class="gear-pane hidden">
+        <h3 class="section-title">Hat <span class="hint">arrows swap hats from your library</span></h3>
+        <div class="builder-preview">
+          <button id="builder-hat-prev" class="hat-arrow" aria-label="Previous hat">◀</button>
+          <div class="builder-preview-fig">
+            <canvas id="builder-preview-canvas" width="140" height="140"></canvas>
+            <div id="builder-hat-label" class="hat-cycle-label">No hat</div>
+          </div>
+          <button id="builder-hat-next" class="hat-arrow" aria-label="Next hat">▶</button>
+        </div>
+        <button id="builder-hat-library" class="btn ghost">🎩 Hat Library</button>
 
-      <h3 class="section-title">Upgrades <span class="hint">raise your core stats</span></h3>
-      <div id="builder-stats"></div>
+      </div>
+      <div id="gear-pane-traits" class="gear-pane hidden">
+        <h3 class="section-title">Traits <span class="hint">raise your core stats</span></h3>
+        <div id="builder-stats"></div>
 
-      <!-- Gear dock: the three shops tuck behind a sticky tab rail, so
-           jumping between them is one tap from anywhere in the workshop -->
-      <div id="gear-tabs" class="gear-tabs">
-        <button class="gear-tab on" data-gear="weapons">
-          <span class="gt-icon">⚔️</span><span class="gt-name">Weapon</span><span class="gt-badge" id="gear-badge-weapons"></span>
-        </button>
-        <button class="gear-tab" data-gear="abilities">
-          <span class="gt-icon">✨</span><span class="gt-name">Abilities</span><span class="gt-badge" id="gear-badge-abilities"></span>
-        </button>
-        <button class="gear-tab" data-gear="augments">
-          <span class="gt-icon">🧬</span><span class="gt-name">Augments</span><span class="gt-badge" id="gear-badge-augments"></span>
-        </button>
       </div>
       <div id="gear-pane-weapons" class="gear-pane">
         <h3 class="section-title">Weapon <span class="hint">what your strong attack swings — carry one</span></h3>
@@ -150,6 +171,7 @@
       </div>
     </div>
     <footer class="builder-foot">
+      <button id="builder-back" class="btn ghost">Back</button>
       <button id="builder-reset" class="btn ghost">Reset</button>
       <button id="builder-save" class="btn primary">Save &amp; Back</button>
     </footer>
@@ -184,35 +206,51 @@
   <div class="panel narrow lobby-panel">
     <h2>Room <span id="lobby-code" class="room-code"></span></h2>
     <p class="tagline">share the code — friends hop straight in</p>
-    <div class="menu-char-row lobby-char-row">
-      <button id="lobby-char-prev" class="hat-arrow" aria-label="Previous character">◀</button>
-      <div id="lobby-card" class="fighter-card" role="button" tabindex="0"
-           aria-label="Edit this character" title="Tap to edit">
-        <canvas id="lobby-preview" width="120" height="120"></canvas>
-        <div class="fighter-card-info">
-          <div id="lobby-name" class="fighter-name"></div>
-          <div id="lobby-loadout" class="fighter-loadout"></div>
-          <div id="lobby-build" class="fighter-build"></div>
+    <div class="console-body">
+      <aside class="fighter-bay">
+        <div class="menu-char-row lobby-char-row">
+          <button id="lobby-char-prev" class="hat-arrow" aria-label="Previous character">◀</button>
+          <div id="lobby-card" class="fighter-card" role="button" tabindex="0" aria-label="Edit this character" title="Tap to edit">
+            <canvas id="lobby-preview" width="120" height="120"></canvas>
+            <div class="fighter-card-info">
+              <div id="lobby-name" class="fighter-name"></div>
+              <div id="lobby-loadout" class="fighter-loadout"></div>
+              <div id="lobby-build" class="fighter-build"></div>
+            </div>
+            <span class="fighter-card-edit" aria-hidden="true">✏️</span>
+          </div>
+          <button id="lobby-char-next" class="hat-arrow" aria-label="Next character">▶</button>
         </div>
-        <span class="fighter-card-edit" aria-hidden="true">✏️</span>
+        <button id="lobby-rejoin" class="btn primary big hidden">⚔️ Rejoin the Fight</button>
+        <button id="lobby-ready" class="btn primary big">I'm Ready</button>
+        <button id="lobby-start" class="btn primary big hidden">Start Fight</button>
+        <button id="lobby-edit" class="btn ghost">Edit Fighter &amp; Build</button>
+        <button id="lobby-leave" class="btn ghost">Leave Room</button>
+      </aside>
+      <div class="deck">
+        <nav class="deck-nav" aria-label="room views">
+          <button type="button" aria-controls="room-crew" aria-pressed="true">Roster</button>
+          <button type="button" aria-controls="room-vote" aria-pressed="false">Map vote</button>
+          <button type="button" aria-controls="room-invite" aria-pressed="false">Invites</button>
+        </nav>
+        <div id="room-crew" class="deck-page">
+          <ul id="lobby-roster" class="roster"></ul>
+          <p id="lobby-status" class="lobby-status"></p>
+        </div>
+        <div id="room-vote" class="deck-page hidden">
+          <h3 class="section-title">Map vote <span class="hint">pick a map or a size — majority wins, ties flip a coin</span></h3>
+          <div id="lobby-maps" class="map-grid"></div>
+        </div>
+        <div id="room-invite" class="deck-page hidden">
+          <button id="lobby-invite" class="btn ghost invite">📨 Invite Friends</button>
+          <div id="lobby-online" class="online-box lobby-online-box">
+            <h3 class="section-title">Invite active fighters <span id="lobby-online-count" class="hint"></span></h3>
+            <ul id="lobby-online-list" class="roster online-list"></ul>
+            <p id="lobby-online-empty" class="online-empty">Looking for fighters…</p>
+          </div>
+        </div>
       </div>
-      <button id="lobby-char-next" class="hat-arrow" aria-label="Next character">▶</button>
     </div>
-    <ul id="lobby-roster" class="roster"></ul>
-    <p id="lobby-status" class="lobby-status"></p>
-    <button id="lobby-rejoin" class="btn primary big hidden">⚔️ Rejoin the Fight</button>
-    <button id="lobby-ready" class="btn primary big">I'm Ready</button>
-    <button id="lobby-start" class="btn primary big hidden">Start Fight</button>
-    <button id="lobby-edit" class="btn ghost">Edit Fighter &amp; Build</button>
-    <button id="lobby-leave" class="btn ghost">Leave Room</button>
-    <button id="lobby-invite" class="btn ghost invite">📨 Invite Friends</button>
-    <div id="lobby-online" class="online-box lobby-online-box">
-      <h3 class="section-title">Invite active fighters <span id="lobby-online-count" class="hint"></span></h3>
-      <ul id="lobby-online-list" class="roster online-list"></ul>
-      <p id="lobby-online-empty" class="online-empty">Looking for fighters…</p>
-    </div>
-    <h3 class="section-title">Map vote <span class="hint">pick a map or a size — majority wins, ties flip a coin</span></h3>
-    <div id="lobby-maps" class="map-grid"></div>
   </div>
 </section>
 

@@ -172,12 +172,8 @@ export function renderBuilder(work) {
 }
 
 // ---------- gear dock ----------
-// The weapon / ability / augment shops live behind a sticky tab rail: one
-// pane shows at a time, and the rail pins to the top of the workshop
-// scroll so hopping between the three is one tap from anywhere. Badges
-// keep the whole loadout readable without opening a tab — the equipped
-// weapon's icon and the two pick counts, green once a list is full.
-let gearTab = 'weapons';
+// Workshop sections share a fixed rail. Gear badges summarize the equipped build.
+let gearTab = 'fighter';
 let gearWork = null;
 let gearWired = false;
 
@@ -188,6 +184,7 @@ function wireGearDock() {
     tab.addEventListener('click', () => {
       if (tab.dataset.gear === gearTab) return;
       gearTab = tab.dataset.gear;
+      $('.builder-scroll').scrollTop = 0;
       renderGearDock(gearWork);
       // snap: replay the pane's pop-in so the switch reads as motion
       const pane = $('#gear-pane-' + gearTab);
@@ -201,10 +198,12 @@ function wireGearDock() {
 function renderGearDock(work) {
   if (!work) return;
   gearWork = work;
-  for (const tab of document.querySelectorAll('.gear-tab'))
-    tab.classList.toggle('on', tab.dataset.gear === gearTab);
-  for (const name of ['weapons', 'abilities', 'augments'])
-    $('#gear-pane-' + name).classList.toggle('hidden', name !== gearTab);
+  for (const tab of document.querySelectorAll('.gear-tab')) {
+    const active = tab.dataset.gear === gearTab;
+    tab.classList.toggle('on', active);
+    tab.setAttribute('aria-pressed', String(active));
+    $('#gear-pane-' + tab.dataset.gear).classList.toggle('hidden', !active);
+  }
   $('#gear-badge-weapons').textContent =
     WEAPONS.find(w => w.id === work.build.weapon)?.icon || '👊';
   const pick = (sel, owned, max) => {

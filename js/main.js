@@ -323,6 +323,7 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
     color: profile.color,
     build: JSON.parse(JSON.stringify(pve ? session.myRunBuild() : profile.build)),
     hatId: profile.hatId,
+    originalLoadout: selectedLoadout(),
     pve,
   };
   $('#screen-builder').classList.toggle('pve', pve);
@@ -332,6 +333,36 @@ function openBuilder(firstRun = false, returnTo = 'menu') {
   UI.renderBuilder(builderWork);
   UI.showScreen('builder');
 }
+
+for (const nav of document.querySelectorAll('.deck-nav')) {
+  nav.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    for (const item of nav.querySelectorAll('button')) {
+      item.setAttribute('aria-pressed', String(item === button));
+      document.getElementById(item.getAttribute('aria-controls')).classList.toggle('hidden', item !== button);
+    }
+  });
+}
+
+$('#builder-back').addEventListener('click', () => {
+  const original = builderWork.originalLoadout;
+  selectLoadout(loadLoadouts().some(loadout => loadout.name === original) ? original : null);
+  if (builderReturn === 'game' && session && !session.ended) {
+    session.setBackgrounded(false);
+    session.buildHud();
+    UI.showScreen('game');
+    presence?.update();
+  } else if (builderReturn === 'lobby' && net?.roomCode) {
+    renderLobby();
+    UI.showScreen('lobby');
+  } else {
+    UI.renderMenuCard(profile);
+    UI.showScreen('menu');
+    startPresence();
+    if (builderFirstRun && pendingJoinCode) { enterRoom(pendingJoinCode); pendingJoinCode = null; }
+  }
+});
 
 $('#builder-reset').addEventListener('click', () => {
   builderWork.build = emptyBuild();
@@ -378,6 +409,7 @@ $('#builder-save').addEventListener('click', () => {
   const nameEl = $('#builder-name');
   const nameErr = $('#builder-name-error');
   if (!validName(nameEl.value)) {
+    $('.gear-tab[data-gear="fighter"]').click();
     nameErr.textContent = '2–14 letters, numbers or basic punctuation, please!';
     nameErr.classList.remove('hidden');
     nameEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
