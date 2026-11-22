@@ -17,6 +17,8 @@ const HB_INTERVAL = 2000;   // presence heartbeat period (ms)
 const HB_AWAY_MS = 6000;    // no heartbeat for this long -> presence 'gone'
 const HB_DROP_MS = 14000;   // host prunes members silent this long
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O (look like 1/0)
+const SIGNAL_HOSTS = ['0.peerjs.com', '1.peerjs.com']; // aliases for the same PeerJS Cloud room registry
+const SIGNAL_ATTEMPT_MS = 4000;
 
 const hostPeerId = code => ID_PREFIX + code.toLowerCase() + '-h';
 
@@ -45,6 +47,7 @@ export class Net {
     this.hbTimer = null;
     this.closed = false;
     this.openTimer = null;
+    this.signalTimer = null;
     this.reconnectTimer = null;
     this._visHandler = () => {
       this.status = document.visibilityState === 'hidden' ? 'away' : 'online';
@@ -121,6 +124,7 @@ export class Net {
   leave() {
     this.closed = true;
     clearTimeout(this.openTimer);
+    clearTimeout(this.signalTimer);
     clearTimeout(this.reconnectTimer);
     clearInterval(this.hbTimer);
     document.removeEventListener('visibilitychange', this._visHandler);
@@ -132,7 +136,7 @@ export class Net {
     this.members.clear();
   }
 
-  async _openPeer(id, onOpen) {
+  async _openPeer(id, onOpen, signalIndex = 0) {
     // A failed initial signaling connection cannot start a room. Bound the
     // wait, including TURN configuration, so the menu remains usable.
     if (!this.openTimer) {
@@ -144,12 +148,18 @@ export class Net {
       }, 15000);
     }
     // Default PeerJS cloud for signaling; media never touches it (WebRTC is P2P).
-    const opts = await peerOptions();
+    const opts = {
+      ...await peerOptions(),
+      host: SIGNAL_HOSTS[signalIndex],
+      port: 443,
+      secure: true,
+    };
     if (this.closed) return;
     const p = id ? new Peer(id, opts) : new Peer(opts);
     this.peer = p;
     p.once('open', () => {
       clearTimeout(this.openTimer);
+      clearTimeout(this.signalTimer);
       this.openTimer = null;
       onOpen();
     });
@@ -159,8 +169,12 @@ export class Net {
       if (err.type === 'unavailable-id') {
         // Room code collision (or stale registration) — reroll and retry.
         if (this.joinOrder <= 0 && !this.members.size) {
+          clearTimeout(this.signalTimer);
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+          this.peer = null;
           this.roomCode = randomCode();
-          this._openPeer(hostPeerId(this.roomCode), onOpen);
+          this._openPeer(hostPeerId(this.roomCode), onOpen, signalIndex);
         }
       } else if (err.type === 'peer-unavailable') {
         this.emit('error', 'Room not found — is the host online?');
@@ -172,6 +186,7 @@ export class Net {
     });
     const retry = () => {
       if (this.closed || p !== this.peer || this.reconnectTimer) return;
+      clearTimeout(this.signalTimer);
       this.emit('banner', 'Reconnecting to matchmaking…', 'warn');
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
@@ -179,13 +194,14 @@ export class Net {
         if (!this.myId) {
           this.peer = null;
           p.destroy();
-          this._openPeer(id, onOpen);
+          this._openPeer(id, onOpen, (signalIndex + 1) % SIGNAL_HOSTS.length);
         } else if (!p.destroyed && p.disconnected) {
           p.reconnect();
         }
       }, 1500);
     };
     p.on('disconnected', retry);
+    this.signalTimer = setTimeout(retry, SIGNAL_ATTEMPT_MS);
   }
 
   _acceptConn(conn) {
