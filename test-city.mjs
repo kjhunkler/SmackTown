@@ -1,7 +1,7 @@
 // Exercise district changes through the host tick, including handoff mid-rally.
 import assert from 'node:assert/strict';
 import { Game, ENEMY_TYPES, gameFromSnapshot } from './js/game.js';
-import { CITY_ROOMS, CITY_ROUTE } from './js/city.js';
+import { CITY_ROOMS } from './js/city.js';
 
 const players = ['a', 'b'].map(id => ({ id, name: id, color: '#fff', build: {} }));
 let g = new Game(players, 10, 'nightcity');
@@ -20,6 +20,22 @@ function handoff() {
   assert.deepEqual(g.cityRun, snap.city);
 }
 
+// The whole party can push the opening boundary without getting a travel
+// prompt. Backtracking from the alley does not unlock the shortcut either.
+gather(-1); tick(30);
+assert.equal(g.cityRun.room, 'market');
+assert.equal(g.cityRun.left, 0);
+assert.equal(g.cityRun.hold, 0);
+gather(1); tick(26);
+assert.equal(g.cityRun.room, 'alley');
+gather(-1); tick(26);
+assert.equal(g.cityRun.room, 'market');
+handoff();
+gather(-1); tick(30);
+assert.equal(g.cityRun.room, 'market');
+assert.equal(g.cityRun.reachedTrain, false);
+
+g = new Game(players, 10, 'nightcity');
 tick(35);
 assert.equal(g.cityRun.wave, 1);
 assert.equal(g.enemies.length, 6);
@@ -34,7 +50,7 @@ assert.equal(g.cityRun.room, 'market');
 assert.equal(g.cityRun.right, 1);
 assert.equal(g.cityRun.required, 2);
 place(g.fighters[1], -565, -1); tick(1);
-assert.equal(g.cityRun.left, 1);
+assert.equal(g.cityRun.left, 0);
 assert.equal(g.cityRun.right, 1);
 place(g.fighters[1], 500);
 tick(10);
@@ -46,10 +62,12 @@ const carried = g.enemies.find(e => e.eid === follower.eid);
 assert.equal(carried.hp, 1);
 assert.ok(carried.x < g.fighters[0].x, 'surviving enemy follows through entry edge');
 
-for (const room of [...CITY_ROUTE.slice(2), 'market']) {
+for (const room of ['roofs', 'parking', 'cistern', 'factory', 'lab', 'cars', 'train', 'market']) {
   gather(1); tick(26);
   assert.equal(g.cityRun.room, room);
+  if (room === 'train') assert.ok(g.cityRun.reachedTrain);
   if (room === 'cars') {
+    assert.equal(g.cityRun.reachedTrain, false);
     const roof = CITY_ROOMS.cars.plats.at(-2);
     const f = g.fighters[0];
     assert.ok(roof.x > 2000);
@@ -63,9 +81,18 @@ for (const room of [...CITY_ROUTE.slice(2), 'market']) {
   }
 }
 
+assert.ok(g.cityRun.reachedTrain);
+const saved = g.snapshot();
+g = gameFromSnapshot([...players, { ...players[0], id: 'late' }], saved, 11);
+assert.ok(g.cityRun.reachedTrain, 'market shortcut survives host handoff');
 gather(-1); tick(26);
-assert.equal(g.cityRun.room, 'cars', 'left edge cycles in reverse');
+assert.equal(g.cityRun.room, 'train', 'the unlocked market exit leads to Last Train');
+const legacy = g.snapshot();
+delete legacy.city.reachedTrain;
+assert.ok(gameFromSnapshot(players, legacy, 11).cityRun.reachedTrain);
 gather(-1); tick(26);
+assert.equal(g.cityRun.room, 'cars');
+gather(1); tick(26);
 assert.equal(g.cityRun.room, 'train');
 for (const f of g.fighters) place(f, 0);
 tick(90);

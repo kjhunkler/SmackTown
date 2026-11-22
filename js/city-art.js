@@ -1,4 +1,4 @@
-import { CITY_ROOMS, TRAVEL_HOLD, nextDistrict } from './city.js';
+import { CITY_ROOMS, TRAIN_DOOR_HALF_WIDTH, TRAVEL_HOLD, nextDistrict } from './city.js';
 
 const posters = new Map();
 function poster(art) {
@@ -13,19 +13,32 @@ function poster(art) {
 function freightCar(ctx, p, index) {
   const x = p.x, y = p.y + 6, w = p.w;
   ctx.fillStyle = '#222830'; ctx.fillRect(x + 3, y, w - 6, -y - 18);
-  // Reuse the station train's painted carriage. Alternate the lit doors
-  // with window bays so each roof has an identifiable car beneath it.
+  // Both crops contain only window bays on either side of the open vestibule.
   const train = poster('train');
   if (train.complete && train.naturalWidth) {
-    const sx = index % 3 === 1 ? .32 : .082, sw = index % 3 === 1 ? .36 : .32;
+    const sx = index % 2 ? .585 : .082;
     ctx.drawImage(train, train.naturalWidth * sx, train.naturalHeight * .34,
-      train.naturalWidth * sw, train.naturalHeight * .51, x + 3, y, w - 6, -y - 23);
+      train.naturalWidth * .32, train.naturalHeight * .51, x + 3, y, w - 6, -y - 23);
     ctx.fillStyle = '#18202c50'; ctx.fillRect(x + 3, y, w - 6, -y - 23);
   }
   for (const offset of [33, 63, w - 63, w - 33]) {
     ctx.fillStyle = '#191e25'; ctx.beginPath(); ctx.arc(x + offset, -14, 13, 0, 2 * Math.PI); ctx.fill();
     ctx.fillStyle = '#5b5c62'; ctx.fillRect(x + offset - 4, -18, 8, 8);
   }
+}
+
+// Anchor the station's painted doorway to the boarding zone as the camera
+// follows the crew. Extend the siding on wide screens without widening the exit.
+function drawStation(ctx, img, left, width, top) {
+  const half = TRAIN_DOOR_HALF_WIDTH;
+  const height = Math.max(img.naturalHeight, -top / .85);
+  const y = -.85 * height; // the painted threshold meets the platform at y = 0
+  const doorLeft = 640, doorRight = 800; // pixel bounds in city-train.webp
+  const wing = Math.max(doorLeft * 2 * half / (doorRight - doorLeft),
+    -left - half, left + width - half);
+  ctx.drawImage(img, 0, 0, doorLeft, img.naturalHeight, -half - wing, y, wing, height);
+  ctx.drawImage(img, doorLeft, 0, doorRight - doorLeft, img.naturalHeight, -half, y, 2 * half, height);
+  ctx.drawImage(img, doorRight, 0, img.naturalWidth - doorRight, img.naturalHeight, half, y, wing, height);
 }
 
 function edgePrompt(ctx, state, room, t, side, nearby) {
@@ -61,10 +74,14 @@ export function drawCity(ctx, view, cam, canvas, t) {
   ctx.fillStyle = base; ctx.fillRect(left, top, width, height);
   const img = poster(room.art);
   if (img.complete && img.naturalWidth) {
-    const scale = Math.max(width / img.naturalWidth, (10 - top) / img.naturalHeight) * 1.12;
-    const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
-    const pan = -.034 * Math.tanh(cam.x / 760) + .009 * Math.sin(t * .24);
-    ctx.drawImage(img, cam.x - w / 2 + width * pan, 8 - h + 3 * Math.sin(t * .33), w, h);
+    if (state.room === 'train') {
+      drawStation(ctx, img, left, width, top);
+    } else {
+      const scale = Math.max(width / img.naturalWidth, (10 - top) / img.naturalHeight) * 1.12;
+      const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+      const pan = -.034 * Math.tanh(cam.x / 760) + .009 * Math.sin(t * .24);
+      ctx.drawImage(img, cam.x - w / 2 + width * pan, 8 - h + 3 * Math.sin(t * .33), w, h);
+    }
     ctx.fillStyle = '#13142530'; ctx.fillRect(left, top, width, -top);
   }
   ctx.fillStyle = base; ctx.fillRect(left, 0, width, height);

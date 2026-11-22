@@ -26,12 +26,14 @@ export const CITY_ROOMS = {
     ['grunt', 'brute', 'runner', 'grunt'], [ledge(-400, -106, 220), ledge(-55, -190, 180), ledge(240, -88, 155)]),
   lab: district('Specimen Lab', 'lab', ['#1e3039', '#3c646a', '#99c0bb'],
     ['hopper', 'grunt', 'slinger'], [ledge(-320, -144, 168), ledge(-12, -83, 154), ledge(207, -178, 152)]),
-  train: district('Last Train', 'train', ['#292e39', '#585967', '#baa58c'],
-    ['runner', 'grunt', 'hopper'], [ledge(-376, -100, 185), ledge(156, -125, 208)]),
   cars: district('Freight Line', 'roofs', ['#232d38', '#595561', '#b69a8d'],
     ['runner', 'hopper', 'flyer', 'grunt'], carRoofs, 3200),
+  train: district('Last Train', 'train', ['#292e39', '#585967', '#baa58c'],
+    ['runner', 'grunt', 'hopper'], [ledge(-376, -100, 185), ledge(156, -125, 208)]),
 };
 
+// The open vestibule is centered at x = 0 on the station platform.
+export const TRAIN_DOOR_HALF_WIDTH = 85;
 export const TRAVEL_HOLD = .42;
 export const CITY_ROUTE = Object.keys(CITY_ROOMS);
 export function nextDistrict(room, side) {
@@ -39,7 +41,7 @@ export function nextDistrict(room, side) {
 }
 
 export const newCity = () => ({
-  room: 'market', wave: 0, wait: .55, visit: 0, pumpTick: 0,
+  room: 'market', reachedTrain: false, wave: 0, wait: .55, visit: 0, pumpTick: 0,
   left: 0, right: 0, required: 0, hold: 0, locked: false, boarding: 0,
 });
 
@@ -102,6 +104,7 @@ function spawnWave(game, live, room, capacity) {
 function travel(game, side) {
   const state = game.cityRun;
   state.room = nextDistrict(state.room, side);
+  if (state.room === 'train') state.reachedTrain = true;
   state.visit++;
   state.left = state.right = state.hold = state.boarding = state.pumpTick = 0;
   const limit = CITY_ROOMS[state.room].limit;
@@ -139,14 +142,18 @@ export function stepCity(game, live, dt, bossAlive) {
       side * game.inputs.get(f.id).mx > .35);
     return pushing ? party.filter(f => !f.dead && f.x * side >= room.limit - 96).length : 0;
   }
-  state.left = rallyCount(-1);
+  const marketShortcutSealed = state.room === 'market' && !state.reachedTrain;
+  state.left = marketShortcutSealed ? 0 : rallyCount(-1);
   state.right = rallyCount(1);
   const together = party.length > 0 && (state.left === party.length || state.right === party.length);
   state.hold = together && !state.locked ? state.hold + dt : 0;
-  if (state.hold >= TRAVEL_HOLD) { travel(game, state.left ? -1 : 1); return; }
+  if (state.hold >= TRAVEL_HOLD) {
+    travel(game, state.left ? -1 : 1);
+    return;
+  }
 
   const board = state.room === 'train' && !state.locked && party.length && party.every(f =>
-    !f.dead && f.grounded && Math.abs(f.x) < 85 && game.inputs.get(f.id).my > .55);
+    !f.dead && f.grounded && Math.abs(f.x) < TRAIN_DOOR_HALF_WIDTH && game.inputs.get(f.id).my > .55);
   state.boarding = board ? state.boarding + dt : 0;
   if (state.boarding >= 1) { game.won = true; game._endRun('cleared'); }
 }

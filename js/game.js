@@ -4443,7 +4443,11 @@ export class Game {
 export function gameFromSnapshot(players, snap, seed = 2) {
   const g = new Game(players, seed, snap?.map || DEFAULT_MAP);
   if (!snap) return g;
-  if (g.cityRun && CITY_ROOMS[snap.city?.room]) Object.assign(g.cityRun, snap.city);
+  if (g.cityRun && CITY_ROOMS[snap.city?.room]) {
+    Object.assign(g.cityRun, snap.city);
+    // A pre-unlock snapshot taken at the station already proves arrival.
+    if (snap.city.room === 'train') g.cityRun.reachedTrain = true;
+  }
   g.tick = snap.tk || 0;
   g.runT = +snap.rt || 0;             // resume the difficulty ramp where it stood
   g.bossesDown = snap.bd | 0;         // …and the campaign exactly where it stood

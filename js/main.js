@@ -1240,7 +1240,7 @@ class Session {
     touch.setEnabled(true);
     this.running = true;
     this.lastT = performance.now();
-    if (this.map === 'nightcity') UI.banner('Last Train · Run against either edge together to travel', 'good', 3000);
+    if (this.map === 'nightcity') UI.banner('Last Train · Head right from Lantern Market', 'good', 3000);
 
     // one-time controls explainer
     if (!localStorage.getItem('smacktown.helped')) {
@@ -1604,7 +1604,7 @@ class Session {
         const state = view.city, room = CITY_ROOMS[state.room];
         $('#expedition-biome').textContent = room.name + ' · Wave ' + Math.max(1, state.wave);
         $('#expedition-progress').textContent = state.locked ? 'Defeat the boss to travel'
-          : state.room === 'train' ? (state.boarding ? 'Boarding…' : 'Hold down together at center to finish · edges to continue')
+          : state.room === 'train' ? (state.boarding ? 'Boarding…' : 'Hold down together at the open doors to board · right to Lantern Market')
           : state.room === 'cistern' && state.pumpTick >= 295 ? 'Pressure rising · get above the water!' : '';
       } else {
         const biome = expanseBiomeAt(this.seed, mine?.x || 0);

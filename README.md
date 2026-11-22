@@ -45,14 +45,15 @@ and pass its host/port where `new Peer(...)` is created in `js/net.js`.
 ## Co-op expeditions
 
 **Last Train** starts in Lantern Market. Stay to fight endless waves, or run
-against either edge and gather the crew at the flashing arrow. Surviving enemies
+against an exit and gather the crew at the flashing arrow. Surviving enemies
 follow you. Every sixth wave can bring a boss that locks travel until defeated.
 At Undertow Works, jump above the water when the pressure rises.
 
-Both directions loop through the market, alley, rooftops, parking lot, cistern,
-factory, laboratory, train station and freight cars. At the station, hold down
-together at the center for one second to finish, or keep moving to fight along
-the train roofs. Sleeping teammates travel with the crew and late joiners
+Head right from the market through the alley, rooftops, parking lot, cistern,
+factory and laboratory. Cross the Freight Line to reach Last Train. At its open
+doors, hold down together for one second to extract. The right edge leads back
+to Lantern Market. Reaching Last Train opens the market’s left exit for the
+rest of the run. Sleeping teammates travel with the crew and late joiners
 arrive beside a teammate in the current district.
 
 Select a saved fighter on the menu and enter Expedition with that build.
