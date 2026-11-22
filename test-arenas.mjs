@@ -3,7 +3,7 @@
 // World Tree Roots (large). Geometry invariants hold, every new map is
 // votable, the sim runs clean on each, and movers actually move.
 // Run: node test-arenas.mjs
-import { Game, MAPS, MAP_IDS, mapsOfSize, platsAt, blankInput } from './js/game.js';
+import { Game, MAPS, MAP_IDS, LEGACY_MAP_IDS, MAP_SIZES, mapsOfSize, platsAt, blankInput } from './js/game.js';
 
 let n = 0, fails = 0;
 function check(name, ok) {
@@ -27,8 +27,8 @@ const NEW_MAPS = [...SMALL, ...LARGE];
   check('all six arenas are votable', NEW_MAPS.every(id => MAP_IDS.includes(id)));
   check('shrine/galleon/observatory are small', SMALL.every(id => MAPS[id].size === 'small'));
   check('citadel/reactor/roots are large', LARGE.every(id => MAPS[id].size === 'large'));
-  check('six maps per size class',
-    mapsOfSize('small').length === 6 && mapsOfSize('medium').length === 6 && mapsOfSize('large').length === 6);
+  check('six legacy maps per size class', MAP_SIZES.every(size =>
+    mapsOfSize(size).filter(id => LEGACY_MAP_IDS.includes(id)).length === 6));
 }
 
 // --- 2. geometry invariants on every new map ---

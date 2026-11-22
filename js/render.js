@@ -2,6 +2,7 @@
 // (particles, screen shake, KO bursts) from interpolated view state.
 
 import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, bombLaunch, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE } from './game.js';
+import { ARENA_ART, arenaImage, drawArenaBackdrop, drawArenaStage } from './arena-art.js';
 import { drawCity } from './city-art.js';
 import { CITY_ROOMS } from './city.js';
 import { hatImage, BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
@@ -213,7 +214,13 @@ export class Renderer {
   setMap(id) {
     this.mapId = MAPS[id] ? id : DEFAULT_MAP;
     this.stage = MAPS[this.mapId];
-    this.theme = THEMES[this.mapId] || THEMES[DEFAULT_MAP];
+    this.arenaArt = ARENA_ART[this.mapId];
+    this.panorama = null;
+    if (this.arenaArt) {
+      this.panorama = new Image();
+      this.panorama.src = arenaImage(this.mapId);
+    }
+    this.theme = this.arenaArt || THEMES[this.mapId] || THEMES[DEFAULT_MAP];
     this.ambient = [];
     this.city = this.mapId === 'ruins' ? buildCityScape('ruins')
       : this.mapId === 'skyline' ? buildCityScape('neon')
@@ -621,7 +628,9 @@ export class Renderer {
 
     // --- background (themed per map) ---
     const t = performance.now() / 1000;
-    if (!view.city) {
+    if (this.panorama) {
+      drawArenaBackdrop(ctx, this.panorama, this.arenaArt, W, H, this.cam);
+    } else if (!view.city) {
       const biomeTheme = this.mapId === 'expanse' ? expanseBiomeAt(this.expanseSeed, this.cam.x) : null;
       const th = biomeTheme?.blend ? blendTheme(THEMES[biomeTheme.id], THEMES[biomeTheme.next], biomeTheme.blend)
         : biomeTheme ? THEMES[biomeTheme.id] : this.theme;
@@ -1335,6 +1344,11 @@ export class Renderer {
 
   _stage(ctx, tickF = 0, t = 0) {
     const plats = platsAt(this.mapId, tickF);
+    if (this.arenaArt) {
+      drawArenaStage(ctx, this.mapId, this.stage, plats, this.arenaArt, t);
+      if (this.stage.hazards) this._drawVents(ctx, tickF, t);
+      return;
+    }
     if (this.mapId === 'battlefield') { this._bastionStage(ctx, plats, t); return; }
     if (this.mapId === 'ruins') { this._ruinsStage(ctx, plats, t); return; }
     if (this.mapId === 'skyline') { this._skylineStage(ctx, plats, tickF, t); return; }
@@ -3786,6 +3800,34 @@ export class Renderer {
     }
     ctx.restore();
 
+    this._drawVents(ctx, tickF, t);
+
+    // side perches: riveted plates on angled gusset struts off the void
+    for (const p of plats) {
+      const inner = p.x > m.x + m.w / 2 ? p.x : p.x + p.w;   // strut anchors toward the deck
+      ctx.strokeStyle = '#241c20';
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(inner, p.y + 10);
+      ctx.lineTo(inner + (p.x > 0 ? -46 : 46), p.y + 78);
+      ctx.stroke();
+      ctx.fillStyle = th.plat;
+      roundRect(ctx, p.x, p.y, p.w, 14, 4); ctx.fill();
+      ctx.fillStyle = th.platTop;
+      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
+      ctx.fillStyle = '#211a1e';                   // perch rivets
+      for (let rx = p.x + 12; rx < p.x + p.w - 8; rx += 24) {
+        ctx.beginPath(); ctx.arc(rx, p.y + 9, 2.2, 0, 7); ctx.fill();
+      }
+      const eg = ctx.createLinearGradient(0, p.y + 14, 0, p.y + 44);   // moat-glow underside
+      eg.addColorStop(0, 'rgba(255, 110, 40, .28)');
+      eg.addColorStop(1, 'rgba(255, 110, 40, 0)');
+      ctx.fillStyle = eg;
+      ctx.fillRect(p.x + 2, p.y + 14, p.w - 4, 30);
+    }
+  }
+
+  _drawVents(ctx, tickF, t) {
     // vent grates & geysers, straight from the sim's shared clock
     for (const h of hazardsAt(this.mapId, tickF)) {
       const cx = h.x + h.w / 2;
@@ -3854,30 +3896,6 @@ export class Renderer {
           : '#2c2226';
         ctx.fillRect(h.x + 5 + gx * (h.w - 10) / 5 + 2, h.y - 3.5, (h.w - 10) / 5 - 4, 6);
       }
-    }
-
-    // side perches: riveted plates on angled gusset struts off the void
-    for (const p of plats) {
-      const inner = p.x > m.x + m.w / 2 ? p.x : p.x + p.w;   // strut anchors toward the deck
-      ctx.strokeStyle = '#241c20';
-      ctx.lineWidth = 7;
-      ctx.beginPath();
-      ctx.moveTo(inner, p.y + 10);
-      ctx.lineTo(inner + (p.x > 0 ? -46 : 46), p.y + 78);
-      ctx.stroke();
-      ctx.fillStyle = th.plat;
-      roundRect(ctx, p.x, p.y, p.w, 14, 4); ctx.fill();
-      ctx.fillStyle = th.platTop;
-      ctx.fillRect(p.x + 6, p.y + 1, p.w - 12, 3);
-      ctx.fillStyle = '#211a1e';                   // perch rivets
-      for (let rx = p.x + 12; rx < p.x + p.w - 8; rx += 24) {
-        ctx.beginPath(); ctx.arc(rx, p.y + 9, 2.2, 0, 7); ctx.fill();
-      }
-      const eg = ctx.createLinearGradient(0, p.y + 14, 0, p.y + 44);   // moat-glow underside
-      eg.addColorStop(0, 'rgba(255, 110, 40, .28)');
-      eg.addColorStop(1, 'rgba(255, 110, 40, 0)');
-      ctx.fillStyle = eg;
-      ctx.fillRect(p.x + 2, p.y + 14, p.w - 4, 30);
     }
   }
 

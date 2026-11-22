@@ -778,7 +778,28 @@ input[type=text]:focus { border-color: var(--accent); }
 .lobby-status { text-align: center; font-size: 13px; color: var(--ink-dim); min-height: 18px; }
 
 /* map vote grid */
-.map-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.map-collections { display: flex; gap: 6px; margin: 12px 0 6px; }
+.map-collections button {
+  flex: 1; padding: 7px 4px; border: 1px solid var(--rim); border-radius: 4px;
+  background: var(--panel-2); color: var(--ink); font: 900 16px var(--display); cursor: pointer;
+}
+.map-collections button[aria-pressed="true"] { background: var(--mint); color: #122531; }
+.map-size-heading {
+  display: flex; align-items: center; gap: 8px; margin: 12px 0 6px;
+  font: 900 14px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim);
+}
+.map-size-heading::after { content: ''; height: 1px; flex: 1; background: var(--rim); }
+#room-vote > .section-title { margin: 0; }
+.map-card:not(.size-card) { position: relative; }
+.map-card:not(.size-card) .map-votes {
+  position: absolute; top: 3px; right: 3px; min-height: 0; padding: 1px 4px;
+  border-radius: 3px; background: #161523; color: #fff0c8;
+}
+.map-card:not(.size-card) .map-votes.none { display: none; }
+.arena-preview { width: 100%; aspect-ratio: 2.25; object-fit: cover; border-radius: 3px; }
+
+#lobby-maps { width: 100%; min-width: 0; }
+.map-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .map-card {
   display: flex; flex-direction: column; align-items: center; gap: 5px;
   background: var(--panel-2);
@@ -1057,7 +1078,10 @@ input[type=text]:focus { border-color: var(--accent); }
   .lobby-panel > .section-title { grid-area: maptitle; margin: 0; align-self: center; }
   .lobby-panel > .section-title .hint { display: none; }   /* too tight here */
   #lobby-roster .r-fig { width: 46px; height: 58px; margin: -8px 0; }
-  #lobby-maps { grid-area: maps; align-self: start; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #lobby-maps { grid-area: maps; align-self: start; }
+  #size-votes .size-thumb { display: none; }
+  .map-collections { margin-top: 7px; }
+  #lobby-maps .map-grid { gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   #lobby-maps .map-card { padding: 5px 4px; gap: 3px; min-width: 0; }
   #lobby-maps .map-name { font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   #lobby-maps .map-votes { font-size: 10px; }

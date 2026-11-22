@@ -4,6 +4,7 @@
 
 import { derivedStats, buildCost, sanitizeBuild, TOTAL_CREDITS } from './profile.js';
 
+import { ARENAS } from './arenas.js';
 import { CITY_LIMIT, CITY_ROOMS, arrive, newCity, stepCity } from './city.js';
 
 export const TICK = 1 / 60;
@@ -12,7 +13,7 @@ export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
 // Maps in world units (1u ≈ 1px at zoom 1). Every map is one solid main
 // floor plus optional drop-through platforms, so all mechanics (ledges,
 // drop-through, blast KOs) work everywhere. Visual themes live in render.js.
-export const MAPS = {
+const ORIGINAL_MAPS = {
   battlefield: {
     name: 'Sky Bastion',
     size: 'small',
@@ -364,6 +365,8 @@ export const MAPS = {
     respawnY: -360,
   },
 };
+export const LEGACY_MAP_IDS = Object.keys(ORIGINAL_MAPS).filter(id => !ORIGINAL_MAPS[id].hidden);
+export const MAPS = { ...ORIGINAL_MAPS, ...ARENAS };
 export const DEFAULT_MAP = 'battlefield';
 // Rotation/votes skip hidden maps (training is reachable only by mode)
 export const MAP_IDS = Object.keys(MAPS).filter(id => !MAPS[id].hidden);

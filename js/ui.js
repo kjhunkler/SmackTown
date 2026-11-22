@@ -6,7 +6,8 @@ import {
   loadLoadouts, deleteLoadout, hatArt, loadHats, selectedLoadout, selectLoadout,
   HAT_W, HAT_H,
 } from './profile.js';
-import { MAPS, MAP_SIZES, mapsOfSize } from './game.js';
+import { arenaImage } from './arena-art.js';
+import { MAPS, MAP_SIZES, LEGACY_MAP_IDS, mapsOfSize } from './game.js';
 import { BOX_X, BOX_Y, BOX_W, BOX_H, hatImage } from './hat.js';
 export { hatImage } from './hat.js';
 import { Renderer } from './render.js';
@@ -572,6 +573,67 @@ export function renderOnline(entries, ready, { onJoin, onInvite, root = 'menu', 
 
 // ---------- lobby ----------
 
+function voteCard(id, label, preview, isSize = false) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = isSize ? 'map-card size-card' : 'map-card';
+  button.dataset.vote = id;
+  button.innerHTML = `${preview}<span class="map-name">${esc(label)}</span><span class="map-votes"></span>`;
+  return button;
+}
+
+function buildMapCatalog(grid) {
+  const sizes = grid.querySelector('#size-votes');
+  for (const size of MAP_SIZES) {
+    const label = size[0].toUpperCase() + size.slice(1);
+    sizes.append(voteCard(size, 'Any ' + label, `<span class="map-thumb size-thumb size-thumb-${size}"></span>`, true));
+    for (const collection of ['new', 'legacy']) {
+      const section = grid.querySelector('#' + collection + '-arenas');
+      const heading = document.createElement('h4');
+      heading.className = 'map-size-heading';
+      heading.textContent = label;
+      const cards = document.createElement('div');
+      cards.className = 'map-grid';
+      const legacy = collection === 'legacy';
+      for (const id of mapsOfSize(size).filter(id => LEGACY_MAP_IDS.includes(id) === legacy)) {
+        const preview = legacy ? `<span class="map-thumb map-thumb-${id}"></span>`
+          : `<img class="arena-preview" src="${arenaImage(id)}" loading="lazy" alt="">`;
+        cards.append(voteCard(id, MAPS[id].name, preview));
+      }
+      section.append(heading, cards);
+    }
+  }
+  const tabs = grid.querySelectorAll('.map-collections button');
+  for (const tab of tabs) {
+    tab.addEventListener('click', () => {
+      for (const option of tabs) {
+        const selected = option === tab;
+        option.setAttribute('aria-pressed', selected);
+        document.getElementById(option.getAttribute('aria-controls')).hidden = !selected;
+      }
+    });
+  }
+}
+
+function renderMapVotes(roster, myVote, onVote) {
+  const grid = $('#lobby-maps');
+  if (!grid.querySelector('[data-vote]')) buildMapCatalog(grid);
+  grid.onclick = event => {
+    const card = event.target.closest('[data-vote]');
+    if (card) onVote?.(card.dataset.vote);
+  };
+  for (const card of grid.querySelectorAll('[data-vote]')) {
+    const id = card.dataset.vote;
+    const votes = roster.filter(m => m.vote === id).length;
+    const selected = myVote === id;
+    card.classList.toggle('voted', selected);
+    card.setAttribute('aria-pressed', selected);
+    const tally = card.querySelector('.map-votes');
+    tally.classList.toggle('none', !votes);
+    tally.textContent = votes ? '🗳️ ' + votes : MAP_SIZES.includes(id) ? mapsOfSize(id).length + ' maps' : '—';
+  }
+}
+
 export function renderLobby(net, onVote = null, fightOn = false) {
   $('#lobby-code').textContent = net.roomCode || '····';
   const list = $('#lobby-roster');
@@ -598,37 +660,8 @@ export function renderLobby(net, onVote = null, fightOn = false) {
     list.appendChild(li);
   }
 
-  // map vote grid: tap to vote, tap again to clear
-  const grid = $('#lobby-maps');
-  grid.innerHTML = '';
   const active = roster.filter(m => m.status !== 'gone');
-  const myVote = net.members.get(net.myId)?.vote || null;
-  // size cards first: back a whole size class and let fate pick the arena
-  for (const size of MAP_SIZES) {
-    const votes = active.filter(m => m.vote === size).length;
-    const card = document.createElement('button');
-    card.className = 'map-card size-card' + (myVote === size ? ' voted' : '');
-    card.innerHTML = `
-      <span class="map-thumb size-thumb size-thumb-${size}"></span>
-      <span class="map-name">Any ${size[0].toUpperCase()}${size.slice(1)}</span>
-      <span class="map-votes${votes ? '' : ' none'}">${votes ? '🗳️ ' + votes : mapsOfSize(size).length + ' maps'}</span>`;
-    card.addEventListener('click', () => onVote?.(size));
-    grid.appendChild(card);
-  }
-
-  // then individual maps, grouped small → medium → large
-  for (const id of MAP_SIZES.flatMap(mapsOfSize)) {
-    const map = MAPS[id];
-    const votes = active.filter(m => m.vote === id).length;
-    const card = document.createElement('button');
-    card.className = 'map-card' + (myVote === id ? ' voted' : '');
-    card.innerHTML = `
-      <span class="map-thumb map-thumb-${id}"></span>
-      <span class="map-name">${esc(map.name)}</span>
-      <span class="map-votes${votes ? '' : ' none'}">${votes ? '🗳️ ' + votes : '—'}</span>`;
-    card.addEventListener('click', () => onVote?.(id));
-    grid.appendChild(card);
-  }
+  renderMapVotes(active, net.members.get(net.myId)?.vote, onVote);
 
   const me = net.members.get(net.myId);
   const readyBtn = $('#lobby-ready');

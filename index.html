@@ -245,7 +245,15 @@
         </div>
         <div id="room-vote" class="deck-page hidden">
           <h3 class="section-title">Map vote <span class="hint">pick a map or a size — majority wins, ties flip a coin</span></h3>
-          <div id="lobby-maps" class="map-grid"></div>
+          <div id="lobby-maps">
+            <div id="size-votes" class="map-grid"></div>
+            <div class="map-collections" role="group" aria-label="Map collection">
+              <button type="button" aria-controls="new-arenas" aria-pressed="true">New Maps</button>
+              <button type="button" aria-controls="legacy-arenas" aria-pressed="false">Legacy Maps</button>
+            </div>
+            <section id="new-arenas" aria-label="New Maps"></section>
+            <section id="legacy-arenas" aria-label="Legacy Maps" hidden></section>
+          </div>
         </div>
         <div id="room-invite" class="deck-page hidden">
           <button id="lobby-invite" class="btn ghost invite">📨 Invite Friends</button>
