@@ -104,6 +104,32 @@ const renderer = new Renderer($('#game-canvas'));
 // offer a tap-to-refresh banner instead of yanking the session away.
 if ('serviceWorker' in navigator) {
   addEventListener('load', async () => {
+    // A controller can change on first install or when the worker itself is
+    // replaced without changing the game. Compare the installed release
+    // with the page before interrupting the player.
+    const workers = navigator.serviceWorker;
+    let handledVersion = null;
+    workers.addEventListener('message', event => {
+      if (!event.source || event.source !== workers.controller || event.data?.type !== 'game-version') return;
+      const version = event.data.version;
+      if (!version || version === self.SMACKTOWN_VERSION || version === handledVersion) return;
+      handledVersion = version;
+      if (!net && !session) {
+        // A stale response after reload must not start a reload loop.
+        const key = 'smacktown.autoRefreshVersion';
+        try {
+          if (sessionStorage.getItem(key) !== version) {
+            sessionStorage.setItem(key, version);
+            location.reload();
+            return;
+          }
+        } catch { /* Storage unavailable: let the player refresh manually. */ }
+      }
+      UI.banner('Update ready — tap to refresh', 'good', 60000, () => location.reload());
+    });
+    const checkController = () => workers.controller?.postMessage({ type: 'get-game-version' });
+    workers.addEventListener('controllerchange', checkController);
+
     // updateViaCache:'none' keeps the HTTP cache out of sw.js update checks
     const reg = await navigator.serviceWorker
       .register('sw.js', { updateViaCache: 'none' }).catch(() => null);
@@ -114,18 +140,6 @@ if ('serviceWorker' in navigator) {
     reg.update().catch(() => {});
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') reg.update().catch(() => {});
-    });
-    // On a first visit the page loads uncontrolled and the fresh worker's
-    // clients.claim() fires one controllerchange that is not an update —
-    // swallow that one; every later controllerchange is a real new version.
-    let firstClaim = !navigator.serviceWorker.controller;
-    let refreshed = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (firstClaim) { firstClaim = false; return; }
-      if (refreshed) return;
-      refreshed = true;
-      if (!net && !session) { location.reload(); return; }
-      UI.banner('Update ready — tap to refresh', 'good', 60000, () => location.reload());
     });
   });
 }

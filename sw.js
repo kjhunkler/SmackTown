@@ -42,6 +42,12 @@ const ASSETS = [
   'icons/icon-maskable-512.png',
 ];
 
+self.addEventListener('message', event => {
+  if (event.data?.type === 'get-game-version') {
+    event.source?.postMessage({ type: 'game-version', version: SMACKTOWN_VERSION });
+  }
+});
+
 self.addEventListener('install', e => {
   // 'no-cache' forces revalidation with the server: without it addAll can
   // fill the NEW cache version with STALE files straight from the browser's
