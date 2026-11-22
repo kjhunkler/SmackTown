@@ -74,6 +74,8 @@ export function renderColorGrid(container, selected, onPick) {
     const b = document.createElement('button');
     b.className = 'color-swatch' + (c === selected ? ' sel' : '');
     b.style.background = c;
+    b.setAttribute('aria-label', 'Fighter color ' + c);
+    b.setAttribute('aria-pressed', String(c === selected));
     b.addEventListener('click', () => onPick(c));
     container.appendChild(b);
   }
@@ -81,20 +83,61 @@ export function renderColorGrid(container, selected, onPick) {
 
 // ---------- fighter preview (menu card) ----------
 
+// Menu portrait in a boxing stance. The crown starts at the same height
+// as the fighter it depicts, so saved hats sit on its head and face.
+const portraitPixels = [
+  '         ###########',
+  '       ##hhhhhhhcccc##',
+  '      #hhcccccccccscss#',
+  '     #hhcccccccccccscs#',
+  '     #hcccccccccccccss#',
+  '     #hccccccc##ccc##s#',
+  '     #hccccccccw#ccw#s#',
+  '     #hcccccccc##cc##s#',
+  '     #hcccccccccccccss#    ####',
+  '    ##ccccccccccccsssd#   #hhcc#',
+  '  ##hh##cccccccccssssd#  #hccccs#',
+  ' #hhcccc#cccccccsssssd####cccsss#',
+  ' #hccccss#cccccssssdd#ww##cccss#',
+  ' #cccssss#cccssssddd##wwww#ddd#',
+  '  #sssss#ccssssssddd#  #######',
+  '  ##www#ccsssssssddd#',
+  '   #www#cccccccssssd#',
+  '   ##dd##wwwwwwwyyww#',
+  '     ###ddddddddyydd#',
+  '      #cccsssdddddss#',
+  '     #cccssss####ssss#',
+  '     #ssssss#    #sss#',
+  '    #wwwddd#     #wwwd#',
+  '   #ddddddd#     #ddddd##',
+  '   #########     ########',
+];
+
 export function drawPreview(canvas, color, hat = null) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   ctx.save();
   ctx.translate(W / 2, H / 2 + 8);
-  ctx.fillStyle = color;
-  rr(ctx, -26, -34, 52, 68, 15); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 3; ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,.14)';
-  rr(ctx, -21, -29, 42, 34, 10); ctx.fill();
-  ctx.fillStyle = '#10122a';
-  ctx.beginPath(); ctx.arc(2, -12, 3.6, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.arc(15, -12, 3.6, 0, 7); ctx.fill();
+  const pixel = 3;
+  ctx.scale(Math.min(1, W / 108), Math.min(1, H / 108));
+  const palette = {
+    '#': '#161325', d: '#333044', w: '#f8edde', y: '#f4b34b',
+    c: color, h: color, s: color,
+  };
+  portraitPixels.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const tone = row[x];
+      if (tone === ' ') continue;
+      const left = (x - 14) * pixel, top = (y - 11) * pixel;
+      ctx.fillStyle = palette[tone];
+      ctx.fillRect(left, top, pixel, pixel);
+      if (tone === 'h' || tone === 's') {
+        ctx.fillStyle = tone === 'h' ? 'rgba(255,250,221,.52)' : 'rgba(34,17,59,.3)';
+        ctx.fillRect(left, top, pixel, pixel);
+      }
+    }
+  });
   const img = hatImage(hat);
   if (img) {
     // preview body is 52x68 vs the in-game 46x64 — scale the hat to match.
@@ -215,6 +258,18 @@ function renderGearDock(work) {
   pick('#gear-badge-augments', work.build.augments, MAX_AUGMENTS);
 }
 
+// Rebuilding the inventory replaces the activated button. Keep keyboard
+// focus on the current item and animate only the changed selection.
+function refreshShopSelection(work, el) {
+  const focused = document.activeElement === el;
+  renderBuilder(work);
+  const updated = document.getElementById(el.id);
+  if (focused) updated.focus({ preventScroll: true });
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    updated.animate([{ transform: 'scale(.96)' }, { transform: 'scale(1)' }], { duration: 180 });
+  }
+}
+
 // Weapon rack: exactly one is equipped, so tapping a weapon swaps to it.
 // Affordability is judged against the credits the swap itself frees up.
 function renderWeaponShop(box, work, left) {
@@ -223,17 +278,21 @@ function renderWeaponShop(box, work, left) {
   for (const w of WEAPONS) {
     const has = work.build.weapon === w.id;
     const affordable = (has || left + curCost >= w.cost);
-    const el = document.createElement('div');
+    const el = document.createElement('button');
+    el.id = 'shop-' + box.id + '-' + w.id;
+    el.type = 'button';
+    el.disabled = !affordable;
+    el.setAttribute('aria-pressed', String(has));
     el.className = 'shop-item' + (has ? ' owned' : affordable ? '' : ' locked');
     el.innerHTML = `
-      <div class="si-icon">${w.icon}</div>
-      <div class="si-cost">${has ? '✓ equipped' : w.cost ? w.cost + ' cr' : 'free'}</div>
-      <div class="si-name">${w.name}</div>
-      <div class="si-desc">${w.desc}</div>`;
+      <span class="si-icon">${w.icon}</span>
+      <span class="si-cost">${has ? '✓ equipped' : w.cost ? w.cost + ' cr' : 'free'}</span>
+      <span class="si-name">${w.name}</span>
+      <span class="si-desc">${w.desc}</span>`;
     el.addEventListener('click', () => {
       if (has || !affordable) return;
       work.build.weapon = w.id;
-      renderBuilder(work);
+      refreshShopSelection(work, el);
     });
     box.appendChild(el);
   }
@@ -310,18 +369,22 @@ function renderShop(box, defs, owned, maxOwned, left, work) {
   for (const item of defs) {
     const has = owned.includes(item.id);
     const affordable = (has || (left >= item.cost && owned.length < maxOwned));
-    const el = document.createElement('div');
+    const el = document.createElement('button');
+    el.id = 'shop-' + box.id + '-' + item.id;
+    el.type = 'button';
+    el.disabled = !affordable;
+    el.setAttribute('aria-pressed', String(has));
     el.className = 'shop-item' + (has ? ' owned' : affordable ? '' : ' locked');
     el.innerHTML = `
-      <div class="si-icon">${item.icon}</div>
-      <div class="si-cost">${has ? '✓ owned' : item.cost + ' cr'}</div>
-      <div class="si-name">${item.name}</div>
-      <div class="si-desc">${work.pve && item.pveDesc ? item.pveDesc : item.desc}</div>`;
+      <span class="si-icon">${item.icon}</span>
+      <span class="si-cost">${has ? '✓ owned' : item.cost + ' cr'}</span>
+      <span class="si-name">${item.name}</span>
+      <span class="si-desc">${work.pve && item.pveDesc ? item.pveDesc : item.desc}</span>`;
     el.addEventListener('click', () => {
       if (has) owned.splice(owned.indexOf(item.id), 1);
       else if (affordable) owned.push(item.id);
       else return;
-      renderBuilder(work);
+      refreshShopSelection(work, el);
     });
     box.appendChild(el);
   }

@@ -12,28 +12,34 @@
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/arcade.css">
 </head>
 <body>
 
 <!-- ============ LOGIN (first run) ============ -->
 <section id="screen-login" class="screen">
   <div class="panel narrow">
-    <h1 class="logo"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version"></small></span></h1>
-    <p class="tagline">P2P pocket brawler</p>
-    <label class="field-label" for="login-name">Pick your fighter name</label>
-    <input id="login-name" type="text" maxlength="14" autocomplete="off"
-           placeholder="e.g. KnuckleDuke" spellcheck="false">
-    <p id="login-error" class="error hidden"></p>
-    <label class="field-label">Pick your color</label>
-    <div id="login-colors" class="color-grid"></div>
-    <button id="login-go" class="btn primary big">Enter SmackTown</button>
+    <div class="title-scene">
+      <h1 class="logo"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version"></small></span></h1>
+      <canvas id="login-preview" width="120" height="120" aria-hidden="true"></canvas>
+    </div>
+    <div class="registration">
+      <h2>Create fighter</h2>
+      <label class="field-label" for="login-name">Pick your fighter name</label>
+      <input id="login-name" type="text" maxlength="14" autocomplete="off"
+             placeholder="e.g. KnuckleDuke" spellcheck="false">
+      <p id="login-error" class="error hidden"></p>
+      <label class="field-label">Pick your color</label>
+      <div id="login-colors" class="color-grid"></div>
+      <button id="login-go" class="btn primary big">Enter SmackTown</button>
+    </div>
   </div>
 </section>
 
 <!-- ============ MAIN MENU ============ -->
 <section id="screen-menu" class="screen hidden">
   <div class="panel narrow">
-    <h1 class="logo small"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version"></small></span></h1>
+    <header class="marquee"><h1 class="logo small"><span class="logo-word">SMACK<span>TOWN</span><small class="logo-version"></small></span></h1><span class="marquee-lines" aria-hidden="true"></span></header>
     <div class="console-body">
       <aside class="fighter-bay">
         <div class="menu-char-row">
@@ -58,15 +64,15 @@
           <button type="button" aria-controls="menu-options" aria-pressed="false">Options</button>
         </nav>
         <div id="menu-play" class="deck-page">
-          <button id="menu-solo" class="btn primary big">Practice vs Bot</button>
-          <button id="menu-pve" class="btn big ghost">🌌 Expedition (Co-op)</button>
-          <button id="menu-training" class="btn big ghost">🥋 Training Room</button>
+          <button id="menu-solo" class="mode-card"><span class="mode-kind">VS BOT</span><span class="mode-title">Practice</span></button>
+          <button id="menu-pve" class="mode-card"><span class="mode-kind">CO-OP</span><span class="mode-title">Expedition</span></button>
+          <button id="menu-training" class="mode-card"><span class="mode-kind">SOLO</span><span class="mode-title">Training room</span></button>
           <div class="join-row">
-            <input id="menu-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters"
+            <input id="menu-code" type="text" maxlength="4" aria-label="Room code" placeholder="ROOM CODE" autocomplete="off" autocapitalize="characters"
               spellcheck="false">
             <button id="menu-join" class="btn primary">Join / Host</button>
           </div>
-          <p class="join-hint">Enter a code to join a room — leave it blank to host a new one.</p>
+          <p class="join-hint">Enter a room code to join, or leave blank to host.</p>
         </div>
         <div id="menu-social" class="deck-page hidden">
           <div id="menu-online" class="online-box">

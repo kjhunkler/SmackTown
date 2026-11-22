@@ -290,8 +290,10 @@ function refreshOnline() {
 // ---------------- login (first run) ----------------
 function initLogin() {
   let color = COLORS[Math.floor(Math.random() * COLORS.length)];
-  const paint = () =>
+  const paint = () => {
+    UI.drawPreview($('#login-preview'), color);
     UI.renderColorGrid($('#login-colors'), color, c => { color = c; paint(); });
+  };
   paint();
 
   $('#login-go').addEventListener('click', () => {
