@@ -11,6 +11,12 @@ const BIG = new Set(['ko', 'boss', 'bosssig', 'bossdown', 'gameover', 'runend', 
 const CROWD = { telegraph: .19, strike: .095, foefire: .13, enemyko: .11, burn: .12, heart: .13, augment: .18 };
 // The dedicated simulation event supplies the actual sound in each case.
 const CAST_EVENTS = new Set(['shockwave', 'gale', 'mend', 'bird', 'troop']);
+const CHARGE_SOUND_START = .30; // fraction of a normal charge, before overcharge
+
+function chargeProgress(fighter) {
+  if (fighter.state !== 'charge' || fighter.dead || fighter.parked) return 0;
+  return (fighter.stateT || 0) / weaponChargeTime(fighter.weapon);
+}
 
 class Sfx {
   constructor() {
@@ -153,19 +159,20 @@ class Sfx {
     // holds all use the same fighter view that drives the on-screen wind-up.
     for (const [id, voice] of this.charges) {
       const f = fighters.find(f => f.id === id);
-      if (!f || f.state !== 'charge' || f.dead || f.parked || f.weapon !== voice.weapon) {
+      if (!f || f.weapon !== voice.weapon || chargeProgress(f) < CHARGE_SOUND_START) {
         voice.stop();
         this.charges.delete(id);
       }
     }
     for (const f of fighters) {
-      if (f.state !== 'charge' || f.dead || f.parked) continue;
+      const progress = chargeProgress(f);
+      if (progress < CHARGE_SOUND_START) continue;
       let voice = this.charges.get(f.id);
       if (!voice) {
         voice = new ChargeVoice(this.synth, f.weapon);
         this.charges.set(f.id, voice);
       }
-      voice.update((f.stateT || 0) / weaponChargeTime(f.weapon), (f.x - this.center) / this.halfWidth);
+      voice.update(progress, (f.x - this.center) / this.halfWidth);
     }
   }
 

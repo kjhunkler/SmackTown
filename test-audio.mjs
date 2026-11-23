@@ -1,6 +1,6 @@
 // Exercise the simulation -> cosmetic event -> instrument path without a speaker.
 import assert from 'node:assert/strict';
-import { Game, ENEMY_TYPES } from './js/game.js';
+import { Game, ENEMY_TYPES, weaponChargeTime } from './js/game.js';
 import { WEAPONS } from './js/profile.js';
 import { playEffect } from './js/audio-effects.js';
 
@@ -71,10 +71,16 @@ const ac = {
 let chimes = 0;
 SFX.synth = { ac, waves: {}, lane: node, voice: () => ({ note() { chimes++; } }) };
 for (const { id } of WEAPONS) {
-  const fighter = { id: 'p', x: 0, weapon: id, state: 'charge', stateT: .2 };
+  const span = weaponChargeTime(id);
+  const fighter = { id: 'p', x: 0, weapon: id, state: 'charge', stateT: span * .2999 };
+  SFX.syncCharges([fighter]);
+  assert.equal(running, 0, id + ' stays silent below 30%');
+  SFX.syncCharges([{ ...fighter, state: 'attack' }]);
+  assert.equal(SFX.charges.size, 0, 'a quick release skips the wind-up sound');
+  fighter.stateT = span * .30;
   SFX.syncCharges([fighter]);
   const voice = SFX.charges.get('p');
-  assert.ok(running > 0 && voice.body.value > 0, id + ' has an audible held voice');
+  assert.ok(running > 0 && voice.body.value > 0, id + ' starts its wind-up sound at 30%');
   SFX.event({ e: 'burn', vic: 'p' });
   SFX.syncCharges([fighter]);
   assert.equal(SFX.charges.get('p'), voice, 'a continuing hold keeps the same voice');
@@ -88,6 +94,12 @@ for (const { id } of WEAPONS) {
     SFX.syncCharges([fighter]);
     assert.equal(chimes, once, 'the threshold rings once per hold');
   }
+  fighter.stateT = span * .29;
+  SFX.syncCharges([fighter]);
+  assert.equal(running, 0, 'a correction below the threshold silences the voice');
+  fighter.stateT = span * .6;
+  SFX.syncCharges([fighter]);
+  assert.ok(running > 0, 'a client joining mid-charge hears the current wind-up');
   SFX.syncCharges([]);
   assert.equal(running, 0);
   assert.equal(SFX.charges.size, 0);
