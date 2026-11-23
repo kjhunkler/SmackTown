@@ -1530,9 +1530,8 @@ export class Game {
     if (mayAct && inp.ab0) { this._useAbility(f, 0); inp.ab0 = false; }
     if (mayAct && inp.ab1) { this._useAbility(f, 1); inp.ab1 = false; }
 
-    // Magic keeps its starting aim. Other weapons can be redirected by the
-    // held attack input or movement stick throughout the charge.
-    if (inCharge && f.st.weapon !== 'magic' && inp.chg) {
+    // The held attack input or movement stick can redirect the charge.
+    if (inCharge && inp.chg) {
       let dx = inp.chg.dx | 0, dy = inp.chg.dy | 0;
       if (Math.abs(inp.mx) > .3 || Math.abs(inp.my) > .3) {
         dx = Math.abs(inp.mx) > .3 ? Math.sign(inp.mx) : 0;

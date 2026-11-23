@@ -48,7 +48,7 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   check('neutral charge starts in the facing direction', a2.state === 'charge' && a2.chgAim.dx === a2.facing);
 }
 
-// --- charge aim follows movement through the normal input path, except for magic ---
+// --- every weapon's charge aim follows movement through the normal input path ---
 for (const { id: weapon } of WEAPONS) {
   const g = mkGame(weapon);
   const f = g.fighters[0];
@@ -56,11 +56,10 @@ for (const { id: weapon } of WEAPONS) {
   g.setInput(f.id, { ...blankInput(), chg: start, mx: 1 });
   g.step();
 
-  for (const [mx, my] of [[-1, -1], [0, -1]]) {
-    g.setInput(f.id, { ...blankInput(), chg: start, mx, my });
+  for (const [dx, dy] of [[-1, -1], [0, -1]]) {
+    g.setInput(f.id, { ...blankInput(), chg: start, mx: dx, my: dy });
     g.step();
-    const { dx, dy } = weapon === 'magic' ? start : { dx: mx, dy: my };
-    check(`${weapon} winds up toward ${dx},${dy} with movement at ${mx},${my}`,
+    check(`${weapon} winds up toward ${dx},${dy}`,
       f.state === 'charge' && f.chgAim.dx === dx && f.chgAim.dy === dy
       && f.atkDir.x === dx && f.atkDir.y === dy && f.stateT > 0);
   }
@@ -72,9 +71,12 @@ for (const { id: weapon } of WEAPONS) {
 
   g.setInput(f.id, { ...blankInput(), atk: { kind: 'swipe', ...start } });
   g.step();
-  const { dx, dy } = weapon === 'magic' ? start : { dx: 0, dy: -1 };
-  check(`${weapon} releases its charged attack toward ${dx},${dy}`,
-    f.state === 'attack' && f.atkDir.x === dx && f.atkDir.y === dy && f.chg > 0);
+  check(`${weapon} releases its charged attack upward`,
+    f.state === 'attack' && f.atkDir.x === 0 && f.atkDir.y === -1 && f.chg > 0);
+  if (weapon === 'magic') {
+    const burst = g.projectiles.find(p => p.kind === 'burst' && p.owner === f.id);
+    check('redirected Magic charge launches its burst upward', burst && burst.vx === 0 && burst.vy < 0);
+  }
 }
 
 // --- 3. unarmed keeps the classic smash kit ---

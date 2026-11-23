@@ -30,7 +30,7 @@
 // smash in the tilt direction (no charging — hold B for that).
 //
 // `chg` sends the starting 8-way aim while the attack control is held.
-// The simulation reads live movement to redirect eligible charges. Release
+// The simulation reads live movement to redirect charges. Release
 // also queues a swipe so a press-and-release faster than one poll still attacks.
 
 import { settings } from './settings.js';
