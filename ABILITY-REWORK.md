@@ -6,7 +6,7 @@ The Workshop uses a refundable 1,000 CR loadout in both battle and expedition. B
 
 - [x] Map the existing Workshop, profile validation, host simulation, renderer and test entry points.
 - [x] v231 adds 18 ability upgrades across 16 families and four level-2 trait specializations. All five base buffs are in the simulation. `test-specializations.mjs` covers prices, prerequisites, duplicate families, floor/platform bounces and all upgraded casts. The full Node suite passes.
-- [ ] Ship Workshop purchases and refunds, named loadout summaries, accessible controls and accurate in-match buttons.
+- [x] v232 adds Workshop purchases, same-slot swaps, full refunds, trait prerequisites, named build summaries and HUD buttons. Two Chromium players confirmed purchases, saved-character reload, the remote lobby roster, Cinderskip replication and the live recall button. Planted beacons also survive host handoff.
 - [ ] Ship cast animations for all 16 base abilities and distinct upgraded effects. Verify projectile effects on remote clients and in expedition.
 - [ ] Run the full Node suite and exercise the Workshop and multiplayer game in Chromium. Record results and release version here.
 

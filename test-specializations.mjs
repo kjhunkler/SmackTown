@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { ABILITIES, ABILITY_UPGRADES, abilityDef, buildCost, derivedStats,
   emptyBuild, sanitizeBuild, TRAIT_FOCUS, TOTAL_CREDITS } from './js/profile.js';
-import { Game } from './js/game.js';
+import { Game, gameFromSnapshot } from './js/game.js';
 
 const kit = (...abilities) => ({ ...emptyBuild(), abilities });
 const old = { abilities: ['fireball', 'hook'], augments: [], stats: {} };
@@ -79,6 +79,10 @@ assert.ok(cast('beartrap').p.stun > cast('trap').p.stun);
 assert.ok(cast('kickback').p.kb > cast('springtrap').p.kb);
 for (const map of ['flatlands', 'expanse']) {
   const { g, a } = cast('lifeline', a => { a.pct = 30; a.hp = 40; }, map);
+  const resumed = gameFromSnapshot([{ id: 'A', build: kit('lifeline') }, { id: 'B', build: kit() }], g.snapshot(5000, 10));
+  resumed.fighters[0].x = 90;
+  resumed._useAbility(resumed.fighters[0], 0);
+  assert.equal(resumed.fighters[0].x, 0);
   a.x = 400; g._useAbility(a, 0);
   assert.equal(a.x, 0);
   assert.equal(map === 'expanse' ? a.hp : a.pct, map === 'expanse' ? 50 : 20);

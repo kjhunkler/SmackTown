@@ -4449,7 +4449,12 @@ export class Game {
           f.hammerChainDir ? f.hammerChainDir.y : 0, // hammer redirects (48..51)
         ];
       }),
-      p: this.projectiles.filter(inRange).map(p => [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0), r2(p.arm || 0), p.section ?? -1, r1(p.bombR || 0), p.glow ? 1 : 0, r2(p.aimX || 0), r2(p.aimY || 0)]),
+      p: this.projectiles.filter(p => p.kind === 'anchor' || inRange(p)).map(p => {
+        const row = [p.eid, p.kind, r1(p.x), r1(p.y), r1(p.vx), r1(p.r || 0), r2(p.arm || 0), p.section ?? -1, r1(p.bombR || 0), p.glow ? 1 : 0, r2(p.aimX || 0), r2(p.aimY || 0)];
+        if (p.kind === 'anchor') row.push(p.variant || '', p.owner, r2(p.ttl));
+        else if (p.variant || p.kind === 'hook' || p.fireR) row.push(p.variant || '', p.owner, r1(p.vy));
+        return row;
+      }),
       en: this.enemies.filter(inRange).map(e => [e.eid, r1(e.x), r1(e.y), r1(e.hp), e.maxHp, e.facing, e.hurt > 0 ? 1 : 0, e.kind, r2(e.windup || 0), e.cr || 1, e.temperament || 'bold', e.elite ? 1 : 0, r2(e.stagger || 0), e.variant || 0, e.atkKind || 0, r1(e.aimX || 0), r1(e.aimY || 0), e.ally || 0, r2(e.life || 0)]),
       ht: this.hearts.filter(inRange).map(h => [h.hid, r1(h.x), r1(h.y), r2(HEART_LIFE - h.t)]),
       ev: this.events.slice(),
@@ -4478,8 +4483,12 @@ export class Game {
   }
 }
 
-// Rebuild a live sim from the last snapshot a peer saw — used when the host
-// drops mid-fight and the elected successor takes over the simulation.
+export function anchorsFromSnapshot(rows, owner) {
+  return (rows || []).filter(p => p[1] === 'anchor' && p[14] > 0 && (!owner || p[13] === owner))
+    .map(p => ({ eid: p[0], kind: 'anchor', x: p[2], y: p[3], vx: 0, vy: 0, variant: p[12], owner: p[13], ttl: p[14] }));
+}
+
+// Rebuild a live sim when the host drops and the elected peer takes over.
 export function gameFromSnapshot(players, snap, seed = 2) {
   const g = new Game(players, seed, snap?.map || DEFAULT_MAP);
   if (!snap) return g;
@@ -4489,6 +4498,8 @@ export function gameFromSnapshot(players, snap, seed = 2) {
     if (snap.city.room === 'train') g.cityRun.reachedTrain = true;
   }
   g.tick = snap.tk || 0;
+  g.projectiles = anchorsFromSnapshot(snap.p);
+  for (const p of g.projectiles) nextEid = Math.max(nextEid, p.eid + 1);
   g.runT = +snap.rt || 0;             // resume the difficulty ramp where it stood
   g.bossesDown = snap.bd | 0;         // …and the campaign exactly where it stood
   g.won = !!snap.wn;

@@ -299,6 +299,24 @@
 .si-cost { grid-area: cost; font: bold 11px/1.2 monospace; color: #ffcd7b; }
 .owned .si-cost { color: var(--mint); }
 .si-desc { grid-area: copy; color: #c9c7d6; font-size: 13px; line-height: 1.35; }
+.ability-family { display: flex; flex-direction: column; align-self: start; min-width: 0; gap: 3px; }
+#screen-builder .ability-family .shop-item {
+  width: 100%; grid-template-areas: "icon name cost" "copy copy copy" "options options options";
+}
+.family-options { grid-area: options; font-size: 12px; color: #9edbdb; }
+.upgrade-choice {
+  display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; align-items: center;
+  padding: 8px 10px; border: 1px solid #585268; border-left: 3px solid var(--upgrade-color,var(--mint));
+  border-radius: 4px; background: #252536; color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.ability-family .upgrade-choice { margin-left: 10px; }
+.upgrade-choice strong { font: 900 16px/1.1 var(--display); }
+.choice-cost { color: #ffcd7b; font: 700 11px/1.2 monospace; }
+.choice-desc { grid-column: 1 / -1; color: #cbc9d6; font-size: 12px; line-height: 1.35; }
+.upgrade-choice[aria-pressed="true"] { border-color: var(--upgrade-color,var(--mint)); background: #283538; }
+.upgrade-choice:disabled { opacity: .62; cursor: default; }
+#builder-stats .stat-row { display: grid; grid-template-columns: 1fr auto; }
+.stat-row .upgrade-choice { grid-column: 1 / -1; }
 #screen-builder .builder-head {
   background: linear-gradient(95deg,#1b1c2a 15%,#1b1c2ac4 46%,#11132038 78%,#151624 100%),
     url("../art/dojo.webp") center 42% / cover;

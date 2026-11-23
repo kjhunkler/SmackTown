@@ -10,7 +10,7 @@ import { Net } from './net.js';
 import { hasOpposingTeams } from './pvp.js';
 import { Presence } from './presence.js';
 import { CITY_ROOMS, showMarketExit } from './city.js';
-import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, NEW_MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
+import { Game, gameFromSnapshot, anchorsFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, NEW_MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
 import { Renderer } from './render.js';
@@ -1256,7 +1256,7 @@ class Session {
     this.buildHud();
     $('#game-credits').classList.toggle('hidden', !this.coop);
     $('#game-edit').classList.toggle('hidden', !this.coop);
-    UI.setupAbilityButtons(sanitizeBuild(me.build).abilities);
+    UI.setupAbilityButtons(sanitizeBuild(me.build));
     touch.setEnabled(true);
     this.running = true;
     this.lastT = performance.now();
@@ -1314,7 +1314,7 @@ class Session {
     p.hat = sanitizeHat(m.hat);
     this.trying.delete(pid);
     this.pred?.updateBuild(pid, p.build);
-    if (pid === this.myId) UI.setupAbilityButtons(p.build.abilities);
+    if (pid === this.myId) UI.setupAbilityButtons(p.build);
     // host: re-broadcast the roster so clients repaint colors/hats/builds
     if (this.mode === 'host' && net) this.broadcastPlayers();
     this.buildHud();
@@ -1383,7 +1383,7 @@ class Session {
     const original = { build: me.build, hat: me.hat };
     me.build = build;
     me.hat = hat;
-    if (pid === this.myId) UI.setupAbilityButtons(build.abilities);
+    if (pid === this.myId) UI.setupAbilityButtons(build);
     this.broadcastPlayers();
     me.build = original.build;
     me.hat = original.hat;
@@ -1426,7 +1426,7 @@ class Session {
     this.game?.clearTryBuild(pid);
     this.pred?.clearTryBuild(pid);
     if (pid === this.myId) {
-      UI.setupAbilityButtons(sanitizeBuild(p.build).abilities);
+      UI.setupAbilityButtons(sanitizeBuild(p.build));
       UI.toast('Back to your fighter!');
     }
     this.buildHud();
@@ -1614,7 +1614,7 @@ class Session {
     renderer.draw(view, dt, this.myId);
     UI.updateHud(view.fighters);
     const mine = view.fighters.find(f => f.id === this.myId);
-    UI.updateAbilityButtons(mine?.cds);
+    UI.updateAbilityButtons(mine?.cds, view.projectiles.some(p => p.kind === 'anchor' && p.owner === this.myId && p.ttl > 0));
     if (this.coop) {
       const cr = earnedCredits(mine?.score);
       const el = $('#game-credits-val');
@@ -1701,7 +1701,8 @@ class Session {
   // error remains into a decaying render offset so corrections are seamless.
   reconcile(s) {
     if (!this.pred) return;
-    this.pred.projectiles.length = 0; // authoritative ones come via snapshots
+    // A recall needs the planted beacon when replaying unacknowledged inputs.
+    this.pred.projectiles = anchorsFromSnapshot(s.p, this.myId);
     const row = (s.f || []).find(r => r[0] === this.myId);
     const mine = this.pred.fighters.find(f => f.id === this.myId);
     if (!row || !mine) return;
@@ -1814,7 +1815,7 @@ class Session {
             this.pred?.tryBuild(p.id, sanitizeBuild(p.build));
             this.game?.tryBuild(p.id, sanitizeBuild(p.build));
           }
-          if (p.id === this.myId) UI.setupAbilityButtons(sanitizeBuild(activeChanged ? p.build : cur.build, cap).abilities);
+          if (p.id === this.myId) UI.setupAbilityButtons(sanitizeBuild(activeChanged ? p.build : cur.build, cap));
           changed = true;
         }
         continue;
@@ -1914,7 +1915,11 @@ class Session {
       const i = fighters.findIndex(f => f.id === this.myId);
       if (i >= 0) fighters[i] = pv; else fighters.push(pv);
     }
-    const projectiles = (b.s.p || []).map(p => ({ eid: p[0], kind: p[1], x: p[2], y: p[3], r: p[5] || 0, arm: p[6] || 0, section: p[7] ?? -1, bombR: p[8] || 0, glow: !!p[9], aimX: p[10] || 0, aimY: p[11] || 0 }));
+    const projectiles = (b.s.p || []).map(p => ({
+      eid: p[0], kind: p[1], x: p[2], y: p[3], vx: p[4], r: p[5] || 0, arm: p[6] || 0,
+      section: p[7] ?? -1, bombR: p[8] || 0, glow: !!p[9], aimX: p[10] || 0, aimY: p[11] || 0,
+      variant: p[12], owner: p[13], vy: p[1] === 'anchor' ? 0 : p[14] || 0, ttl: p[1] === 'anchor' ? p[14] : undefined,
+    }));
     const hearts = (b.s.ht || []).map(h => ({ hid: h[0], x: h[1], y: h[2], tLeft: h[3] || 0 }));
     const enemies = interpolateEnemyRows(a.s.en, b.s.en, k, this._enemyInterpolation.from, this._enemyInterpolation.out);
     const tick = (a.s.tk || 0) + ((b.s.tk || 0) - (a.s.tk || 0)) * k;

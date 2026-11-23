@@ -3,6 +3,7 @@
 import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS, WEAPONS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
+  ABILITY_UPGRADES, abilityDef, FOCUS_LEVEL, TRAIT_FOCUS, traitLabels, derivedStats,
   loadLoadouts, deleteLoadout, hatArt, loadHats, selectedLoadout, selectLoadout,
   HAT_W, HAT_H,
 } from './profile.js';
@@ -107,32 +108,46 @@ export function renderBuilder(work) {
   statsBox.innerHTML = '';
   for (const s of STATS) {
     const lvl = work.build.stats[s.id];
+    const focus = TRAIT_FOCUS[s.id];
+    const focused = work.build.focuses?.includes(s.id);
     const row = document.createElement('div');
     row.className = 'stat-row';
     row.innerHTML = `
       <div class="stat-info">
-        <div class="stat-name">${s.name}</div>
+        <div class="stat-name">${s.name} · ${lvl}/${s.max}</div>
         <div class="stat-desc">${s.desc}</div>
         <div class="stat-pips">${Array.from({ length: s.max }, (_, i) =>
           `<span class="pip${i < lvl ? ' on' : ''}"></span>`).join('')}</div>
       </div>
       <div>
         <div class="stat-btns">
-          <button data-d="-1" ${lvl <= 0 ? 'disabled' : ''}>−</button>
-          <button data-d="1" ${lvl >= s.max || left < s.cost ? 'disabled' : ''}>+</button>
+          <button id="lower-${s.id}" aria-label="Lower ${s.name}${focused && lvl === FOCUS_LEVEL ? ' and refund ' + focus.name : ''}" data-d="-1" ${lvl <= 0 ? 'disabled' : ''}>−</button>
+          <button id="raise-${s.id}" aria-label="Raise ${s.name}" data-d="1" ${lvl >= s.max || left < s.cost ? 'disabled' : ''}>+</button>
         </div>
         <div class="stat-cost">${s.cost} cr / lvl</div>
-      </div>`;
-    row.querySelectorAll('button').forEach(b =>
+      </div>
+      <button type="button" id="focus-${s.id}" class="upgrade-choice" aria-pressed="${!!focused}" ${lvl < FOCUS_LEVEL || (!focused && left < focus.cost) ? 'disabled' : ''}>
+        <strong>${focus.name}</strong><span class="choice-cost">${focused ? 'Refund' : lvl < FOCUS_LEVEL ? 'Level ' + FOCUS_LEVEL + ' ·' : 'Buy'} ${focus.cost} cr</span>
+        <span class="choice-desc">${focus.desc}</span>
+      </button>`;
+    row.querySelectorAll('[data-d]').forEach(b =>
       b.addEventListener('click', () => {
         work.build.stats[s.id] = lvl + Number(b.dataset.d);
-        renderBuilder(work);
+        if (focused && work.build.stats[s.id] < FOCUS_LEVEL) {
+          work.build.focuses = work.build.focuses.filter(id => id !== s.id);
+        }
+        refreshShopSelection(work, b);
       }));
+    const focusButton = row.querySelector('.upgrade-choice');
+    focusButton.addEventListener('click', () => {
+      work.build.focuses = focused ? work.build.focuses.filter(id => id !== s.id) : [...(work.build.focuses || []), s.id];
+      refreshShopSelection(work, focusButton);
+    });
     statsBox.appendChild(row);
   }
 
   renderWeaponShop($('#builder-weapons'), work, left);
-  renderShop($('#builder-abilities'), ABILITIES, work.build.abilities, MAX_ABILITIES, left, work);
+  renderAbilityShop(work, left);
   renderShop($('#builder-augments'), AUGMENTS, work.build.augments, MAX_AUGMENTS, left, work);
   wireGearDock();
   renderGearDock(work);
@@ -285,6 +300,58 @@ function renderLoadouts(work) {
       renderBuilder(work);
     });
     box.appendChild(row);
+  }
+}
+
+function renderAbilityShop(work, left) {
+  const box = $('#builder-abilities');
+  box.replaceChildren();
+  const slots = work.build.abilities;
+  for (const base of ABILITIES) {
+    const slot = slots.findIndex(id => abilityDef(id)?.family === base.id);
+    const current = slot >= 0 ? abilityDef(slots[slot]) : null;
+    const upgrades = ABILITY_UPGRADES[base.id];
+    const card = document.createElement('div');
+    card.className = 'ability-family';
+    const buy = document.createElement('button');
+    buy.type = 'button';
+    buy.id = 'shop-builder-abilities-' + base.id;
+    buy.disabled = !current && (slots.length >= MAX_ABILITIES || left < base.cost);
+    buy.className = 'shop-item' + (current ? ' owned' : buy.disabled ? ' locked' : '');
+    buy.setAttribute('aria-pressed', String(!!current));
+    buy.innerHTML = `
+      <span class="si-icon">${base.icon}</span><span class="si-name">${base.name}</span>
+      <span class="si-cost">${current ? 'Sell ' + current.cost : 'Buy ' + base.cost} cr</span>
+      <span class="si-desc">${base.desc}</span>
+      <span class="family-options">${current ? 'Slot ' + (slot + 1) + ' · ' + current.name : upgrades.map(u => u.name).join(' / ')}</span>`;
+    buy.addEventListener('click', () => {
+      if (current) slots.splice(slot, 1);
+      else slots.push(base.id);
+      refreshShopSelection(work, buy);
+    });
+    card.appendChild(buy);
+    if (current) for (const u of upgrades) {
+      const selected = current.id === u.id;
+      const delta = selected ? -u.premium : u.premium - current.premium;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = 'upgrade-' + u.id;
+      btn.className = 'upgrade-choice';
+      btn.style.setProperty('--upgrade-color', u.color);
+      btn.disabled = delta > left;
+      btn.setAttribute('aria-pressed', String(selected));
+      let price = 'Buy ' + u.premium + ' cr';
+      if (selected) price = 'Refund ' + u.premium + ' cr';
+      else if (current.premium) price = delta < 0 ? 'Swap · get ' + -delta + ' cr' : delta > 0 ? 'Swap · pay ' + delta + ' cr' : 'Even swap';
+      btn.innerHTML = `<strong>${u.icon} ${u.name}</strong><span class="choice-cost">${price}</span><span class="choice-desc">${u.desc}</span>`;
+      btn.title = selected ? 'Return to ' + base.name : 'Equip ' + u.name;
+      btn.addEventListener('click', () => {
+        slots[slot] = selected ? base.id : u.id;
+        refreshShopSelection(work, btn);
+      });
+      card.appendChild(btn);
+    }
+    box.appendChild(card);
   }
 }
 
@@ -805,18 +872,21 @@ export function updateHud(fighters) {
   }
 }
 
-export function setupAbilityButtons(abilityIds) {
+export function setupAbilityButtons(build) {
+  const st = derivedStats(build);
   const btns = [$('#ability-btn-0'), $('#ability-btn-1')];
   btns.forEach((btn, i) => {
-    const id = abilityIds[i];
+    const id = st.abilities[i];
     btn.classList.toggle('hidden', !id);
     btn.classList.remove('cooling', 'ab-live');
     if (id) {
-      const def = ABILITIES.find(a => a.id === id);
-      btn.dataset.ability = id;
-      btn.dataset.icon = def?.icon || '?';
-      btn.querySelector('.ab-icon').textContent = def?.icon || '?';
-      btn.dataset.cd = def?.cd || 3;
+      const def = abilityDef(id);
+      btn.dataset.ability = def.family;
+      btn.dataset.icon = def.icon;
+      btn.querySelector('.ab-icon').textContent = def.icon;
+      btn.dataset.cd = def.cd * st.cdMult;
+      btn.title = def.name;
+      btn.setAttribute('aria-label', def.name);
     }
   });
 }
@@ -825,17 +895,16 @@ export function setupAbilityButtons(abilityIds) {
 // on the field for that whole window, so its button doubles as the activate
 // control instead of just counting down. The cooldown ring still runs (it's
 // the anchor's remaining life), but the button reads as live, not disabled.
-const LIVE_THROUGH_COOLDOWN = new Set(['anchor']);
 const ACTIVATE_ICON = '🌀';
 
-export function updateAbilityButtons(cds) {
+export function updateAbilityButtons(cds, hasAnchor) {
   [$('#ability-btn-0'), $('#ability-btn-1')].forEach((btn, i) => {
     if (btn.classList.contains('hidden')) return;
     const total = Number(btn.dataset.cd) || 3;
     const left = cds?.[i] || 0;
     const frac = Math.max(0, Math.min(1, left / total));
     btn.querySelector('.cd-ring').style.strokeDashoffset = String(113 * frac);
-    const live = left > 0.05 && LIVE_THROUGH_COOLDOWN.has(btn.dataset.ability);
+    const live = hasAnchor && btn.dataset.ability === 'anchor';
     btn.querySelector('.ab-icon').textContent = live ? ACTIVATE_ICON : btn.dataset.icon;
     btn.classList.toggle('cooling', left > 0.05 && !live);
     btn.classList.toggle('ab-live', live);
@@ -886,10 +955,9 @@ function pickAwards(rows) {
 // terse buildSummary() line used in the lobby roster).
 function buildDetailHtml(build) {
   const b = build || {};
-  const stats = b.stats || {};
   const wpn = WEAPONS.find(w => w.id === b.weapon) || WEAPONS.find(w => w.id === 'unarmed');
-  const statBits = STATS.filter(s => stats[s.id] > 0).map(s => `${s.name} ${stats[s.id]}`);
-  const abilities = (b.abilities || []).map(id => ABILITIES.find(a => a.id === id)).filter(Boolean);
+  const statBits = traitLabels(b);
+  const abilities = (b.abilities || []).map(abilityDef).filter(Boolean);
   const augments = (b.augments || []).map(id => AUGMENTS.find(a => a.id === id)).filter(Boolean);
   const groups = [];
   groups.push(`<span class="r-bd-group"><span class="r-bd-label">Weapon</span><span class="r-bd-pill">${wpn.icon} ${esc(wpn.name)}</span></span>`);

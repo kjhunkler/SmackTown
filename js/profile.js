@@ -591,15 +591,21 @@ export function selectLoadout(name) {
   else localStorage.removeItem(SEL_KEY);
 }
 
+export function traitLabels(build) {
+  return STATS.filter(s => build.stats?.[s.id] > 0).map(s => {
+    const focus = build.focuses?.includes(s.id) ? ` (${TRAIT_FOCUS[s.id].name})` : '';
+    return `${s.name} ${build.stats[s.id]}${focus}`;
+  });
+}
+
 export function buildSummary(build) {
   const b = sanitizeBuild(build);
   const parts = [];
-  const statBits = STATS.filter(s => b.stats[s.id] > 0)
-    .map(s => `${s.name} ${b.stats[s.id]}`);
+  const statBits = traitLabels(b);
   if (statBits.length) parts.push(statBits.join(' · '));
   const wpn = WEAPONS.find(w => w.id === b.weapon);
   if (wpn && wpn.id !== DEFAULT_WEAPON) parts.push(`${wpn.icon} ${wpn.name}`);
-  const abil = b.abilities.map(id => ABILITIES.find(a => a.id === id)?.name).filter(Boolean);
+  const abil = b.abilities.map(id => abilityDef(id).name);
   if (abil.length) parts.push(abil.join(' + '));
   const augs = b.augments.map(id => AUGMENTS.find(a => a.id === id)?.name).filter(Boolean);
   if (augs.length) parts.push(augs.join(' + '));
