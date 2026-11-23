@@ -1,10 +1,10 @@
 import { Synth } from './audio-synth.js';
-import { scoreStep, STEP } from './audio-score.js';
 import { ChargeVoice, playEffect } from './audio-effects.js';
 import { weaponChargeTime } from './game.js';
 import { landscape, Scenery } from './audio-scenery.js';
 
 const MUTE_KEY = 'smacktown.muted';
+const TRACKS = ['music/Pixel-Burst Groove.m4a', 'music/Pixel-Burst Groove 2.m4a'];
 const MUSIC = .57, FX = .87;
 const OUTPUT = .82; // transient headroom after compression for simultaneous impacts
 const BIG = new Set(['ko', 'boss', 'bosssig', 'bossdown', 'gameover', 'runend', 'bombboom']);
@@ -34,8 +34,12 @@ class Sfx {
       if (!this.ac) return;
       if (document.hidden) {
         this._clearCharges();
+        this.music.pause();
         this.ac.suspend().catch(() => {});
-      } else this.ac.resume().catch(() => {});
+      } else {
+        this.ac.resume().catch(() => {});
+        this._playMusic();
+      }
     });
   }
 
@@ -52,6 +56,19 @@ class Sfx {
       this.musicBus = ac.createGain();
       this.musicDuck = ac.createGain();
       this.musicDuck.connect(this.musicBus).connect(glue);
+      this.track = 0;
+      this.music = new Audio();
+      this.music.preload = 'auto';
+      this.music.src = TRACKS[this.track];
+      this.music.addEventListener('ended', () => {
+        this.track = (this.track + 1) % TRACKS.length;
+        this.music.src = TRACKS[this.track];
+        this._playMusic();
+      });
+      this.music.addEventListener('error', () => {
+        console.error('Unable to load theme music:', this.music.src, this.music.error);
+      });
+      ac.createMediaElementSource(this.music).connect(this.musicDuck);
       this.fxBus = ac.createGain(); this.fxBus.connect(glue);
       this.ambientBus = ac.createGain(); this.ambientBus.connect(this.fxBus);
       this.synth = new Synth(ac, this.musicDuck, this.fxBus);
@@ -59,12 +76,17 @@ class Sfx {
       this.fxBus.gain.value = this.vol.sfx * FX;
       this.ambientBus.gain.value = this.vol.ambience;
       this.musicBus.gain.value = this.muted ? 0 : this.vol.music * MUSIC;
-      this.step = 0;
-      this.next = ac.currentTime + .065;
       this.timer = setInterval(() => this._schedule(), 55);
       this._syncScenery();
     }
     if (this.ac.state === 'suspended' || this.ac.state === 'interrupted') this.ac.resume().catch(() => {});
+    this._playMusic();
+  }
+
+  _playMusic() {
+    if (!document.hidden && this.music.paused) {
+      this.music.play().catch(error => console.error('Unable to play theme music:', error));
+    }
   }
 
   setLevels(levels = {}) {
@@ -118,17 +140,7 @@ class Sfx {
 
   _schedule() {
     if (this.ac.state !== 'running' || document.hidden) return;
-    const now = this.ac.currentTime;
-    // After a long frame, skip missed notes instead of playing a burst.
-    if (this.next < now) {
-      const missed = Math.ceil((now - this.next) / STEP);
-      this.step += missed; this.next += missed * STEP;
-    }
-    while (this.next < now + .19) {
-      if (!this.muted && this.vol.master && this.vol.music) scoreStep(this.synth, this.step, this.next, this.mode === 'fight');
-      this.next += STEP; this.step++;
-    }
-    this.scenery?.tick(now);
+    this.scenery?.tick(this.ac.currentTime);
   }
 
   play(cue, ev = {}) {

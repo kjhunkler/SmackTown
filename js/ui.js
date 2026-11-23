@@ -21,7 +21,6 @@ const $ = s => document.querySelector(s);
 export function showScreen(name) {
   for (const el of document.querySelectorAll('.screen')) el.classList.add('hidden');
   $('#screen-' + name).classList.remove('hidden');
-  // the theme song adds its drum kit during fights, mellows out elsewhere
   SFX.setMode(name === 'game' ? 'fight' : 'menu');
 }
 

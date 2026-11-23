@@ -21,9 +21,8 @@ Add it to your home screen when the browser offers — it installs as a
 fullscreen landscape app and keeps working offline (practice mode; multiplayer
 naturally needs a connection).
 
-The 108 BPM theme opens with an electric-piano hook, lifts into a chorus, and
-drops low for the bridge. The chorus returns once before a four-bar reset
-leads back to the opening. [Listen to “Sugar on the Wire”](music/sugar-on-the-wire.mp3).
+The theme loops through [“Pixel-Burst Groove”](music/Pixel-Burst%20Groove.m4a)
+and [“Pixel-Burst Groove 2”](music/Pixel-Burst%20Groove%202.m4a).
 
 ## How it works
 
