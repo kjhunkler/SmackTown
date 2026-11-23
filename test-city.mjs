@@ -1,7 +1,7 @@
 // Exercise district changes through the host tick, including handoff mid-rally.
 import assert from 'node:assert/strict';
 import { Game, ENEMY_TYPES, gameFromSnapshot } from './js/game.js';
-import { CITY_ROOMS } from './js/city.js';
+import { CITY_ROOMS, showMarketExit } from './js/city.js';
 
 const players = ['a', 'b'].map(id => ({ id, name: id, color: '#fff', build: {} }));
 let g = new Game(players, 10, 'nightcity');
@@ -20,8 +20,51 @@ function handoff() {
   assert.deepEqual(g.cityRun, snap.city);
 }
 
+assert.equal(showMarketExit(g.cityRun), false);
+tick(35);
+const openingEnemies = [...g.enemies];
+const survivor = openingEnemies.pop();
+for (const e of openingEnemies) g._enemyDied(e, null);
+g.cityRun.wait = 0;
+tick(1);
+assert.equal(g.cityRun.wave, 2);
+assert.equal(showMarketExit(g.cityRun), false, 'the opener still has a survivor');
+handoff();
+g._enemyDied(g.enemies.find(e => e.eid === survivor.eid), null);
+tick(1);
+assert.ok(g.enemies.some(e => e.hp > 0), 'later-wave enemies are still alive');
+assert.ok(showMarketExit(g.cityRun), 'the arrow appears as soon as the opener is defeated');
+handoff();
+assert.ok(showMarketExit(g.cityRun));
+
+g.cityRun.wave = 5; g.cityRun.wait = 0;
+tick(1);
+const gatekeeper = g.enemies.find(e => ENEMY_TYPES[e.kind].boss);
+assert.ok(gatekeeper && g.cityRun.locked);
+g._enemyDied(gatekeeper, null);
+handoff();
+g.cityRun.wave = 11; g.cityRun.wait = 0;
+tick(1);
+assert.equal(g.cityRun.wave, 12);
+assert.ok(!g.cityRun.locked && g.enemies.every(e => !ENEMY_TYPES[e.kind].boss), 'a later wave cannot relock the district');
+assert.ok(showMarketExit(g.cityRun));
+gather(1); tick(26);
+assert.equal(g.cityRun.room, 'alley');
+assert.equal(showMarketExit(g.cityRun), false);
+g.enemies.length = 0;
+g.cityRun.wave = 17; g.cityRun.wait = 0;
+tick(1);
+assert.equal(g.cityRun.wave, 18);
+assert.ok(!g.cityRun.locked, 'the grace period follows the crew into the next district');
+g.enemies.length = 0;
+g.runT = g.cityRun.gatekeeperReadyAt;
+g.cityRun.wave = 23; g.cityRun.wait = 0;
+tick(1);
+assert.ok(g.cityRun.locked, 'a new district can still have a gatekeeper');
+
 // The whole party can push the opening boundary without getting a travel
 // prompt. Backtracking from the alley does not unlock the shortcut either.
+g = new Game(players, 10, 'nightcity');
 gather(-1); tick(30);
 assert.equal(g.cityRun.room, 'market');
 assert.equal(g.cityRun.left, 0);

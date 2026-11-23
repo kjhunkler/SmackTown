@@ -5,7 +5,7 @@
 import { derivedStats, buildCost, sanitizeBuild, TOTAL_CREDITS } from './profile.js';
 
 import { ARENAS } from './arenas.js';
-import { CITY_ROOMS, arrive, newCity, stepCity } from './city.js';
+import { CITY_ROOMS, GATEKEEPER_GRACE, arrive, newCity, stepCity } from './city.js';
 
 export const TICK = 1 / 60;
 export const SNAP_RATE = 3;          // broadcast every 3rd tick (20 Hz)
@@ -4274,7 +4274,10 @@ export class Game {
       this.events.push({ e: 'bossdown', x: e.x, y: e.y, kind: e.kind, variant: e.variant || 0, name: this._bossVar(e).name });
       // campaign beat: the act is cleared; the third boss wins the run
       this.bossesDown++;
-      if (this.cityRun) return;
+      if (this.cityRun) {
+        this.cityRun.gatekeeperReadyAt = this.runT + GATEKEEPER_GRACE;
+        return;
+      }
       if (!this.won && this.bossesDown >= EXPEDITION_ACTS) {
         this.won = true;
         this.events.push({ e: 'roadclear', x: e.x, y: e.y });

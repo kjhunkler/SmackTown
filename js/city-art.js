@@ -1,4 +1,4 @@
-import { CITY_ROOMS, TRAIN_DOOR_HALF_WIDTH, TRAVEL_HOLD, nextDistrict } from './city.js';
+import { CITY_ROOMS, TRAIN_DOOR_HALF_WIDTH, TRAVEL_HOLD, nextDistrict, showMarketExit } from './city.js';
 
 const posters = new Map();
 function poster(art) {
@@ -41,8 +41,7 @@ function drawStation(ctx, img, left, width, top) {
   ctx.drawImage(img, doorRight, 0, img.naturalWidth - doorRight, img.naturalHeight, half, y, wing, height);
 }
 
-function edgePrompt(ctx, state, room, t, side, nearby) {
-  const x = side * (room.limit - 55), y = -155;
+function exitArrow(ctx, x, y, t, side, locked) {
   ctx.save();
   ctx.translate(x + side * 5 * Math.sin(t * 7), y);
   ctx.scale(side, 1);
@@ -50,10 +49,14 @@ function edgePrompt(ctx, state, room, t, side, nearby) {
   ctx.beginPath();
   ctx.moveTo(-37, -9); ctx.lineTo(2, -9); ctx.lineTo(2, -23);
   ctx.lineTo(37, 0); ctx.lineTo(2, 23); ctx.lineTo(2, 9); ctx.lineTo(-37, 9);
-  ctx.closePath(); ctx.fillStyle = state.locked ? '#e89783' : '#ffe3a6';
+  ctx.closePath(); ctx.fillStyle = locked ? '#e89783' : '#ffe3a6';
   ctx.strokeStyle = '#24202a'; ctx.lineWidth = 6; ctx.stroke(); ctx.fill();
   ctx.restore();
+}
 
+function edgePrompt(ctx, state, room, t, side, nearby) {
+  const x = side * (room.limit - 55), y = -155;
+  exitArrow(ctx, x, y, t, side, state.locked);
   const label = state.locked ? 'BOSS LOCK' : CITY_ROOMS[nextDistrict(state.room, side)].name.toUpperCase();
   ctx.font = '900 18px "Barlow Condensed", sans-serif';
   const text = label + '  ' + nearby + '/' + state.required;
@@ -106,5 +109,9 @@ export function drawCity(ctx, view, cam, canvas, t) {
   }
   if (state.left) edgePrompt(ctx, state, room, t, -1, state.left);
   if (state.right) edgePrompt(ctx, state, room, t, 1, state.right);
+  else if (showMarketExit(state)) {
+    const x = Math.min(room.limit - 55, left + width - 58);
+    exitArrow(ctx, x, -155, t, 1, false);
+  }
   ctx.restore();
 }

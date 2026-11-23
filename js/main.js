@@ -8,7 +8,7 @@ import {
 } from './profile.js';
 import { Net } from './net.js';
 import { Presence } from './presence.js';
-import { CITY_ROOMS } from './city.js';
+import { CITY_ROOMS, showMarketExit } from './city.js';
 import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, NEW_MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
 import { TouchInput } from './input.js';
 import { HatStudio } from './hat.js';
@@ -1604,6 +1604,7 @@ class Session {
         const state = view.city, room = CITY_ROOMS[state.room];
         $('#expedition-biome').textContent = room.name + ' · Wave ' + Math.max(1, state.wave);
         $('#expedition-progress').textContent = state.locked ? 'Defeat the boss to travel'
+          : showMarketExit(state) ? 'Hold right at the edge together to enter Fire Escape Alley'
           : state.room === 'train' ? (state.boarding ? 'Boarding…' : 'Hold down together at the open doors to board · right to Lantern Market')
           : state.room === 'cistern' && state.pumpTick >= 295 ? 'Pressure rising · get above the water!' : '';
       } else {

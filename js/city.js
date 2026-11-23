@@ -35,6 +35,7 @@ export const CITY_ROOMS = {
 // The open vestibule is centered at x = 0 on the station platform.
 export const TRAIN_DOOR_HALF_WIDTH = 85;
 export const TRAVEL_HOLD = .42;
+export const GATEKEEPER_GRACE = 10;
 export const CITY_ROUTE = Object.keys(CITY_ROOMS);
 export function nextDistrict(room, side) {
   return CITY_ROUTE[(CITY_ROUTE.indexOf(room) + side + CITY_ROUTE.length) % CITY_ROUTE.length];
@@ -43,7 +44,12 @@ export function nextDistrict(room, side) {
 export const newCity = () => ({
   room: 'market', reachedTrain: false, wave: 0, wait: .55, visit: 0, pumpTick: 0,
   left: 0, right: 0, required: 0, hold: 0, locked: false, boarding: 0,
+  openingWave: null, gatekeeperSpawned: false, gatekeeperReadyAt: 0,
 });
+
+export function showMarketExit(state) {
+  return state.room === 'market' && state.visit === 0 && state.openingWave?.length === 0 && !state.locked;
+}
 
 export function arrive(f, x, limit) {
   f.x = Math.max(-limit + 24, Math.min(limit - 24, x));
@@ -94,8 +100,13 @@ function spawnWave(game, live, room, capacity) {
       e.vx = -side * 185;
     }
   }
-  if (state.wave % 6 === 0 && !state.locked) {
+  if (state.visit === 0 && state.wave === 1) {
+    state.openingWave = game.enemies.slice(-size).map(e => e.eid);
+  }
+  // Once the crew beats this visit's gatekeeper, later swarms leave the exit open.
+  if (state.wave % 6 === 0 && !state.gatekeeperSpawned && game.runT >= state.gatekeeperReadyAt) {
     game._spawnBoss(live, level);
+    state.gatekeeperSpawned = true;
     state.locked = true;
   }
   state.wait = Math.max(2.8, 6.2 - state.wave * .14);
@@ -106,6 +117,8 @@ function travel(game, side) {
   state.room = nextDistrict(state.room, side);
   if (state.room === 'train') state.reachedTrain = true;
   state.visit++;
+  state.openingWave = null;
+  state.gatekeeperSpawned = false;
   state.left = state.right = state.hold = state.boarding = state.pumpTick = 0;
   const limit = CITY_ROOMS[state.room].limit;
   const entry = -side * (limit - 152);
@@ -128,7 +141,11 @@ export function stepCity(game, live, dt, bossAlive) {
   const state = game.cityRun;
   const room = CITY_ROOMS[state.room];
   state.locked = bossAlive;
+  if (bossAlive) state.gatekeeperSpawned = true;
   if (state.room === 'cistern') stepPump(game, live, state);
+  if (state.openingWave?.length && !game.enemies.some(e => e.hp > 0 && state.openingWave.includes(e.eid))) {
+    state.openingWave = [];
+  }
   const active = game.enemies.filter(e => !e.ally && e.hp > 0).length;
   const capacity = Math.min(34, 15 + live.length * 2 + state.wave) - active;
   state.wait = Math.max(0, state.wait - dt);
