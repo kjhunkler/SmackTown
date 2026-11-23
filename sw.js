@@ -12,6 +12,8 @@ const ASSETS = [
   'fonts/barlow-condensed-black.ttf',
   'music/Pixel-Burst Groove.m4a',
   'music/Pixel-Burst Groove 2.m4a',
+  'music/Pixel-Burst Groove 3.mp3',
+  'music/Pixel-Burst Groove 4.mp3',
   'art/dojo.webp',
   'art/arenas/belfry.webp',
   'art/arenas/caldera.webp',

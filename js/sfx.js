@@ -4,7 +4,12 @@ import { weaponChargeTime } from './game.js';
 import { landscape, Scenery } from './audio-scenery.js';
 
 const MUTE_KEY = 'smacktown.muted';
-const TRACKS = ['music/Pixel-Burst Groove.m4a', 'music/Pixel-Burst Groove 2.m4a'];
+const TRACKS = [
+  'music/Pixel-Burst Groove.m4a',
+  'music/Pixel-Burst Groove 2.m4a',
+  'music/Pixel-Burst Groove 3.mp3',
+  'music/Pixel-Burst Groove 4.mp3',
+];
 const MUSIC = .57, FX = .87;
 const OUTPUT = .82; // transient headroom after compression for simultaneous impacts
 const BIG = new Set(['ko', 'boss', 'bosssig', 'bossdown', 'gameover', 'runend', 'bombboom']);
