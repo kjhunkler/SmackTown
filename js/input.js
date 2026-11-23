@@ -10,13 +10,13 @@
 //   two floating buttons — equipped abilities
 // Keyboard fallback (desktop testing): arrows/WASD move, space jump (hold
 // for full height, tap for a short hop),
-// J = tap attack, K = smash (hold to charge, release to fire; aimed by held
-// direction at press, 8-way), L and ; = abilities. Z/X/C/V mirror J/K/L/;.
+// J = tap attack, K = smash (hold to charge, release to fire; aim with movement),
+// L and ; = abilities. Z/X/C/V mirror J/K/L/;.
 // Hold down + press a direction = dodge roll.
 // Mouse (keyboard players move on the keys, so the mouse is a pure attack
 // stick): left click anywhere = quick attack · left click-drag = smash in
 // the drag direction (hold to charge, release to fire) · right click =
-// smash aimed by the held movement keys (hold to charge). Both screen
+// smash (hold to charge, drag to aim, release to fire). Both screen
 // halves attack under the mouse — only touch keeps the left half as the
 // movement stick. Side button (browser 'back', button 3) = ability 1 ·
 // middle click (wheel button) = ability 2 · scroll wheel down = ability 1,
@@ -25,12 +25,11 @@
 // left stick / dpad move — hold down to duck, tilt sideways while
 // ducked = dodge roll, flick
 // down = fast-fall/drop · A = quick attack · B = smash (hold to charge,
-// release to fire; aimed by the stick at press, 8-way) · Y = jump ·
-// LT / RT = ability 1 · X / LB / RB = ability 2 · right stick = instant
-// smash in the tilt direction (no charging — hold B for that).
+// release to fire) · Y = jump · LT / RT = ability 1 · X / LB / RB = ability 2.
+// Right stick aims a smash and by default charges until centered or LT / RT
+// is pressed. Movement aims only until the attack has a dedicated direction.
 //
-// `chg` sends the starting 8-way aim while the attack control is held.
-// The simulation reads live movement to redirect charges. Release
+// `chg` carries the fallback or dedicated 8-way aim while held. Release
 // also queues a swipe so a press-and-release faster than one poll still attacks.
 
 import { settings } from './settings.js';
@@ -50,13 +49,13 @@ const PAD_SCAN = 16;         // buttons scanned for bound actions each frame
 
 export class TouchInput {
   constructor(root) {
-    this.state = { mx: 0, my: 0, chg: null };  // continuous stick + held charge aim
+    this.state = { mx: 0, my: 0 };   // continuous movement
     this.queue = [];                 // edge-triggered actions
     this.enabled = false;
     this.keyChg = null;              // charge aim held via keyboard (K/X)
     this.mouseChg = null;            // charge aim held via right mouse button
     this.wheelT = 0;                 // last scroll-wheel ability trigger (debounce)
-    this.padChg = null;              // charge aim held via gamepad (B)
+    this.padChg = null;              // charge aim held via a button or the right stick
     this.padJumpHeld = false;        // gamepad jump button currently down (variable jump)
     this.padRHeld = false;           // right stick currently tilted (re-arm)
     this.padRolled = false;          // ducked sideways tilt fired (re-arm)
@@ -83,11 +82,13 @@ export class TouchInput {
     addEventListener('keydown', e => this._key(e, true));
     addEventListener('keyup', e => this._key(e, false));
 
-    // right mouse button (desktop) = heavy/smash attack, aimed by the held
-    // movement keys — hold to charge, release to fire, mirroring the K key.
+    // Right mouse button charges a smash immediately and can be dragged to aim.
     // Side button (back) = ability 1; middle click (wheel button) = ability 2.
     addEventListener('mousedown', e => this._mouse(e, true));
     addEventListener('mouseup', e => this._mouse(e, false));
+    addEventListener('mousemove', e => {
+      if (this.mouseChg) this._aimDrag(this.mouseChg, e.clientX, e.clientY);
+    });
     // scroll wheel: down = ability 1, up = ability 2 — a quick alternative
     // to the side/middle buttons for mice without them
     addEventListener('wheel', e => this._wheel(e), { passive: false });
@@ -110,7 +111,7 @@ export class TouchInput {
       zone.setPointerCapture(e.pointerId);
       const rec = {
         id: e.pointerId, role, ox: e.clientX, oy: e.clientY, lastX: e.clientX, lastY: e.clientY,
-        lastT: e.timeStamp, t0: e.timeStamp, flicked: false, moved: 0, rolled: false,
+        lastT: e.timeStamp, t0: e.timeStamp, flicked: false, rolled: false,
         touch: e.pointerType !== 'mouse',   // mobile-only: mouse swipes never become rolls
       };
       if (role === 'stick') {
@@ -131,24 +132,14 @@ export class TouchInput {
       const dt = Math.max(1, e.timeStamp - rec.lastT);
       const vx = (e.clientX - rec.lastX) / dt;
       const vy = (e.clientY - rec.lastY) / dt;
-      rec.moved = Math.max(rec.moved, Math.hypot(e.clientX - rec.ox, e.clientY - rec.oy));
       rec.lastX = e.clientX; rec.lastY = e.clientY; rec.lastT = e.timeStamp;
 
-      // smash detected mid-gesture: lock the aim and charge until the
+      // Smash detected mid-gesture: aim and charge until the
       // finger lifts — no need to wait for pointerup to start the attack.
       // Mobile only: a pure left/right swipe while the movement stick is
       // pinned down (ducked) fires a dodge roll instead, immediately —
       // mirrors the movement stick's own sideways-flick roll.
-      if (rec.role === 'swipe' && !rec.chgAim && !rec.rolled && rec.moved >= SWIPE_MIN) {
-        const oct = octant(e.clientX - rec.ox, e.clientY - rec.oy);
-        if (this._isDuckRoll(oct, rec)) {
-          rec.rolled = true;
-          this.queue.push({ roll: oct.dx });
-        } else {
-          rec.chgAim = oct;
-          this.state.chg = oct;
-        }
-      }
+      if (rec.role === 'swipe') this._aimDrag(rec, e.clientX, e.clientY);
 
       if (rec.role === 'stick') {
         let dx = e.clientX - rec.ox, dy = e.clientY - rec.oy;
@@ -187,28 +178,37 @@ export class TouchInput {
         this.stickKnob.style.transform = 'translate(-50%,-50%)';
       } else {
         this.swipe = null;
-        const dx = e.clientX - rec.ox, dy = e.clientY - rec.oy;
-        const dist = Math.hypot(dx, dy);
+        if (e.type === 'pointerup') this._aimDrag(rec, e.clientX, e.clientY);
         const dur = e.timeStamp - rec.t0;
         if (rec.rolled) {
           // already fired as a dodge roll mid-gesture — nothing left to do
-        } else if (rec.chgAim) {
-          // finger lifted: release the charged smash in the locked direction
-          this.state.chg = null;
-          this.queue.push({ atk: { kind: 'swipe', ...rec.chgAim } });
-        } else if (dist < SWIPE_MIN && dur < TAP_MAX_MS) {
+        } else if (rec.aim) {
+          this._releaseSmash(rec.aim);
+        } else if (dur < TAP_MAX_MS) {
           // tap: quick attack aimed by the movement stick (neutral = facing)
           this.queue.push({ atk: { kind: 'tap', ...octant(this.state.mx, this.state.my, 0.35) } });
-        } else if (dist >= SWIPE_MIN) {
-          // swipe finished before any move event crossed the threshold
-          const oct = octant(dx, dy);
-          if (this._isDuckRoll(oct, rec)) this.queue.push({ roll: oct.dx });
-          else this.queue.push({ atk: { kind: 'swipe', ...oct } });
         }
       }
     };
     zone.addEventListener('pointerup', end);
     zone.addEventListener('pointercancel', end);
+  }
+
+  _aimDrag(rec, x, y) {
+    const dx = x - rec.ox, dy = y - rec.oy;
+    if (rec.rolled || Math.hypot(dx, dy) < SWIPE_MIN) return;
+    const aim = octant(dx, dy);
+    if (!rec.aim && this._isDuckRoll(aim, rec)) {
+      rec.rolled = true;
+      this.queue.push({ roll: aim.dx });
+    } else {
+      rec.aim = { ...aim, direct: true };
+    }
+  }
+
+  _releaseSmash(aim) {
+    const { dx, dy, direct } = aim;
+    this.queue.push({ atk: { kind: 'swipe', dx, dy, direct, release: true } });
   }
 
   // Mobile only: a pure left/right attack swipe while the movement stick is
@@ -233,9 +233,9 @@ export class TouchInput {
     this.state.mx = dir;
     this.state.my = (held('down') ? 1 : 0) - (held('up') ? 1 : 0);
     if (!down) {
-      // smash key released: fire the charged attack in the aim locked at press
+      // Smash key released: queue a fallback aim for a quick press and release.
       if (act === 'smash' && this.keyChg && !held('smash')) {
-        this.queue.push({ atk: { kind: 'swipe', dx: this.keyChg.dx, dy: this.keyChg.dy } });
+        this._releaseSmash(this.keyChg);
         this.keyChg = null;
       }
       return;
@@ -253,19 +253,21 @@ export class TouchInput {
     if (act === 'ab1') this.queue.push({ ab1: true });
   }
 
-  // Right mouse button = heavy (smash) attack, aimed by the held movement
-  // keys. Press locks the aim and starts charging; release fires the smash
-  // in that aim — a quick click is an uncharged heavy, a hold charges it,
-  // exactly like the K key. The side (back) button fires ability 1; middle
+  // Right mouse button charges with movement aim until dragged. Release fires
+  // the smash. The side (back) button fires ability 1; middle
   // click (the wheel button) fires ability 2 — simple presses, no charging.
   _mouse(e, down) {
     if (!this.enabled) return;
     if (e.button === 2) {
       e.preventDefault();
       if (down) {
-        this.mouseChg = { dx: Math.sign(this.state.mx), dy: Math.round(this.state.my) };
+        this.mouseChg = {
+          ox: e.clientX, oy: e.clientY,
+          fallback: octant(this.state.mx, this.state.my, PAD_AIM_DEAD),
+        };
       } else if (this.mouseChg) {
-        this.queue.push({ atk: { kind: 'swipe', dx: this.mouseChg.dx, dy: this.mouseChg.dy } });
+        this._aimDrag(this.mouseChg, e.clientX, e.clientY);
+        this._releaseSmash(this.mouseChg.aim || this.mouseChg.fallback);
         this.mouseChg = null;
       }
       return;
@@ -302,7 +304,8 @@ export class TouchInput {
     if (pad.buttons[12]?.pressed) my = -1;
     if (pad.buttons[13]?.pressed) my = 1;
     const rx = pad.axes[2] || 0, ry = pad.axes[3] || 0;
-    const rTilt = Math.hypot(rx, ry) > PAD_FLICK;
+    const rLength = Math.hypot(rx, ry);
+    const rTilt = rLength > (this.padRHeld ? PAD_AIM_DEAD : PAD_FLICK);
 
     if (this.enabled) {
       // down flicks mirror the touch stick: fast-fall/drop (up no longer jumps)
@@ -314,39 +317,42 @@ export class TouchInput {
         this.padRolled = true; this.queue.push({ roll: Math.sign(mx) });
       } else if (this.padRolled && Math.abs(mx) < PAD_AIM_DEAD) this.padRolled = false;
 
+      const pressed = i => pad.buttons[i]?.pressed && !this.padPrev[i];
+      const swipeButtons = settings.padButtonsFor('swipe');
+      if (!this.padChg && swipeButtons.some(pressed)) this.padChg = octant(mx, my, PAD_AIM_DEAD);
+
+      if (this.padChg && rLength > PAD_AIM_DEAD) {
+        this.padChg = { ...this.padChg, ...octant(rx, ry), direct: true };
+      } else if (!this.padChg && rTilt && !this.padRHeld) {
+        const aim = { ...octant(rx, ry), direct: true };
+        if (settings.getRightStickCharge()) this.padChg = { ...aim, manual: true };
+        else this.queue.push({ atk: { kind: 'swipe', ...aim } });
+      }
+
+      const fireWithTrigger = this.padChg?.manual && (pressed(6) || pressed(7));
       for (let i = 0; i < PAD_SCAN; i++) {
         const act = settings.padAction(i);
         const down = !!pad.buttons[i]?.pressed;
-        if (act && down && !this.padPrev[i]) {
+        if (act && pressed(i) && !(fireWithTrigger && (i === 6 || i === 7))) {
           if (act === 'jump') this.queue.push({ jump: true });
-          else if (act === 'tap') this.queue.push({ atk: { kind: 'tap', ...octant(mx, my, PAD_AIM_DEAD) } });
-          else if (act === 'swipe') this.padChg = octant(mx, my, PAD_AIM_DEAD); // hold to charge
+          else if (act === 'tap' && !this.padChg?.manual) this.queue.push({ atk: { kind: 'tap', ...octant(mx, my, PAD_AIM_DEAD) } });
           else if (act === 'ab0') this.queue.push({ ab0: true });
           else if (act === 'ab1') this.queue.push({ ab1: true });
         }
         this.padPrev[i] = down;
       }
-      // smash button released: fire the charged attack in the aim from press
-      const swipeHeld = settings.padButtonsFor('swipe').some(i => pad.buttons[i]?.pressed);
-      if (this.padChg && !swipeHeld) {
-        this.queue.push({ atk: { kind: 'swipe', dx: this.padChg.dx, dy: this.padChg.dy } });
+      if (this.padChg && (fireWithTrigger || (this.padChg.manual
+        ? !rTilt : !swipeButtons.some(i => pad.buttons[i]?.pressed)))) {
+        this._releaseSmash(this.padChg);
         this.padChg = null;
-      }
-      // right stick = instant smash in the tilt direction (uncharged);
-      // re-arms once the stick returns to neutral
-      if (rTilt && !this.padRHeld) {
-        this.padRHeld = true;
-        this.queue.push({ atk: { kind: 'swipe', ...octant(rx, ry) } });
-      } else if (!rTilt && this.padRHeld) {
-        this.padRHeld = false;
       }
     } else {
       for (let i = 0; i < PAD_SCAN; i++) this.padPrev[i] = !!pad.buttons[i]?.pressed;
       this.padFlicked = Math.abs(my) > PAD_FLICK;
       this.padChg = null;
-      this.padRHeld = rTilt;
       this.padRolled = my > PAD_FLICK && Math.abs(mx) > PAD_FLICK;
     }
+    this.padRHeld = rTilt;
     return { mx, my };
   }
 
@@ -355,7 +361,8 @@ export class TouchInput {
     const g = this._pollGamepad();
     const out = {
       mx: this.state.mx, my: this.state.my,
-      chg: this.state.chg || this.keyChg || this.mouseChg || this.padChg || null,
+      chg: this.swipe?.aim || this.mouseChg?.aim || (this.padChg?.direct && this.padChg)
+        || this.keyChg || this.mouseChg?.fallback || this.padChg || null,
     };
     if (g) {
       if (Math.abs(g.mx) > Math.abs(out.mx)) out.mx = g.mx;
@@ -377,7 +384,7 @@ export class TouchInput {
     if (!on) {
       this.queue.length = 0;
       this.state.mx = 0; this.state.my = 0;
-      this.state.chg = this.keyChg = this.mouseChg = this.padChg = null;
+      this.keyChg = this.mouseChg = this.padChg = null;
       this.padRHeld = false;
       this.stick = this.swipe = null;
       this.stickBase.classList.add('hidden');

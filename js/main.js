@@ -1590,8 +1590,9 @@ class Session {
     }
 
     // ship inputs to the host (fresh actions immediately, stick at ~30 Hz)
-    const chgEdge = !!inp.chg !== !!this.wasChg;
-    this.wasChg = !!inp.chg;
+    const chgEdge = !!inp.chg !== !!this.wasChg || (inp.chg?.direct &&
+      (!this.wasChg?.direct || inp.chg.dx !== this.wasChg.dx || inp.chg.dy !== this.wasChg.dy));
+    this.wasChg = inp.chg;
     const hasAction = inp.jump || inp.ff || inp.atk || inp.ab0 || inp.ab1 || inp.drop || inp.roll || chgEdge;
     if (hasAction || t - this.lastInputSend > 33) {
       this.lastInputSend = t;

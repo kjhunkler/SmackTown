@@ -1299,7 +1299,11 @@ export class Game {
     cur.ff ||= !!inp.ff;
     cur.drop ||= !!inp.drop;
     cur.jr = !!inp.jr;   // level: jump control released (missing = held, keeping full jumps)
-    if (inp.atk) { cur.atk = inp.atk; cur.bufA = BUFFER; } // {kind:'tap'|'up'|'down'|'side', dir}
+    // A release edge backs up quick presses the sim never saw held. If the
+    // hold already fired at the charge cap, releasing it must not fire again.
+    if (inp.atk && (!inp.atk.release || cur.chgArm || this.fighters.some(f => f.id === id && f.state === 'charge'))) {
+      cur.atk = inp.atk; cur.bufA = BUFFER;
+    }
     if (inp.roll) { cur.roll = inp.roll; cur.bufR = BUFFER; } // dodge roll: -1 | 1
     // charge is level-triggered like the stick; re-arms on release
     cur.chg = inp.chg || null;
@@ -1537,10 +1541,13 @@ export class Game {
     if (mayAct && inp.ab0) { this._useAbility(f, 0); inp.ab0 = false; }
     if (mayAct && inp.ab1) { this._useAbility(f, 1); inp.ab1 = false; }
 
-    // The held attack input or movement stick can redirect the charge.
-    if (inCharge && inp.chg) {
-      let dx = inp.chg.dx | 0, dy = inp.chg.dy | 0;
-      if (Math.abs(inp.mx) > .3 || Math.abs(inp.my) > .3) {
+    // Dedicated aim follows the attack control even while moving. A swipe
+    // release can carry a final aim change since the last simulation tick.
+    const releaseAim = inp.atk?.release && inp.atk.direct ? inp.atk : null;
+    const chargeAim = releaseAim || inp.chg;
+    if (inCharge && chargeAim) {
+      let dx = chargeAim.dx | 0, dy = chargeAim.dy | 0;
+      if (!chargeAim.direct && (Math.abs(inp.mx) > .3 || Math.abs(inp.my) > .3)) {
         dx = Math.abs(inp.mx) > .3 ? Math.sign(inp.mx) : 0;
         dy = Math.abs(inp.my) > .3 ? Math.sign(inp.my) : 0;
       }
@@ -1552,14 +1559,15 @@ export class Game {
       }
     }
 
-    // charge state machine: fires when the control is let go (the release
-    // also arrives as a buffered swipe edge — consume it) or at the cap
+    // Stick charges can hold their aim at full power until released. Other
+    // charge controls also fire automatically at the weapon's cap.
     const hammerManaCap = f.st.weapon === 'hammer'
       ? this._chargeMax(f) * clamp((f.chargeMana - HAMMER_MANA_COST0) / (HAMMER_MANA_COST1 - HAMMER_MANA_COST0), 0, 1)
       : Infinity;
-    if (inCharge && (!inp.chg || inp.atk || f.stateT >= this._chargeCap(f)
-        || (f.mana >= HAMMER_MANA_COST0 && f.stateT >= hammerManaCap))) {
-      this._releaseCharge(f);
+    const autoRelease = inCharge && !inp.chg?.manual && (f.stateT >= this._chargeCap(f)
+      || (f.mana >= HAMMER_MANA_COST0 && f.stateT >= hammerManaCap));
+    if (inCharge && (!inp.chg || inp.atk || autoRelease)) {
+      this._releaseCharge(f, hammerManaCap);
       inp.atk = null; inp.bufA = 0;
     }
 
@@ -2230,8 +2238,8 @@ export class Game {
       weapon: f.st.weapon, span: this._chargeMax(f), over: this._chargeKMax(f) });
   }
 
-  _releaseCharge(f) {
-    const k = clamp(f.stateT / this._chargeMax(f), 0, this._chargeKMax(f));
+  _releaseCharge(f, manaCap = Infinity) {
+    const k = clamp(Math.min(f.stateT, manaCap) / this._chargeMax(f), 0, this._chargeKMax(f));
     const aim = f.chgAim || { dx: 0, dy: 0 };
     f.chgAim = null;
     // rang down-charge: the release slings the thrower skyward off the
@@ -4671,7 +4679,7 @@ export function blankInput() {
   return {
     mx: 0, my: 0, jump: false, jr: false, ff: false, drop: false, atk: null, roll: 0,
     ab0: false, ab1: false, bufJ: 0, bufA: 0, buf0: 0, buf1: 0, bufR: 0,
-    chg: null,      // {dx,dy} while the strong-attack control is held
+    chg: null,      // {dx,dy,direct?,manual?} while the strong-attack control is held
     chgArm: true,   // must see a release before the next charge can start
   };
 }

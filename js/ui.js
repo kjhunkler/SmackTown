@@ -1113,6 +1113,20 @@ function renderBindPane(box, kind, capture, onRebind, onReset) {
   box.innerHTML = isKey
     ? `<p class="settings-hint">Tap a binding, then press the new key. Move keys can be held for direction.</p>`
     : `<p class="settings-hint">Connect a controller, tap a binding, then press the new button. The stick / D-pad always moves.</p>`;
+  if (!isKey) {
+    const row = document.createElement('label');
+    row.className = 'bind-row';
+    row.innerHTML = `
+      <span class="bind-info">
+        <span class="bind-name" id="right-stick-label">Right stick charges smash</span><br>
+        <span class="bind-note" id="right-stick-hint">Center the stick or press LT / RT to fire. Turn off to fire as soon as you tilt.</span>
+      </span>
+      <input type="checkbox" aria-labelledby="right-stick-label" aria-describedby="right-stick-hint">`;
+    const toggle = row.querySelector('input');
+    toggle.checked = settings.getRightStickCharge();
+    toggle.addEventListener('change', () => settings.setRightStickCharge(toggle.checked));
+    box.appendChild(row);
+  }
   for (const act of actions) {
     const bound = isKey ? settings.keysFor(act.id) : settings.padButtonsFor(act.id);
     const capturing = capture && capture.kind === kind && capture.id === act.id;

@@ -79,6 +79,51 @@ for (const { id: weapon } of WEAPONS) {
   }
 }
 
+// --- dedicated aim and release timing through the normal input path ---
+for (const { id: weapon } of WEAPONS) {
+  const g = mkGame(weapon);
+  const f = g.fighters[0];
+  g.setInput(f.id, { ...blankInput(), chg: { dx: 1, dy: 0 }, mx: 1 });
+  g.step();
+
+  const aim = { dx: 0, dy: -1, direct: true };
+  for (const mx of [-1, 1]) {
+    g.setInput(f.id, { ...blankInput(), chg: aim, mx });
+    g.step();
+    check(`${weapon} keeps its dedicated aim while moving ${mx}`,
+      f.state === 'charge' && f.atkDir.x === 0 && f.atkDir.y === -1);
+  }
+
+  const atk = { kind: 'swipe', dx: -1, dy: -1, direct: true, release: true };
+  g.setInput(f.id, { ...blankInput(), atk, mx: 1 });
+  g.step();
+  check(`${weapon} fires with the last dedicated aim even if it changes on release`,
+    f.state === 'attack' && f.atkDir.x === -1 && f.atkDir.y === -1 && f.chg > 0);
+}
+
+{
+  const g = mkGame('sword');
+  const f = g.fighters[0];
+  const stick = { dx: 1, dy: 0, direct: true, manual: true };
+  g.setInput(f.id, { ...blankInput(), chg: stick });
+  for (let t = 0; t < g._chargeCap(f) + 0.2; t += TICK) g.step();
+  check('stick charge stays held at full power', f.state === 'charge');
+  g.setInput(f.id, { ...blankInput(), atk: { kind: 'swipe', ...stick, release: true } });
+  g.step();
+  check('stick release fires at capped power', f.state === 'attack' && f.chg === 1);
+}
+
+{
+  const g = mkGame('sword');
+  const f = g.fighters[0];
+  const aim = { dx: 1, dy: 0, direct: true };
+  g.setInput(f.id, { ...blankInput(), chg: aim });
+  for (let t = 0; t < g._chargeCap(f) + 1; t += TICK) g.step();
+  g.setInput(f.id, { ...blankInput(), atk: { kind: 'swipe', ...aim, release: true } });
+  g.step();
+  check('releasing after an automatic shot does not attack twice', f.state !== 'attack');
+}
+
 // --- 3. unarmed keeps the classic smash kit ---
 {
   const g = mkGame();

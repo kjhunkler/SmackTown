@@ -56,6 +56,7 @@ function freshDefaults() {
     audio: { ...AUDIO_DEFAULTS },
     keys: Object.fromEntries(KEY_ACTIONS.map(a => [a.id, [...a.keys]])),
     pad: Object.fromEntries(PAD_ACTIONS.map(a => [a.id, [...a.btns]])),
+    rightStickCharge: true,
   };
 }
 
@@ -75,6 +76,7 @@ function load() {
           d.pad[a.id] = raw.pad[a.id].map(Number).filter(Number.isInteger);
         }
       }
+      if (typeof raw.rightStickCharge === 'boolean') d.rightStickCharge = raw.rightStickCharge;
       // Migrate the previous default pair and keep custom bindings.
       if (d.pad.ab0.join(',') === '2,4,5' && d.pad.ab1.join(',') === '6,7') {
         [d.pad.ab0, d.pad.ab1] = [d.pad.ab1, d.pad.ab0];
@@ -136,6 +138,11 @@ class Settings {
   // ---- gamepad ----
   padButtonsFor(id) { return this.state.pad[id] || []; }
   padAction(index) { return this._padMap[index] ?? null; }
+  getRightStickCharge() { return this.state.rightStickCharge; }
+  setRightStickCharge(on) {
+    this.state.rightStickCharge = !!on;
+    this._changed();
+  }
   bindPad(id, index) {
     if (!this.state.pad[id]) return;
     for (const a of PAD_ACTIONS) {
@@ -154,6 +161,7 @@ class Settings {
   }
   resetPad() {
     this.state.pad = Object.fromEntries(PAD_ACTIONS.map(a => [a.id, [...a.btns]]));
+    this.state.rightStickCharge = true;
     this._changed();
   }
 }
