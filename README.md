@@ -21,8 +21,9 @@ Add it to your home screen when the browser offers — it installs as a
 fullscreen landscape app and keeps working offline (practice mode; multiplayer
 naturally needs a connection).
 
-The theme keeps a two-bar electric-piano hook at 108 BPM. A deep kick and
-backbeat join it in battle. [Listen to “Sugar on the Wire”](music/sugar-on-the-wire.mp3).
+The 108 BPM theme opens with an electric-piano hook, lifts into a chorus, and
+drops low for the bridge. The chorus returns once before a four-bar reset
+leads back to the opening. [Listen to “Sugar on the Wire”](music/sugar-on-the-wire.mp3).
 
 ## How it works
 
