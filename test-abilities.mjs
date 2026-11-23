@@ -110,6 +110,25 @@ for (const [ability, baseKb, casterVy] of [['uppercut', 667, -980], ['skybreaker
   check('a max-range snag hauls far harder still', far !== null && far > near * 1.2);
 }
 
+// Grapple Hook and Harpoon use the same live aim as Fireball.
+for (const [ability, speed] of [['hook', 940], ['harpoon', 1120]]) {
+  const g = mkGame([ability]);
+  const [a, b] = g.fighters;
+  a.x = 0; a.y = -40; a.grounded = false;
+  b.x = -120; b.y = a.y - 100;
+  g.setInput(a.id, { ...blankInput(), mx: -1, my: -1 });
+  g._useAbility(a, 0);
+  const hook = g.projectiles[0];
+  check(`${ability} launches up-left at full speed`,
+    hook.vx < 0 && hook.vy === hook.vx && Math.abs(Math.hypot(hook.vx, hook.vy) - speed) < 1e-6);
+  for (let i = 0; i < 20 && b.state !== 'hitstun'; i++) {
+    g._stepProjectiles();
+    g._resolveAttacks();
+  }
+  check(`${ability} pulls the higher target down toward the caster`,
+    b.state === 'hitstun' && b.vx > 0 && b.vy > 0);
+}
+
 // --- 6. teleport anchor: drop a beacon, warp back to it, one at a time ---
 {
   const g = mkGame(['anchor']);

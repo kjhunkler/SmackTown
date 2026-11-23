@@ -26,7 +26,7 @@
 // ducked = dodge roll, flick
 // down = fast-fall/drop · A = quick attack · B = smash (hold to charge,
 // release to fire; aimed by the stick at press, 8-way) · Y = jump ·
-// X / LB / RB = ability 1 · LT / RT = ability 2 · right stick = instant
+// LT / RT = ability 1 · X / LB / RB = ability 2 · right stick = instant
 // smash in the tilt direction (no charging — hold B for that).
 //
 // `chg` sends the starting 8-way aim while the attack control is held.

@@ -923,6 +923,9 @@ function hookImpact(pr) {
   const kb = HOOK_KB0 + (HOOK_KB1 - HOOK_KB0) * Math.min(1, dist / HOOK_RANGE);
   return { ...pr, kb: kb * (pr.variant === 'harpoon' ? 1.25 : 1) };
 }
+function hookPullAngle(pr, dx, dy) {
+  return pr.vy ? Math.atan2(dy, Math.abs(dx)) : deg(pr.ang);
+}
 const BURST_SPD0 = 520,  BURST_SPD1 = 1150;  // burst speed vs charge
 const BURST_TTL0 = 0.55, BURST_TTL1 = 1.5;   // burst lifetime vs charge
 const BURST_DMG0 = 3.5,  BURST_DMG1 = 8;     // burst damage vs charge
@@ -2355,18 +2358,22 @@ export class Game {
         this._healAbility(f, id === 'renewal' ? 24 : 15);
         this.events.push({ e: 'mend', id: f.id, x: f.x, y: f.y, variant });
         break;
-      case 'hook':
+      case 'hook': {
         // chain claw: reels the first foe it tags in toward you. The pull
         // scales with the hook's flight distance — a point-blank tag barely
         // tugs, a max-range snag hauls them all the way in (see HOOK_KB0/1)
+        const [nx, ny] = this._abilityAim(f);
+        const x = f.x + nx * 40, y = f.y - 8 + ny * 20;
+        const speed = variant ? 1120 : 940;
+        castData = { aimX: nx, aimY: ny };
         this.projectiles.push({
           eid: nextEid++, kind: 'hook', owner: f.id, variant,
-          x: f.x + f.facing * 40, y: f.y - 8,
-          x0: f.x + f.facing * 40, y0: f.y - 8,
-          vx: f.facing * (variant ? 1120 : 940), vy: 0, ttl: variant ? 1.25 : 1.05,
+          x, y, x0: x, y0: y,
+          vx: nx * speed, vy: ny * speed, ttl: variant ? 1.25 : 1.05,
           dmg: 8, kb: HOOK_KB0, ks: 3, r: 20, pull: true, ang: -20,
         });
         break;
+      }
       case 'trap':
         // planted jaws: drop at your feet and sit armed until someone steps
         // in — the snap locks the victim in a long stun
@@ -2614,7 +2621,13 @@ export class Game {
           // zero, next tick) is the payload, not a direct contact hit.
           if (pr.kind === 'bomb') { pr.ttl = 0; break; }
           const att = this.fighters.find(x => x.id === pr.owner);
-          if (o.counterT > 0) { pr.vx *= -1; pr.owner = o.id; this.events.push({ e: 'counter', x: o.x, y: o.y }); continue; }
+          if (o.counterT > 0) {
+            pr.vx *= -1;
+            if (pr.pull) pr.vy *= -1;
+            pr.owner = o.id;
+            this.events.push({ e: 'counter', x: o.x, y: o.y });
+            continue;
+          }
           if (att) {
             // hooks yank the victim toward the thrower; traps launch straight
             // up; springs bounce the victim exactly backwards — dead flat,
@@ -2623,7 +2636,8 @@ export class Game {
               : pr.spring ? -(Math.sign(o.vx) || o.facing || 1)
               : (Math.sign(pr.vx) || 1);
             const spec = pr.pull ? hookImpact(pr) : pr;
-            let hitAng = deg(pr.ang ?? -40), hitDir = dirX;
+            let hitAng = pr.pull ? hookPullAngle(pr, att.x - pos.x, att.y - pos.y) : deg(pr.ang ?? -40);
+            let hitDir = dirX;
             if (pr.kind === 'hammerwave') {
               // Hammer knockback blends the wielder's aim with the radial
               // attacker-to-target vector, so aim steers without erasing
@@ -2668,7 +2682,8 @@ export class Game {
               if (pr.kind === 'bomb') { pr.ttl = 0; break; }
               const dirX = pr.pull ? Math.sign(att.x - e.x) || 1
                 : pr.spring ? -(Math.sign(e.vx) || e.facing || 1) : (Math.sign(pr.vx) || 1);
-              this._hitEnemy(att, e, pr.pull ? hookImpact(pr) : pr, deg(pr.ang ?? -40), dirX, false);
+              const hitAng = pr.pull ? hookPullAngle(pr, att.x - e.x, att.y - e.y) : deg(pr.ang ?? -40);
+              this._hitEnemy(att, e, pr.pull ? hookImpact(pr) : pr, hitAng, dirX, false);
               if (pr.thru) pr.hit?.add('e' + e.eid);
               else { this._projectileImpact(pr, 'e' + e.eid); break; }
             }

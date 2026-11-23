@@ -70,7 +70,7 @@ export function drawHook(ctx, p, owner, t) {
     ctx.setLineDash([7, 5]); ctx.lineDashOffset = -t * 65;
     line(ctx, [0, 0, dx, dy]); ctx.setLineDash([]);
   }
-  ctx.scale(p.vx < 0 ? -1 : 1, 1);
+  ctx.rotate(Math.atan2(p.vy || 0, p.vx));
   ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.strokeStyle = color;
   line(ctx, [-13, 0, 17, 0, 6, -6]);
   for (const side of [-1, 1]) {
@@ -200,8 +200,9 @@ export function drawAbilityCast(ctx, ev, k) {
       break;
     }
     case 'hook':
-      ctx.scale(dir, 1);
-      for (let i = 0; i < 3; i++) oval(ctx, 20 + ease * 55 + i * 9, -8, 6, 3, -.22);
+      ctx.translate(0, -8);
+      ctx.rotate(Math.atan2(ev.aimY || 0, ev.aimX ?? dir));
+      for (let i = 0; i < 3; i++) oval(ctx, 20 + ease * 55 + i * 9, 0, 6, 3, -.22);
       break;
     case 'trap':
     case 'springtrap':

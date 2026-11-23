@@ -31,13 +31,13 @@ export const KEY_ACTIONS = [
 
 // Gamepad actions keyed to standard-mapping button indices. Movement stays
 // the stick / dpad and is not rebindable. Defaults mirror the classic pad
-// layout (A jab, B smash, Y jump, X/bumpers ability 1, triggers ability 2).
+// layout (A jab, B smash, Y jump, triggers ability 1, X/bumpers ability 2).
 export const PAD_ACTIONS = [
   { id: 'jump',  name: 'Jump',         btns: [3] },        // Y
   { id: 'tap',   name: 'Quick Attack', btns: [0] },        // A
   { id: 'swipe', name: 'Smash',        btns: [1] },        // B
-  { id: 'ab0',   name: 'Ability 1',    btns: [2, 4, 5] },  // X / LB / RB
-  { id: 'ab1',   name: 'Ability 2',    btns: [6, 7] },     // LT / RT
+  { id: 'ab0',   name: 'Ability 1',    btns: [6, 7] },     // LT / RT
+  { id: 'ab1',   name: 'Ability 2',    btns: [2, 4, 5] },  // X / LB / RB
 ];
 
 // Friendly labels for standard-mapping button indices, for the pad UI.
@@ -74,6 +74,10 @@ function load() {
         if (Array.isArray(raw.pad[a.id])) {
           d.pad[a.id] = raw.pad[a.id].map(Number).filter(Number.isInteger);
         }
+      }
+      // Migrate the previous default pair and keep custom bindings.
+      if (d.pad.ab0.join(',') === '2,4,5' && d.pad.ab1.join(',') === '6,7') {
+        [d.pad.ab0, d.pad.ab1] = [d.pad.ab1, d.pad.ab0];
       }
     }
   } catch (_) { /* fall back to defaults */ }
