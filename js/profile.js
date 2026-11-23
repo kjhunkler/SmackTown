@@ -11,7 +11,7 @@ export const STATS = [
   { id: 'power',   name: 'Power',   desc: '+5% damage & knockback per level',      cost: 80, max: 5 },
   { id: 'speed',   name: 'Speed',   desc: '+6% run speed per level',               cost: 80, max: 5 },
   { id: 'defense', name: 'Defense', desc: '-6% knockback & -4% damage taken per level', cost: 80, max: 5 },
-  { id: 'agility', name: 'Agility', desc: '+jump height & air control per level',  cost: 80, max: 5 },
+  { id: 'agility', name: 'Agility', desc: '+jump height & air control per level. Level 5 unlocks Flight: use your second midair jump to steer in any direction for 1.5 seconds.',  cost: 80, max: 5 },
 ];
 
 export const FOCUS_LEVEL = 2;
@@ -381,6 +381,7 @@ export function derivedStats(build) {
   const has = id => b.augments.includes(id);
   const glass = has('glasscannon');
   const armor = (has('ironclad') ? 0.9 : 1) * (b.focuses.includes('defense') ? 0.88 : 1);
+  const jumpCount = 2 + (has('feather') ? 1 : 0) + (b.focuses.includes('agility') ? 1 : 0);
   return {
     dmgMult:   (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
     kbMult:    (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1) * (b.focuses.includes('power') ? 1.14 : 1),
@@ -394,7 +395,8 @@ export function derivedStats(build) {
     // Co-op health pool (unused by stock matches): Defense doubles as a
     // toughness stat, so a tank build carries more HP through an expedition.
     maxHp:     100 + 25 * b.stats.defense,
-    maxJumps:  2 + (has('feather') ? 1 : 0) + (b.focuses.includes('agility') ? 1 : 0),
+    flight: b.stats.agility >= 5,
+    maxJumps:  b.stats.agility >= 5 ? Math.max(3, jumpCount) : jumpCount,
     cdMult:    has('quickhands') ? 0.8 : 1,
     weapon:    b.weapon,
     abilities: b.abilities,

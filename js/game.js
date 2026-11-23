@@ -1115,7 +1115,7 @@ export class Game {
       baseBuild: build, tryBuild: null,
       x: this.stage.infinite ? Math.max(0, this.stage.spawns[i % this.stage.spawns.length]) : this.stage.spawns[i % this.stage.spawns.length], y: -F_H / 2,
       vx: 0, vy: 0, facing: i % 2 === 0 ? 1 : -1,
-      grounded: true, jumps: st.maxJumps, fastfall: false,
+      grounded: true, jumps: st.maxJumps, fastfall: false, flightTicks: 0,
       jumpT: -1,                    // seconds since liftoff while a jump cut is still possible (-1 idle)
       comboN: 0, comboT: 0,         // tap combo: next stage index + chain window left
       hammerChainN: 0, hammerChainT: 0, hammerChainDir: null,
@@ -1379,6 +1379,7 @@ export class Game {
     if (this.cityRun && f.parked) { f.invuln = 1.2; return; }
     f.stateT += TICK;
     // a parked fighter sleeps untouchable until their player comes back
+    if (f.grounded || !f.st.flight || (f.state !== 'air' && f.state !== 'attack' && f.state !== 'charge')) f.flightTicks = 0;
     if (f.parked) f.invuln = Math.max(f.invuln, 0.1);
     f.invuln = Math.max(0, f.invuln - TICK);
     f.counterT = Math.max(0, f.counterT - TICK);
@@ -1495,7 +1496,8 @@ export class Game {
     }
 
     // --- jumping / fast fall / drop-through ---
-    if (canAct && inp.jump && f.jumps > 0) {
+    if (canAct && inp.jump && f.jumps > 0 && !f.flightTicks) {
+      if (f.st.flight && !f.grounded && f.jumps === f.st.maxJumps - 2) f.flightTicks = Math.round(1.5 / TICK);
       f.vy = -(f.grounded || f.jumps === f.st.maxJumps ? JUMP_V : JUMP2_V) * f.st.jumpMult;
       f.jumps--;
       f.grounded = false;
@@ -1504,7 +1506,7 @@ export class Game {
       f.state = 'air';
       f.standT = 0;
       inp.jump = false;
-      f.jumpT = 0;
+      f.jumpT = f.flightTicks ? -1 : 0;
       this.events.push({ e: 'jump', id: f.id, x: f.x, y: f.y + F_H / 2 });
     }
     // jump cut: the window closes once the rise ends or a hit interrupts it,
@@ -1520,7 +1522,7 @@ export class Game {
     // visible even if down was already held — only when actionable, since
     // a launch's lift can't be ditched mid-hitstun (would neuter every
     // vertical KO).
-    if ((inp.ff || inp.my > 0.6) && !f.grounded && f.ffLockT <= 0) {
+    if (!f.flightTicks && (inp.ff || inp.my > 0.6) && !f.grounded && f.ffLockT <= 0) {
       if (canAct && f.vy < 0) { f.vy = 0; f.fastfall = true; }
       else if (f.vy > -200) f.fastfall = true;
     }
@@ -1581,7 +1583,13 @@ export class Game {
     }
 
     // --- gravity & integration ---
-    if (!f.grounded) {
+    if (f.dashT > 0 || f.riseT > 0) f.flightTicks = 0;
+    if (f.flightTicks > 0) {
+      const scale = RUN / Math.max(1, Math.hypot(inp.mx, inp.my));
+      f.vx = inp.mx * scale;
+      f.vy = inp.my * scale;
+      f.flightTicks--;
+    } else if (!f.grounded) {
       // charge floats: per-weapon, per-aim fall physics from CHG_FALL —
       // the sword winds slow-falling, the caster hovers, the rang's
       // down-charge hangs
@@ -1716,6 +1724,7 @@ export class Game {
     }
 
     if (f.grounded && !wasGrounded) {
+      f.flightTicks = 0;
       if (f.dashT <= 0) f.hammerFlight = null;
       f.jumps = f.st.maxJumps;
       // waveland: a fast-fallen touchdown with drift keeps sliding
@@ -4483,6 +4492,7 @@ export class Game {
           f.hammerChainN, r2(f.hammerChainT),
           f.hammerChainDir ? f.hammerChainDir.x : 0,
           f.hammerChainDir ? f.hammerChainDir.y : 0, // hammer redirects (48..51)
+          f.flightTicks,
         ];
       }),
       p: this.projectiles.filter(p => p.kind === 'anchor' || inRange(p)).map(p => {
@@ -4609,6 +4619,7 @@ export function restoreFighter(f, row) {
     if (row.length > 45) f.jumpT = +row[45];
     if (row.length > 47) { f.comboN = row[46] | 0; f.comboT = +row[47] || 0; }
     if (row.length > 51) {
+      f.flightTicks = row[52] | 0;
       f.hammerChainN = row[48] | 0; f.hammerChainT = +row[49] || 0;
       f.hammerChainDir = (row[50] || row[51]) ? { x: row[50] | 0, y: row[51] | 0 } : null;
     }
