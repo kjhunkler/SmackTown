@@ -41,16 +41,20 @@ const mkGame = (abilities, extra = []) => new Game([
   check('stun releases after 1s', b.state !== 'hitstun');
 }
 
-// --- 2. uppercut: massive knockback, straight up ---
-{
-  const g = mkGame(['uppercut']);
+// --- 2. uppercut and skybreaker: reduced vertical knockback ---
+for (const [ability, baseKb, casterVy] of [['uppercut', 667, -980], ['skybreaker', 785, -1120]]) {
+  const g = mkGame([ability]);
   const [a, b] = g.fighters;
   a.x = 0; a.facing = 1; b.x = 60; b.y = a.y;
   g._useAbility(a, 0);
-  check('uppercut carries huge upward kb', a.melee && a.melee.kb >= 500);
+  check(`${ability} lifts the caster at the original speed`, a.vy === casterVy);
   g._resolveAttacks();
-  check('victim rockets skyward', b.vy < -700);
-  check('launch is nearly vertical', Math.abs(b.vx) < Math.abs(b.vy) * 0.15);
+  const angle = -88 * Math.PI / 180;
+  const originalKb = (baseKb + 30 * b.pct * (1 + b.pct / 90)) * a.st.kbMult * b.st.kbTaken;
+  check(`${ability} launches the victim upward with 30% less speed`,
+    Math.abs(b.vy - Math.sin(angle) * originalKb * 0.7) < 1e-6);
+  check(`${ability} keeps its horizontal knockback`,
+    Math.abs(b.vx - Math.cos(angle) * originalKb) < 1e-6);
 }
 
 // --- 3. dash strike: hold up to angle the lunge skyward ---

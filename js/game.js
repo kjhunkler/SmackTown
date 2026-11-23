@@ -2296,7 +2296,10 @@ export class Game {
         const sky = id === 'skybreaker';
         f.vy = sky ? -1120 : -980;
         f.grounded = false;
-        f.melee = { name: 'upper', dmg: 14.3, kb: sky ? 785 : 667, ks: 30, rx: sky ? 65 : 48, ry: sky ? 82 : 68, ang: -88, until: this.tick + 18, hit: new Set() };
+        f.melee = {
+          name: 'upper', dmg: 14.3, kb: sky ? 785 : 667, ks: 30, kbYMult: 0.7,
+          rx: sky ? 65 : 48, ry: sky ? 82 : 68, ang: -88, until: this.tick + 18, hit: new Set(),
+        };
         break;
       }
       case 'counter':
@@ -2856,7 +2859,7 @@ export class Game {
       * (doom ? 1.2 : 1);
     const ang = spike ? Math.PI / 2 : angRad;   // spikes send straight down
     vic.vx = Math.cos(ang) * kb * dirX * (spike ? 0.15 : 1);
-    vic.vy = Math.sin(ang) * kb;
+    vic.vy = Math.sin(ang) * kb * (spec.kbYMult ?? 1);
     vic.grounded = false;
     vic.fastfall = false;
     vic.state = 'hitstun';
@@ -4250,7 +4253,7 @@ export class Game {
     const kb = (spec.kb + spec.ks * dmg) * att.st.kbMult * kbTaken * kbBoost;
     const ang = spike ? Math.PI / 2 : angRad;
     e.vx = Math.cos(ang) * kb * dirX * (spike ? 0.3 : 1);
-    e.vy = Math.sin(ang) * kb;
+    e.vy = Math.sin(ang) * kb * (spec.kbYMult ?? 1);
     if (e.vy < 0) e.grounded = false;
     // vampiric bites heal the striker — the only sustain out on the road
     if (att.st.augments.includes('vampiric')) att.hp = Math.min(att.maxHp, att.hp + dmg * 0.04);
