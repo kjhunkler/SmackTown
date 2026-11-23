@@ -36,6 +36,14 @@ const make = (id, map = 'flatlands') => {
   a.x = 0; a.y = -32; a.facing = 1; a.grounded = true; b.x = 230; b.y = -32;
   return { g, a, b };
 };
+{
+  const { g, a } = make('mend', 'expanse');
+  const armor = { ...kit(), stats: { ...emptyBuild().stats, defense: 2 }, focuses: ['defense'], augments: ['ironclad'] };
+  g.updateBuild(a.id, armor);
+  const hp = a.hp;
+  g._damageHp(a, 10, 'creep', true);
+  assert.ok(Math.abs((hp - a.hp) - 10 * .9 * .88) < .0001);
+}
 const cast = (id, setup = () => {}, map) => {
   const { g, a, b } = make(id, map);
   setup(a, b, g);
@@ -77,6 +85,17 @@ assert.equal(cast('renewal', a => { a.hp = 20; }, 'expanse').a.hp, 44);
 assert.ok(cast('harpoon').p.vx > cast('hook').p.vx);
 assert.ok(cast('beartrap').p.stun > cast('trap').p.stun);
 assert.ok(cast('kickback').p.kb > cast('springtrap').p.kb);
+for (const id of ['hook', 'harpoon', 'trap', 'beartrap', 'springtrap', 'kickback']) {
+  const { g, a, p } = cast(id, () => {}, 'expanse');
+  g._spawnEnemy([a], 0, 1, 0, 1, 'grunt', true); // survive the snap to observe its stun
+  const enemy = g.enemies[0];
+  enemy.x = p.x; enemy.y = p.y; enemy.vx = 150;
+  g._resolveAttacks();
+  assert.ok(enemy.hp < enemy.maxHp && p.ttl <= 0);
+  if (p.stun) assert.equal(enemy.stagger, p.stun);
+  else assert.ok(enemy.vx < 0); // the reel and the spring both reverse this target
+  assert.ok(g.events.some(e => e.e === 'snag' && e.kind === p.kind));
+}
 for (const map of ['flatlands', 'expanse']) {
   const { g, a } = cast('lifeline', a => { a.pct = 30; a.hp = 40; }, map);
   const resumed = gameFromSnapshot([{ id: 'A', build: kit('lifeline') }, { id: 'B', build: kit() }], g.snapshot(5000, 10));

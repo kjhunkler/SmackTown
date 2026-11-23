@@ -380,13 +380,15 @@ export function derivedStats(build) {
   const b = sanitizeBuild(build, MAX_BUILD_COST);
   const has = id => b.augments.includes(id);
   const glass = has('glasscannon');
+  const armor = (has('ironclad') ? 0.9 : 1) * (b.focuses.includes('defense') ? 0.88 : 1);
   return {
     dmgMult:   (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
     kbMult:    (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1) * (b.focuses.includes('power') ? 1.14 : 1),
     speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.95 : 1) * (b.focuses.includes('speed') ? 1.12 : 1),
     kbTaken:   (1 - 0.06 * b.stats.defense) * (has('heavy') ? 0.85 : 1)
       * (has('feather') ? 1.08 : 1) * (glass ? 1.18 : 1),
-    dmgTaken:  (1 - 0.04 * b.stats.defense) * (has('ironclad') ? 0.9 : 1) * (b.focuses.includes('defense') ? 0.88 : 1),
+    dmgTaken:  (1 - 0.04 * b.stats.defense) * armor,
+    creepDmgTaken: armor,
     jumpMult:  (1 + 0.05 * b.stats.agility) * (has('skyborn') ? 1.15 : 1),
     airMult:   1 + 0.08 * b.stats.agility,
     // Co-op health pool (unused by stock matches): Defense doubles as a

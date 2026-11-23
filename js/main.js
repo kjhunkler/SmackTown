@@ -1147,7 +1147,7 @@ function startSession(cfg) {
 
 // Cosmetic events the client already plays locally via prediction; the
 // host's copies are dropped for our own fighter to avoid double effects.
-const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'shockwave', 'gale', 'mend', 'duck', 'sweep']);
+const PREDICTED_EV = new Set(['jump', 'land', 'ledge', 'roll', 'swing', 'charge', 'fizzle', 'ability', 'gale', 'mend', 'duck', 'sweep']);
 const SNAPSHOT_INTEREST_RADIUS = 1800;
 const FULL_SNAPSHOT_TICKS = 60;
 
@@ -1413,8 +1413,9 @@ class Session {
 
   applyRunBuild(build) {
     if (buildCost(build) > TOTAL_CREDITS) return false;
-    const b = sanitizeBuild(build);
-    net?.updateProfile({ ...profile, build: b });
+    const updated = { ...profile, build: sanitizeBuild(build) };
+    if (net) net.updateProfile(updated);
+    else this.onProfileChanged(this.myId, updated);
     return true;
   }
 
@@ -1507,6 +1508,7 @@ class Session {
           for (const [pid] of net.conns) {
             const fighter = this.game.fighters.find(f => f.id === pid);
             let cache = this.snapshotCaches.get(pid);
+            const fresh = !cache;
             if (!cache) {
               cache = { p: new Map(), en: new Map(), ht: new Map() };
               this.snapshotCaches.set(pid, cache);
@@ -1515,6 +1517,9 @@ class Session {
             // and bosses at the far end of the freight line.
             const center = this.game.cityRun ? null : fighter?.x;
             const s = this.game.snapshotDelta(cache, center, SNAPSHOT_INTEREST_RADIUS);
+            // The first delta after a full frame lists every current entity.
+            // Replace that frame so a just-spent trap or beacon disappears.
+            if (fresh) s.replaceEntities = true;
             s.eb = packEnemyDelta(s.den);
             delete s.den;
             s.ev = ev;
@@ -1581,7 +1586,7 @@ class Session {
       this.tickLog.push({ seq: this.inputSeq, inp: tin });
       if (this.tickLog.length > 180) this.tickLog.shift();
       const ev = this.pred.predictStep(this.myId);
-      if (ev.length && !this.backgrounded) renderer.onEvents(ev.filter(e => e.id === this.myId));
+      if (ev.length && !this.backgrounded) renderer.onEvents(ev.filter(e => e.id === this.myId && PREDICTED_EV.has(e.e)));
     }
 
     // ship inputs to the host (fresh actions immediately, stick at ~30 Hz)
@@ -1679,6 +1684,7 @@ class Session {
       if (s.eb instanceof ArrayBuffer) s.den = unpackEnemyDelta(s.eb);
       for (const type of ['p', 'en', 'ht']) {
         const [changed, removed] = s['d' + type] || [[], []];
+        if (s.replaceEntities) this.entityRows[type].clear();
         for (const row of changed) this.entityRows[type].set(row[0], row);
         for (const id of removed) this.entityRows[type].delete(id);
       }
@@ -1732,7 +1738,13 @@ class Session {
       // Host dropped mid-fight and we won the election: resurrect the sim
       // from the freshest snapshot and carry on as the authority.
       this.mode = 'host';
-      this.game = gameFromSnapshot(this.players, this.lastSnap?.city ? this.lastSnap : this.lastFullSnap || this.lastSnap, this.seed + 1);
+      let snap = this.lastSnap;
+      if (snap && !snap.city && this.lastFullSnap) {
+        // Fighters and recall beacons are global in every update. Faraway
+        // creeps and hearts need the last unculled expedition snapshot.
+        snap = { ...snap, en: this.lastFullSnap.en, ht: this.lastFullSnap.ht };
+      }
+      this.game = gameFromSnapshot(this.players, snap, this.seed + 1);
       this.map = this.game.map;
       renderer.setMap(this.map);
       this.pred = null;

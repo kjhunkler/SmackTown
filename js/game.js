@@ -2255,11 +2255,13 @@ export class Game {
     const dir = f.lastDir;
     let evUp = false;
     const fromX = f.x, fromY = f.y;
+    let castData;
     switch (def.family) {
       case 'fireball': {
         // aimed 8-way by the held stick (facing when neutral); the shell
         // detonates when it dies — flame splash + afterburn around the pop
         const [nx, ny] = this._abilityAim(f);
+        castData = { aimX: nx, aimY: ny };
         const skips = id === 'cinderskip', sun = id === 'sunburst';
         this.projectiles.push({
           eid: nextEid++, kind: 'fireball', owner: f.id, variant,
@@ -2297,8 +2299,10 @@ export class Game {
       }
       case 'counter':
         f.counterT = id === 'foresight' ? 0.95 : 0.6;
+        castData = { duration: f.counterT };
         break;
       case 'blink': {
+        castData = { fromX, fromY };
         const len = Math.hypot(dir.x, dir.y) > 0.3 ? 1 : 0;
         const dx = len ? dir.x : f.facing, dy = len ? dir.y : 0;
         const n = Math.hypot(dx, dy) || 1;
@@ -2314,6 +2318,7 @@ export class Game {
         // a fan of three burning bolts around the held aim, each popping in
         // a small flame splash when it dies
         const [nx, ny] = this._abilityAim(f);
+        castData = { aimX: nx, aimY: ny };
         const base = Math.atan2(ny, nx);
         const spread = id === 'starfall' ? [-0.48, -0.24, 0, 0.24, 0.48] : [-0.26, 0, 0.26];
         for (const off of spread) {
@@ -2336,7 +2341,8 @@ export class Game {
           (dx, dy) => Math.atan2(dy, dx) * 0.25 - Math.PI / 6);
         break;
       case 'bubble':
-        f.invuln = Math.max(f.invuln, id === 'prism' ? 2.35 : 1.8);
+        castData = { duration: id === 'prism' ? 2.35 : 1.8 };
+        f.invuln = Math.max(f.invuln, castData.duration);
         if (id === 'repulse') this._radialHit(f, 135, { dmg: 3, kb: 495, ks: 5 }, () => deg(-20));
         break;
       case 'mend':
@@ -2387,7 +2393,7 @@ export class Game {
         if (id === 'twinflight') this._summonAlly(f, 'flyer', 1, -1);
         break;
     }
-    this.events.push({ e: 'ability', id: f.id, ability: def.family, variant, x: f.x, y: f.y, fromX, fromY, dir: f.facing, up: evUp });
+    this.events.push({ e: 'ability', id: f.id, ability: def.family, variant, x: f.x, y: f.y, dir: f.facing, up: evUp, ...castData });
   }
 
   _healAbility(f, amount) {
@@ -2626,7 +2632,7 @@ export class Game {
             this._applyHit(att, o, spec, hitAng, hitDir, false, !!pr.pierce);
           }
           if (pr.thru) pr.hit.add(o.id);   // sail on through
-          else { pr.struck = o.id; pr.ttl = 0; break; }   // burst AoE skips the direct victim
+          else { this._projectileImpact(pr, o.id); break; }
         }
       }
     }
@@ -2659,7 +2665,7 @@ export class Game {
                 : pr.spring ? -(Math.sign(e.vx) || e.facing || 1) : (Math.sign(pr.vx) || 1);
               this._hitEnemy(att, e, pr.pull ? hookImpact(pr) : pr, deg(pr.ang ?? -40), dirX, false);
               if (pr.thru) pr.hit?.add('e' + e.eid);
-              else { pr.struck = 'e' + e.eid; pr.ttl = 0; break; }   // burst AoE skips the direct victim
+              else { this._projectileImpact(pr, 'e' + e.eid); break; }
             }
           }
         }
@@ -2986,6 +2992,14 @@ export class Game {
     this.projectiles = this.projectiles.filter(p => p.ttl > 0);
   }
 
+  _projectileImpact(pr, target) {
+    pr.struck = target; // the direct victim has already taken the full hit
+    pr.ttl = 0;
+    if (pr.kind === 'trap' || pr.kind === 'spring' || pr.kind === 'hook') {
+      this.events.push({ e: 'snag', kind: pr.kind, x: pr.x, y: pr.y, variant: pr.variant });
+    }
+  }
+
   _skipFireball(pr, prevX, prevY) {
     if (pr.vy <= 0 || pr.ttl <= 0) return;
     let firstTop = Infinity;
@@ -3172,9 +3186,9 @@ export class Game {
   // KO credit. Zero drops them: they go down and revive after a spell.
   _damageHp(vic, dmg, attId, creep = false) {
     if (!this.coop || vic.dead) return;
-    // ironclad: creep-sourced hits bypass the defense-stat pipeline, so the
-    // augment's 10% shave is applied here (PvP hits get it via dmgTaken)
-    if (creep && vic.st.augments.includes('ironclad')) dmg *= 0.9;
+    // Core Defense grows the expedition HP pool. Armor from Ironclad and
+    // Stone Guard also reduces incoming creep damage.
+    if (creep) dmg *= vic.st.creepDmgTaken;
     if (attId) vic.lastHitBy = attId;
     vic.hp -= dmg;
     if (vic.hp <= 0) this._downFighter(vic);

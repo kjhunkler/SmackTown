@@ -43,6 +43,7 @@ const ASSETS = [
   'js/game.js',
   'js/arenas.js',
   'js/arena-art.js',
+  'js/ability-art.js',
   'js/city.js',
   'js/city-art.js',
   'art/city-market.webp',

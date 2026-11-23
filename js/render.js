@@ -4,6 +4,7 @@
 import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, bombLaunch, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE } from './game.js';
 import { ARENA_ART, arenaImage, drawArenaBackdrop, drawArenaStage } from './arena-art.js';
 import { drawCity } from './city-art.js';
+import { abilityColor, drawAbilityCast, drawBeacon, drawFireShot, drawHook, drawTrap } from './ability-art.js';
 import { TEAMS } from './pvp.js';
 import { CITY_ROOMS } from './city.js';
 import { hatImage, BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
@@ -213,6 +214,8 @@ export class Renderer {
   }
 
   setMap(id) {
+    this.casts = [];
+    this.auras.clear();
     this.mapId = MAPS[id] ? id : DEFAULT_MAP;
     this.stage = MAPS[this.mapId];
     this.arenaArt = ARENA_ART[this.mapId];
@@ -280,8 +283,9 @@ export class Renderer {
           this.burst(ev.x, ev.y, 10, (ENEMY_TYPES[ev.kind] || ENEMY_TYPES.grunt).color, 180);
           break;
         case 'shockwave':
-          this.burst(ev.x, ev.y, 26, '#ffb02e', 520);
-          this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: 190, t: 0, life: 0.4, color: '#ffb02e', w: 7 });
+          this.casts.push({ ...ev, ability: 'shockwave', t: 0, life: .42 });
+          this.burst(ev.x, ev.y, 16, abilityColor('shockwave', ev.variant), 440);
+          this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: ev.variant ? 265 : 190, t: 0, life: 0.4, color: abilityColor('shockwave', ev.variant), w: 6 });
           this.shake = Math.max(this.shake, 10);
           break;
         case 'ability':
@@ -294,15 +298,26 @@ export class Renderer {
           this.burst(ev.x, ev.y, 14, '#38b6ff', 300);
           break;
         case 'gale':
-          this.burst(ev.x, ev.y, 24, '#bfe3ff', 560);
+          this.burst(ev.x, ev.y, 14, abilityColor('gale', ev.variant), 480);
           // show the actual windbox: an expanding gust ring out to its range
-          this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: 200, t: 0, life: 0.45, color: '#bfe3ff', w: 8 });
+          this.rings.push({ x: ev.x, y: ev.y, r0: 30, r1: ev.variant ? 260 : 200, t: 0, life: 0.45, color: abilityColor('gale', ev.variant), w: 5 });
           this.rings.push({ x: ev.x, y: ev.y, r0: 10, r1: 160, t: 0, life: 0.35, color: '#eaf7ff', w: 4 });
           this.shake = Math.max(this.shake, 7);
           break;
         case 'mend':
-          this.burst(ev.x, ev.y, 14, '#3ddc84', 220);
+          this.burst(ev.x, ev.y, 10, abilityColor('mend', ev.variant), 190);
           break;
+        case 'fireskip':
+          this.burst(ev.x, ev.y, 8, abilityColor('fireball', 'cinderskip'), 155);
+          this.rings.push({ x: ev.x, y: ev.y, r0: 4, r1: 28, t: 0, life: .22, color: '#beffef', w: 3 });
+          break;
+        case 'snag': {
+          const family = ev.kind === 'spring' ? 'springtrap' : ev.kind;
+          const color = abilityColor(family, ev.variant);
+          this.burst(ev.x, ev.y, 10, color, 250);
+          this.rings.push({ x: ev.x, y: ev.y, r0: ev.kind === 'trap' ? 36 : 6, r1: ev.kind === 'trap' ? 4 : 44, t: 0, life: .23, color, w: 4 });
+          break;
+        }
         case 'land': {
           // touchdown feedback scales with impact: harder falls kick up more
           // dust and compress the body into a deeper squash
@@ -337,8 +352,8 @@ export class Renderer {
           break;
         case 'burstboom': {
           // a shell detonating: violet for magic bursts, fiery for fireballs
-          const ring = ev.fire ? '#ff8a2e' : '#c9a7ff';
-          const spark = ev.fire ? '#ffb35c' : '#b98cff';
+          const ring = ev.fire ? abilityColor('fireball', ev.variant) : '#c9a7ff';
+          const spark = ev.fire ? (ev.variant ? ring : '#ffb35c') : '#b98cff';
           this.rings.push({ x: ev.x, y: ev.y, r0: 12, r1: ev.r || 90, t: 0, life: 0.28, color: ring, w: 5 });
           this.burst(ev.x, ev.y, 12, spark, 320);
           break;
@@ -386,62 +401,28 @@ export class Renderer {
   // Bubble and counter get persistent auras (drawn each frame while their
   // sim effect lasts); the rest get bursts, rings, or directional streaks.
   _abilityFx(ev) {
+    const color = abilityColor(ev.ability === 'anchortp' ? 'anchor' : ev.ability, ev.variant);
+    if (color && ev.ability !== 'shockwave') this.casts.push({ ...ev, t: 0, life: .44 });
     switch (ev.ability) {
       case 'bubble':
-        this.auras.set(ev.id, { kind: 'bubble', t: 1.5 });   // matches sim invuln
-        this.burst(ev.x, ev.y, 14, '#7fe9ff', 240);
-        break;
       case 'counter':
-        this.auras.set(ev.id, { kind: 'counter', t: 0.6 });  // matches parry window
-        this.burst(ev.x, ev.y, 8, '#38b6ff', 150);
+        this.auras.set(ev.id, { kind: ev.ability, color, variant: ev.variant, t: ev.duration ?? (ev.ability === 'bubble' ? 1.8 : .6) });
+        this.burst(ev.x, ev.y, 8, color, 170);
+        if (ev.variant === 'repulse') this.rings.push({ x: ev.x, y: ev.y, r0: 18, r1: 135, t: 0, life: .32, color, w: 6 });
         break;
       case 'uppercut':
-        // column of rising sparks
-        for (let i = 0; i < 16; i++) {
-          this.particles.push({
-            x: ev.x + (Math.random() - 0.5) * 34, y: ev.y + Math.random() * 26,
-            vx: (Math.random() - 0.5) * 140, vy: -420 - Math.random() * 520,
-            life: 0.4 + Math.random() * 0.25, t: 0, color: '#ffd23e',
-            r: 2 + Math.random() * 3.5,
-          });
-        }
-        this.shake = Math.max(this.shake, 6);
+        this.shake = Math.max(this.shake, 5);
         break;
-      case 'dashstrike': {
-        // speed streaks trailing the lunge — angled when it rides skyward
-        const dx = Math.sign(ev.dir || 1), dy = ev.up ? 0.67 : 0;
-        for (let i = 0; i < 12; i++) {
-          const v = 200 + Math.random() * 300;
-          this.particles.push({
-            x: ev.x - (Math.random() - 0.2) * 40 * dx, y: ev.y + (Math.random() - 0.5) * 40,
-            vx: -v * dx, vy: v * dy + (Math.random() - 0.5) * 60,
-            life: 0.3 + Math.random() * 0.2, t: 0, color: '#ffb02e',
-            r: 2 + Math.random() * 3,
-          });
-        }
-        break;
-      }
-      case 'blink':
-        this.burst(ev.x, ev.y, 16, '#c59cff', 320);
-        this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 70, t: 0, life: 0.3, color: '#c59cff', w: 5 });
-        break;
-      case 'fireball':  this.burst(ev.x, ev.y, 8, '#ff8a2e', 220); break;
-      case 'boomerang': this.burst(ev.x, ev.y, 8, '#8fd3ff', 200); break;
-      case 'volley':    this.burst(ev.x, ev.y, 12, '#ffd23e', 260); break;
-      case 'hook':      this.burst(ev.x, ev.y, 8, '#c9d4e8', 200); break;
-      case 'trap':      this.burst(ev.x, ev.y, 8, '#9aa3c7', 160); break;
-      case 'springtrap':this.burst(ev.x, ev.y, 8, '#8fd3ff', 160); break;
-      case 'troop':     break;   // the 'summon' event carries the arrival pop
-      case 'bird':      break;   // same
-      case 'anchor':    this.burst(ev.x, ev.y, 8, '#3ddc84', 160); break;   // the planted projectile sells the beacon
       case 'anchortp':
-        // warp-in: a bright pop plus an expanding ring at the arrival point
-        this.burst(ev.x, ev.y, 18, '#3ddc84', 320);
-        this.rings.push({ x: ev.x, y: ev.y, r0: 8, r1: 74, t: 0, life: 0.32, color: '#3ddc84', w: 5 });
+      case 'blink':
+        this.burst(ev.x, ev.y, 12, color, 240);
         break;
-      case 'mend':      break;   // the 'mend' event already sparkles green
-      case 'shockwave': this.burst(ev.x, ev.y, 8, '#ffb02e', 180); break; // cast; slam booms later
-      case 'gale':      break;   // the 'gale' event draws the gust rings
+      case 'shockwave':
+        this.burst(ev.x, ev.y, 8, color, 180);
+        break;
+      case 'boomerang':
+        this.burst(ev.x, ev.y, 8, '#8fd3ff', 200);
+        break;
       case 'enemyko': {
         const col = (ENEMY_TYPES[ev.kind] || ENEMY_TYPES.grunt).color;
         this.burst(ev.x, ev.y, ev.kind === 'brute' ? 26 : 18, col, ev.kind === 'brute' ? 440 : 320);
@@ -756,18 +737,7 @@ export class Renderer {
         ctx.fillStyle = '#eaf7ff';
         ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, 7); ctx.fill();
       } else if (p.kind === 'hook') {
-        // spinning three-prong claw
-        ctx.rotate(t * 14 + p.eid);
-        ctx.strokeStyle = '#c9d4e8';
-        ctx.lineWidth = 4;
-        ctx.lineCap = 'round';
-        for (const a of [0, 2.1, 4.2]) {
-          ctx.beginPath();
-          ctx.arc(0, 0, 11, a, a + 1.6);
-          ctx.stroke();
-        }
-        ctx.fillStyle = '#eaf7ff';
-        ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, 7); ctx.fill();
+        drawHook(ctx, p, view.fighters.find(f => f.id === p.owner), t);
       } else if (p.kind === 'burst') {
         // arcane orb: white-hot core in a violet halo, throbbing as it
         // flies — its size is the actual hit radius from the sim
@@ -781,49 +751,10 @@ export class Renderer {
         ctx.beginPath(); ctx.arc(0, 0, r * 1.9 * throb, 0, 7); ctx.fill();
         ctx.fillStyle = '#f0e8ff';
         ctx.beginPath(); ctx.arc(0, 0, r * 0.55 * throb, 0, 7); ctx.fill();
-      } else if (p.kind === 'trap') {
-        // armed jaws, teeth glinting while it waits
-        const glint = 0.6 + Math.abs(Math.sin(t * 6 + p.eid)) * 0.4;
-        ctx.fillStyle = '#9aa3c7';
-        roundRect(ctx, -16, 4, 32, 7, 3); ctx.fill();   // base plate
-        ctx.globalAlpha = glint;
-        ctx.fillStyle = '#eaf7ff';
-        for (const dx of [-12, -4, 4]) {                 // teeth
-          ctx.beginPath();
-          ctx.moveTo(dx, 5); ctx.lineTo(dx + 4, -9); ctx.lineTo(dx + 8, 5);
-          ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-      } else if (p.kind === 'spring') {
-        // armed launcher coil: stacked loops over a base plate, quivering
-        // with stored tension while it waits
-        const quiver = Math.sin(t * 10 + p.eid) * 1.5;
-        ctx.fillStyle = '#9aa3c7';
-        roundRect(ctx, -16, 4, 32, 7, 3); ctx.fill();   // base plate
-        ctx.strokeStyle = '#8fd3ff';
-        ctx.lineWidth = 3;
-        for (const dy of [0, -6, -12]) {
-          ctx.beginPath();
-          ctx.ellipse(quiver * (dy / -12), dy - 2, 11, 4.5, 0, 0, 7);
-          ctx.stroke();
-        }
-        ctx.fillStyle = '#eaf7ff';
-        roundRect(ctx, -9, -19, 18, 4, 2); ctx.fill();  // top cap
+      } else if (p.kind === 'trap' || p.kind === 'spring') {
+        drawTrap(ctx, p, t);
       } else if (p.kind === 'anchor') {
-        // planted teleport beacon: a slow-spinning rune ring over a
-        // pulsing core, marking the exact spot a warp lands on
-        const pulse = 0.7 + Math.sin(t * 4 + p.eid) * 0.3;
-        ctx.save();
-        ctx.rotate(t * 1.4 + p.eid);
-        ctx.strokeStyle = 'rgba(61,220,132,.8)';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([6, 5]);
-        ctx.beginPath(); ctx.arc(0, 0, 16, 0, 7); ctx.stroke();
-        ctx.restore();
-        ctx.fillStyle = `rgba(61,220,132,${(0.5 + pulse * 0.4).toFixed(2)})`;
-        ctx.beginPath(); ctx.arc(0, 0, 6 * pulse, 0, 7); ctx.fill();
-        ctx.fillStyle = '#eaffef';
-        ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, 7); ctx.fill();
+        drawBeacon(ctx, p, t);
       } else if (p.kind === 'foeshot') {
         // creep spitball: a sickly violet orb with a little trailing wisp
         const throb = 1 + Math.sin(t * 24 + p.eid) * 0.18;
@@ -835,12 +766,7 @@ export class Renderer {
         ctx.fillStyle = '#ffdff4';
         ctx.beginPath(); ctx.arc(0, 0, 5 * throb, 0, 7); ctx.fill();
       } else {
-        const bolt = p.kind === 'bolt';
-        const flick = 1 + Math.sin(t * 30 + p.eid) * 0.2;
-        ctx.fillStyle = '#ff8a2e';
-        ctx.beginPath(); ctx.arc(0, 0, (bolt ? 9 : 13) * flick, 0, 7); ctx.fill();
-        ctx.fillStyle = '#ffd23e';
-        ctx.beginPath(); ctx.arc(0, 0, (bolt ? 4.5 : 7) * flick, 0, 7); ctx.fill();
+        drawFireShot(ctx, p, t);
       }
       ctx.restore();
     }
@@ -896,6 +822,11 @@ export class Renderer {
     for (const f of view.fighters) if (!f.dead && f.hb) this._hitbox(ctx, f, t);
 
     // expanding shock rings (gale gusts, shockwave blasts, blink pops)
+    for (const ev of this.casts) {
+      ev.t += dt;
+      if (ev.t < ev.life) drawAbilityCast(ctx, ev, ev.t / ev.life);
+    }
+    this.casts = this.casts.filter(ev => ev.t < ev.life);
     for (const ring of this.rings) {
       ring.t += dt;
       const k = Math.min(1, ring.t / ring.life);
@@ -993,27 +924,45 @@ export class Renderer {
         ctx.globalAlpha = dying;
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
-        ctx.strokeStyle = 'rgba(210, 248, 255, .85)';
+        ctx.strokeStyle = a.color;
         ctx.lineWidth = 2.5;
         ctx.stroke();
         // gliding highlight arc
         ctx.strokeStyle = 'rgba(255,255,255,.9)';
         ctx.lineWidth = 3.5;
         ctx.beginPath(); ctx.arc(0, 0, r - 6, t * 2.2, t * 2.2 + 0.9); ctx.stroke();
+        if (a.variant === 'prism') {
+          ctx.strokeStyle = a.color; ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const angle = i * Math.PI / 3 + t * .65;
+            const x = Math.cos(angle) * (r - 2), y = Math.sin(angle) * (r - 2);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.closePath(); ctx.stroke();
+        }
       } else if (a.kind === 'counter') {
         // spinning parry brackets that tighten as the window closes
         const r = 44 + a.t * 26;
-        ctx.strokeStyle = '#38b6ff';
+        ctx.strokeStyle = a.color;
         ctx.lineWidth = 5;
         ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 22);
         for (const off of [0, Math.PI]) {
           ctx.beginPath(); ctx.arc(0, 0, r, t * 7 + off, t * 7 + off + 1.15); ctx.stroke();
         }
         ctx.globalAlpha = 0.9;
-        ctx.fillStyle = '#8fd3ff';
-        ctx.font = 'italic 900 17px system-ui, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('!', 0, -F_H / 2 - 20);
+        ctx.fillStyle = a.color;
+        const eyeY = -F_H / 2 - 18;
+        if (a.variant === 'foresight') {
+          ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.moveTo(-14, eyeY);
+          ctx.quadraticCurveTo(0, eyeY - 14, 14, eyeY);
+          ctx.quadraticCurveTo(0, eyeY + 14, -14, eyeY); ctx.stroke();
+          ctx.beginPath(); ctx.arc(Math.sin(t * 5) * 3, eyeY, 3, 0, 7); ctx.fill();
+        } else {
+          ctx.font = 'italic 900 17px system-ui, sans-serif';
+          ctx.textAlign = 'center'; ctx.fillText('!', 0, eyeY);
+        }
       }
       ctx.restore();
     }
