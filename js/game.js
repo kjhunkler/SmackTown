@@ -1102,6 +1102,7 @@ export class Game {
     this.endReason = null;         // co-op ending: 'cleared' | 'extracted' | 'wiped'
     this.hitPause = 0;
     this.rng = mulberry32(seed);
+    this.teams = new Map();
     this.fighters = players.map((p, i) => this._spawnFighter(p, i));
     this.inputs = new Map();        // id -> latest input
     for (const f of this.fighters) this.inputs.set(f.id, blankInput());
@@ -1114,6 +1115,7 @@ export class Game {
   }
 
   _spawnFighter(p, i) {
+    if (p.team) this.teams.set(p.id, p.team);
     const build = this.coop ? sanitizeBuild(p.build) : p.build;
     const st = derivedStats(build);
     return {
@@ -1189,6 +1191,13 @@ export class Game {
   rebindFighter(oldId, p) {
     const f = this.fighters.find(x => x.id === oldId);
     if (!f) return this.addFighter(p);
+    if (this.teams.has(oldId)) {
+      const team = this.teams.get(oldId);
+      this.teams.delete(oldId);
+      this.teams.set(p.id, team);
+    }
+    for (const pr of this.projectiles) if (pr.owner === oldId) pr.owner = p.id;
+    for (const e of this.enemies) if (e.ally === oldId) e.ally = p.id;
     f.id = p.id;
     f.name = p.name;
     f.color = p.color;
@@ -1360,7 +1369,7 @@ export class Game {
     // Co-op runs never resolve to a winner — the expedition just keeps going.
     if (!this.coop) {
       const alive = this.fighters.filter(f => !f.dead);
-      if (alive.length <= (this.fighters.length > 1 ? 1 : 0)) {
+      if (!alive.length || (this.fighters.length > 1 && alive.every(f => this._friendly(f.id, alive[0].id)))) {
         this.over = true;
         this.winner = alive[0] || null;
         this.events.push({ e: 'gameover' });
@@ -1369,6 +1378,10 @@ export class Game {
   }
 
   // ---------- fighter physics & actions ----------
+
+  _friendly(id, other) {
+    return this.coop || id === other || (this.teams.has(id) && this.teams.get(id) === this.teams.get(other));
+  }
 
   _stepFighter(f, inp) {
     if (this.cityRun && f.parked) { f.invuln = 1.2; return; }
@@ -2151,7 +2164,7 @@ export class Game {
     this.events.push({ e: 'burstboom', x: pr.x, y: pr.y, r: R, fire: 1 });
     if (!this.coop) {
       for (const o of this.fighters) {
-        if (o.id === att.id || o.id === pr.struck || o.dead || o.invuln > 0) continue;
+        if (this._friendly(att.id, o.id) || o.id === pr.struck || o.dead || o.invuln > 0) continue;
         const ob = hurtBox(o);
         if (Math.abs(o.x - pr.x) < R + F_W / 2 && Math.abs((o.y + ob.dy) - pr.y) < R + ob.hh) {
           this._applyHit(att, o, spec, deg(-40), Math.sign(o.x - pr.x) || 1, false);
@@ -2160,7 +2173,7 @@ export class Game {
     }
     for (const e of this.enemies) {
       if (e.hp <= 0 || 'e' + e.eid === pr.struck) continue;
-      if (e.ally && (this.coop || e.ally === att.id)) continue;
+      if (e.ally && this._friendly(att.id, e.ally)) continue;
       if (Math.abs(e.x - pr.x) < R + e.hw && Math.abs(e.y - pr.y) < R + e.hh) {
         this._hitEnemy(att, e, spec, deg(-40), Math.sign(e.x - pr.x) || 1, false);
       }
@@ -2177,7 +2190,7 @@ export class Game {
     this.events.push({ e: 'burstboom', x: pr.x, y: pr.y, r: R });
     if (!this.coop) {
       for (const o of this.fighters) {
-        if (o.id === att.id || o.id === pr.struck || o.dead || o.invuln > 0) continue;
+        if (this._friendly(att.id, o.id) || o.id === pr.struck || o.dead || o.invuln > 0) continue;
         const ob = hurtBox(o);
         if (Math.abs(o.x - pr.x) < R + F_W / 2 && Math.abs((o.y + ob.dy) - pr.y) < R + ob.hh) {
           this._applyHit(att, o, spec, deg(-45), Math.sign(o.x - pr.x) || 1, false);
@@ -2186,7 +2199,7 @@ export class Game {
     }
     for (const e of this.enemies) {
       if (e.hp <= 0 || 'e' + e.eid === pr.struck) continue;
-      if (e.ally && (this.coop || e.ally === att.id)) continue;
+      if (e.ally && this._friendly(att.id, e.ally)) continue;
       if (Math.abs(e.x - pr.x) < R + e.hw && Math.abs(e.y - pr.y) < R + e.hh) {
         this._hitEnemy(att, e, spec, deg(-45), Math.sign(e.x - pr.x) || 1, false);
       }
@@ -2431,14 +2444,14 @@ export class Game {
       return;
     }
     for (const o of this.fighters) {
-      if (o.id === f.id || o.dead || o.invuln > 0) continue;
+      if (this._friendly(f.id, o.id) || o.dead || o.invuln > 0) continue;
       const pos = this._rewound(o, f.id);
       const dx = pos.x - f.x, dy = pos.y - f.y;
       if (Math.hypot(dx, dy) < radius) this._applyHit(f, o, spec, angleFn(dx, dy), Math.sign(dx) || 1);
     }
     // PvP: rival summons get blasted too
     for (const e of this.enemies) {
-      if (e.hp <= 0 || !e.ally || e.ally === f.id) continue;
+      if (e.hp <= 0 || !e.ally || this._friendly(f.id, e.ally)) continue;
       const dx = e.x - f.x, dy = e.y - f.y;
       if (Math.hypot(dx, dy) < radius) this._hitEnemy(f, e, spec, angleFn(dx, dy), Math.sign(dx) || 1, false);
     }
@@ -2540,7 +2553,7 @@ export class Game {
       if (!f.hammerFlight || f.dead) continue;
       const att = this.fighters.find(x => x.id === f.hammerFlight.by) || f;
       for (const o of this.fighters) {
-        if (o.dead || o === f || o.invuln > 0 || f.hammerFlight.hit.has(o.id) || this.coop) continue;
+        if (o.dead || o === f || o.invuln > 0 || f.hammerFlight.hit.has(o.id) || this._friendly(att.id, o.id)) continue;
         const ob = hurtBox(o);
         if (Math.abs(o.x - f.x) < F_W && Math.abs(o.y + ob.dy - f.y) < F_H / 2 + ob.hh) {
           f.hammerFlight.hit.add(o.id);
@@ -2567,7 +2580,7 @@ export class Game {
         if (!this.coop) {
           const att = this.fighters.find(x => x.id === pr.owner);
           for (const o of this.fighters) {
-            if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
+            if (o.dead || this._friendly(pr.owner, o.id) || o.invuln > 0) continue;
             if (Math.abs(o.x - pr.x) < F_W / 2 + pr.r && Math.abs(o.y - pr.y) < F_H / 2 + pr.r) {
               this._hexTouch(att, o, pr.dps, pr);
             }
@@ -2576,8 +2589,7 @@ export class Game {
         continue;
       }
       for (const o of this.fighters) {
-        if (o.dead || o.id === pr.owner || o.invuln > 0) continue;
-        if (this.coop) continue;   // co-op: no friendly fire between teammates
+        if (o.dead || this._friendly(pr.owner, o.id) || o.invuln > 0) continue;
         if (pr.hit?.has(o.id)) continue;   // piercing shot already cut through them
         const pos = this._rewound(o, pr.owner);
         const ob = hurtBox(o);
@@ -2633,9 +2645,7 @@ export class Game {
           if (!enemies) continue;
           for (const e of enemies) {
             if (e.hp <= 0) continue;
-            // summons are friendly to the whole party in co-op; in PvP only
-            // to their own summoner
-            if (e.ally && (this.coop || e.ally === pr.owner)) continue;
+            if (e.ally && this._friendly(pr.owner, e.ally)) continue;
             if (Math.abs(e.x - pr.x) < e.hw + pr.r && Math.abs(e.y - pr.y) < e.hh + pr.r) {
               // A lingering hammer hex just ticks steady poison damage into
               // whatever's touching it — no knockback, no consuming the hex,
@@ -2690,8 +2700,7 @@ export class Game {
     const cx = f.x + hb.dx, cy = f.y + hb.dy;
     const a = aim && (aim.x || aim.y) ? aim : null;
     for (const o of this.fighters) {
-      if (o.id === f.id || o.dead || o.invuln > 0 || hitSet.has(o.id)) continue;
-      if (this.coop) continue;   // co-op: teammates can't hurt each other (enemies are a separate faction)
+      if (this._friendly(f.id, o.id) || o.dead || o.invuln > 0 || hitSet.has(o.id)) continue;
       const pos = this._rewound(o, f.id);
       const ob = hurtBox(o);
       if (Math.abs(pos.x - cx) < hb.hw + F_W / 2 && Math.abs(pos.y + ob.dy - cy) < hb.hh + ob.hh) {
@@ -2727,7 +2736,7 @@ export class Game {
         if (!enemies) continue;
         for (const e of enemies) {
           if (e.hp <= 0) continue;
-          if (e.ally && (this.coop || e.ally === f.id)) continue;
+          if (e.ally && this._friendly(f.id, e.ally)) continue;
           const key = 'e' + e.eid;
           if (hitSet.has(key)) continue;
           if (Math.abs(e.x - cx) < hb.hw + e.hw && Math.abs(e.y - cy) < hb.hh + e.hh) {
@@ -3027,12 +3036,12 @@ export class Game {
         o.vx += dir * pr.kb * .72 * falloff;
         o.vy = Math.min(o.vy, -pr.kb * .62 * falloff);
         o.grounded = false; o.fastfall = false;
-      } else if (!this.coop && o.invuln <= 0) {
+      } else if (!this._friendly(att.id, o.id) && o.invuln <= 0) {
         this._applyHit(att, o, spec, deg(-55), dir, false);
       }
     }
     for (const e of this.enemies) {
-      if (e.hp <= 0 || (e.ally && (this.coop || e.ally === att.id))) continue;
+      if (e.hp <= 0 || (e.ally && this._friendly(att.id, e.ally))) continue;
       const dx = e.x - pr.x, dy = e.y - pr.y;
       if (Math.hypot(dx, dy) <= R + Math.max(e.hw, e.hh)) {
         this._hitEnemy(att, e, spec, deg(-55), Math.sign(dx) || 1, false);
@@ -3749,12 +3758,12 @@ export class Game {
       }
     } else {
       for (const f of this.fighters) {
-        if (f.dead || f.parked || f.id === e.ally) continue;
+        if (f.dead || f.parked || this._friendly(owner.id, f.id)) continue;
         const d = Math.abs(f.x - e.x) + Math.abs(f.y - e.y);
         if (d < bestD) { bestD = d; best = f; }
       }
       for (const o of this.enemies) {
-        if (o.hp <= 0 || !o.ally || o.ally === e.ally) continue;
+        if (o.hp <= 0 || !o.ally || this._friendly(owner.id, o.ally)) continue;
         const d = Math.abs(o.x - e.x) + Math.abs(o.y - e.y);
         if (d < bestD) { bestD = d; best = o; }
       }
@@ -3793,7 +3802,7 @@ export class Game {
       }
     } else {
       for (const o of this.fighters) {
-        if (o.dead || o.id === owner.id || o.invuln > 0) continue;
+        if (o.dead || this._friendly(owner.id, o.id) || o.invuln > 0) continue;
         const ob = hurtBox(o);
         if (Math.abs(o.x - sx) < half + F_W / 2 && Math.abs((o.y + ob.dy) - e.y) < e.hh + 26 + ob.hh) {
           this._applyHit(owner, o, spec, deg(-30), Math.sign(o.x - e.x) || e.facing);
@@ -3801,7 +3810,7 @@ export class Game {
       }
       // rival summons in the arc get carved too — summons duel summons
       for (const o of this.enemies) {
-        if (o.hp <= 0 || !o.ally || o.ally === owner.id) continue;
+        if (o.hp <= 0 || !o.ally || this._friendly(owner.id, o.ally)) continue;
         if (Math.abs(o.x - sx) < half + o.hw && Math.abs(o.y - e.y) < e.hh + 26 + o.hh) {
           this._hitEnemy(owner, o, spec, deg(-30), Math.sign(o.x - e.x) || e.facing, false);
         }
@@ -4300,11 +4309,17 @@ export class Game {
     e.atkCd = Math.max(e.atkCd || 0, 0.2);
   }
 
-  // ---------- practice bot ----------
+  // ---------- bot controls ----------
 
   _botThink(f) {
     const inp = this.inputs.get(f.id);
-    const target = this.fighters.find(o => o.id !== f.id && !o.dead);
+    let target = null, nearest = Infinity;
+    for (const other of this.fighters) {
+      if (other.dead || other.parked || this._friendly(f.id, other.id)) continue;
+      const distance = Math.hypot(other.x - f.x, other.y - f.y);
+      if (distance < nearest) { nearest = distance; target = other; }
+    }
+    inp.mx = 0; inp.my = 0;
     if (!target) return;
     if (f.state === 'ledge') {
       // hang a beat, then climb: usually the super jump, sometimes the roll
@@ -4317,7 +4332,6 @@ export class Game {
     const dx = target.x - f.x, dy = target.y - f.y;
     const offstage = f.x < this.stage.main.x || f.x > this.stage.main.x + this.stage.main.w;
 
-    inp.mx = 0; inp.my = 0;
     if (offstage) {
       // recover toward stage center
       inp.mx = f.x < 0 ? 1 : -1;
@@ -4457,6 +4471,7 @@ export function gameFromSnapshot(players, snap, seed = 2) {
   g.won = !!snap.wn;
   g.endReason = snap.end || null;
   g.over = !!snap.over;
+  g.winner = g.fighters.find(f => f.id === snap.win) || null;
   g.beacon = snap.bc ? { x: +snap.bc[0] || 0, y: +snap.bc[1] || 0, t: +snap.bc[2] || 0, charge: +snap.bc[3] || 0 } : null;
   for (const row of snap.f || []) {
     const f = g.fighters.find(x => x.id === row[0]);

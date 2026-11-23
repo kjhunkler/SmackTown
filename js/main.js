@@ -7,6 +7,7 @@ import {
   HAT_CHARS, HAT_PALETTE, buildCost, earnedCredits, TOTAL_CREDITS,
 } from './profile.js';
 import { Net } from './net.js';
+import { hasOpposingTeams } from './pvp.js';
 import { Presence } from './presence.js';
 import { CITY_ROOMS, showMarketExit } from './city.js';
 import { Game, gameFromSnapshot, restoreFighter, interpolateEnemyRows, packEnemyDelta, unpackEnemyDelta, blankInput, TICK, SNAP_RATE, MAPS, NEW_MAP_IDS, DEFAULT_MAP, tallyMapVotes, expanseBiomeAt, platsAt, HEART_LIFE, EXPEDITION_ACTS } from './game.js';
@@ -931,7 +932,15 @@ function enterRoom(joinCode, startMode = null) {
     // the live game and re-broadcast the player list so everyone syncs up.
     if (!session || session.ended || !net.isHost || session.mode === 'solo') return;
     const build = sanitizeBuild(rec.build);
-    session.addPlayer({ id: rec.peerId, pid: rec.pid || null, name: rec.name, color: rec.color, build, hat: sanitizeHat(rec.hat) });
+    const old = rec.pid && session.players.find(p => p.pid === rec.pid);
+    if (old?.team && old.team !== rec.team) {
+      rec.team = old.team;
+      net._broadcastRoster();
+    }
+    session.addPlayer({
+      id: rec.peerId, pid: rec.pid || null, name: rec.name, color: rec.color, build, hat: sanitizeHat(rec.hat),
+      team: net.pvp.teamPlay ? rec.team : null,
+    });
     session.broadcastPlayers();
     UI.banner(`${rec.name} joined the fight!`, 'good');
   });
@@ -1009,7 +1018,7 @@ function renderLobby() {
     } : profile);
     const fightOn = !!session && !session.ended && session.mode !== 'solo';
     $('#lobby-rejoin').classList.toggle('hidden', !fightOn);
-    UI.renderLobby(net, voteMap, fightOn);
+    UI.renderLobby(net, voteMap, fightOn, changeBattleSetup);
     renderLobbyInvites();
   }
   renderVoiceButtons();
@@ -1040,9 +1049,18 @@ function cancelAutoStart() {
   lastCountTick = 0;
 }
 
+function changeBattleSetup(action, value) {
+  if (!net?.isHost || session) return;
+  cancelAutoStart();
+  net.changeBattleSetup(action, value);
+}
+
+$('#lobby-mode').addEventListener('change', e => changeBattleSetup('mode', e.target.value));
+$('#lobby-add-bot').addEventListener('click', () => changeBattleSetup('add'));
+
 function lobbyAllReady() {
-  const active = net.rosterList().filter(m => m.status !== 'gone');
-  return active.length >= 2 && active.every(m => m.ready);
+  const active = net.battleRoster().filter(m => m.status !== 'gone');
+  return active.length >= 2 && active.every(m => m.ready) && (!net.pvp.teamPlay || hasOpposingTeams(active));
 }
 
 function maybeAutoStart() {
@@ -1068,12 +1086,14 @@ function maybeAutoStart() {
 function startFight() {
   cancelAutoStart();
   if (!net?.isHost || session) return;
-  const active = net.rosterList().filter(m => m.status !== 'gone');
+  const active = net.battleRoster().filter(m => m.status !== 'gone');
   // One active player = solo practice: the host still runs a normal
   // authoritative session so friends can drop in mid-fight.
   if (!active.length || !active.every(m => m.ready)) return;
+  if (net.pvp.teamPlay && !hasOpposingTeams(active)) return;
   const players = active.map(m => ({
     id: m.peerId, pid: m.pid || null, name: m.name, color: m.color, build: sanitizeBuild(m.build), hat: sanitizeHat(m.hat),
+    team: net.pvp.teamPlay ? m.team : null, isBot: !!m.isBot,
   }));
   const seed = (Math.random() * 1e9) | 0;
   const votedMap = tallyMapVotes(active.map(m => m.vote));
@@ -1522,7 +1542,7 @@ class Session {
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
         aim: f.atkDir,
         mana: f.mana, weapon: f.st.weapon,
-        color: this.meta.get(f.id)?.color, hat: this.activeMeta(f.id)?.hat, cds: f.cds,
+        color: this.meta.get(f.id)?.color, team: this.meta.get(f.id)?.team, hat: this.activeMeta(f.id)?.hat, cds: f.cds,
         score: f.score, parked: f.parked,
         hp: f.hp, maxHp: f.maxHp, downT: f.downT,
       })),
@@ -1850,7 +1870,7 @@ class Session {
       aim: { x: r[26] || 0, y: r[27] || 0 },
       guard: r[28],
       mana: r[38], weapon: this.activeMeta(r[0])?.build?.weapon,
-      color: this.meta.get(r[0])?.color, hat: this.activeMeta(r[0])?.hat,
+      color: this.meta.get(r[0])?.color, team: this.meta.get(r[0])?.team, hat: this.activeMeta(r[0])?.hat,
       score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5], cr: r[34][6] || 0, elite: r[34][7] || 0 } : null,
       parked: !!r[37],
       hp: r[42], maxHp: r[43], downT: r[44],
@@ -1885,7 +1905,7 @@ class Session {
         invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
         aim: mine.atkDir,
         guard: mine.guard, mana: mine.mana, weapon: mine.st.weapon,
-        cds: mine.cds, color: this.meta.get(mine.id)?.color, hat: this.activeMeta(mine.id)?.hat,
+        cds: mine.cds, color: this.meta.get(mine.id)?.color, team: this.meta.get(mine.id)?.team, hat: this.activeMeta(mine.id)?.hat,
       };
       // HP, downed state and score are authoritative-only (prediction never
       // runs combat) — carry them from the latest snapshot row for my fighter

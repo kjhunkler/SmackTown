@@ -309,6 +309,14 @@
     url("../art/rooftop.webp") center bottom / cover;
 }
 #screen-lobby #lobby-status { color: #f1d99d; }
+.battle-setup { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.battle-setup label { display: flex; align-items: center; gap: 6px; font-weight: bold; }
+.battle-setup select, .battle-setup .btn, .roster .battle-control {
+  padding: 5px 8px; border: 1px solid #777386; border-radius: 6px;
+  background: #28263b; color: #fff; font: inherit; cursor: pointer;
+}
+.roster .battle-control { font-size: 12px; }
+.roster .battle-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 #screen-lobby .roster li { border-inline-start: 3px solid #74d5bb; background: #24253af0; }
 @media (orientation: landscape) and (min-height: 561px) {
   #screen-lobby .lobby-char-row { flex: 1; min-height: 100px; }

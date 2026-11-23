@@ -35,6 +35,16 @@ naturally needs a connection).
 | Rendering | `js/render.js` | Canvas renderer with a Smash-style auto-framing camera, squash & stretch, particles and screen shake. |
 | PWA | `sw.js`, `manifest.webmanifest` | Full precache, cache-first with background refresh, installable fullscreen landscape app. |
 
+## PvP bots and teams
+
+In a room’s Roster tab, the host can add up to six bots to a free-for-all or
+switch Battle mode to Teams. New fighters join the smaller side. Tap a Red
+or Blue button to move that fighter before the match. Bots are always ready,
+so one person can start a room match with bot opponents or teammates.
+
+In Teams, each fighter keeps their own stocks. Teammates and their summons
+are immune to friendly fire. The last team with fighters standing wins.
+
 ## Signaling
 
 Room discovery uses the free PeerJS cloud broker for the initial WebRTC

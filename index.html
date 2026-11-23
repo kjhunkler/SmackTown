@@ -240,6 +240,15 @@
           <button type="button" aria-controls="room-invite" aria-pressed="false">Invites</button>
         </nav>
         <div id="room-crew" class="deck-page">
+          <div id="lobby-setup" class="battle-setup">
+            <label>Battle mode
+              <select id="lobby-mode">
+                <option value="ffa">Free-for-all</option>
+                <option value="teams">Teams</option>
+              </select>
+            </label>
+            <button type="button" id="lobby-add-bot" class="btn ghost">+ Add bot</button>
+          </div>
           <ul id="lobby-roster" class="roster"></ul>
           <p id="lobby-status" class="lobby-status"></p>
         </div>

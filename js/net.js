@@ -11,6 +11,7 @@
 // host that reappears sees a higher term and demotes itself.
 
 import { peerOptions } from './ice.js';
+import { MAX_BOTS, smallerTeam, botMember } from './pvp.js';
 
 const ID_PREFIX = 'smacktown-v1-';
 const HB_INTERVAL = 2000;   // presence heartbeat period (ms)
@@ -36,6 +37,7 @@ export class Net {
     this.hostListener = null;       // extra Peer bound to the room's host ID after handoff
     this.conns = new Map();         // peerId -> open DataConnection
     this.members = new Map();       // peerId -> member record
+    this.pvp = { teamPlay: false, bots: [] };
     this.myId = null;
     this.hostId = null;             // peerId of current authority
     this.term = 0;
@@ -64,6 +66,30 @@ export class Net {
     return [...this.members.values()].sort((a, b) => a.joinOrder - b.joinOrder);
   }
 
+  battleRoster() {
+    return [...this.rosterList(), ...this.pvp.bots.map(botMember)];
+  }
+
+  changeBattleSetup(action, value) {
+    if (!this.isHost) return;
+    const { bots } = this.pvp;
+    if (action === 'mode') {
+      this.pvp.teamPlay = value === 'teams';
+    } else if (action === 'add' && bots.length < MAX_BOTS) {
+      let slot = 0;
+      while (bots.some(b => b.slot === slot)) slot++;
+      bots.push({ slot, team: smallerTeam(this.battleRoster()) });
+    } else {
+      const bot = bots.find(b => 'bot:' + b.slot === value);
+      const member = bot || this.members.get(value);
+      if (action === 'remove' && bot) bots.splice(bots.indexOf(bot), 1);
+      else if (action === 'team' && this.pvp.teamPlay && member) member.team = member.team === 'red' ? 'blue' : 'red';
+      else return;
+    }
+    this._broadcastRoster();
+    this.emit('roster');
+  }
+
   _me(joinOrder) {
     return {
       peerId: this.myId,
@@ -73,6 +99,7 @@ export class Net {
       build: this.profile.build,
       hat: this.profile.hat || null,
       joinOrder,
+      team: 'red',
       ready: false,
       vote: null,
       voice: false,
@@ -273,6 +300,7 @@ export class Net {
         rec.build = msg.profile?.build || null;
         rec.hat = msg.profile?.hat || null;
         rec.pid = typeof msg.profile?.pid === 'string' ? msg.profile.pid.slice(0, 40) : null;
+        rec.team ??= smallerTeam(this.battleRoster());
         this.members.set(pid, rec);
         this.send(pid, {
           t: 'welcome',
@@ -280,6 +308,7 @@ export class Net {
           term: this.term,
           joinOrder: rec.joinOrder,
           roster: this._rosterWire(),
+          pvp: this.pvp,
         });
         this._broadcastRoster();
         this.emit('roster');
@@ -304,8 +333,8 @@ export class Net {
         this.hostId = pid;
         this.term = msg.term;
         this.joinOrder = msg.joinOrder;
-        this._applyRosterWire(msg.roster);
         this.members.set(this.myId, this._me(this.joinOrder));
+        this._applyRosterWire(msg.roster, msg.pvp);
         // Complete the mesh: dial everyone we don't have a link to yet.
         for (const rec of this.members.values()) {
           if (rec.peerId !== this.myId && !this.conns.has(rec.peerId)) {
@@ -342,7 +371,7 @@ export class Net {
 
       case 'roster': {
         if (pid !== this.hostId) return;
-        this._applyRosterWire(msg.roster);
+        this._applyRosterWire(msg.roster, msg.pvp);
         this.emit('roster');
         break;
       }
@@ -457,22 +486,25 @@ export class Net {
     return this.rosterList().map(r => ({
       peerId: r.peerId, pid: r.pid || null, name: r.name, color: r.color,
       build: r.build, hat: r.hat || null, joinOrder: r.joinOrder, ready: r.ready,
-      vote: r.vote || null, voice: !!r.voice, status: r.status,
+      vote: r.vote || null, voice: !!r.voice, status: r.status, team: r.team,
     }));
   }
 
-  _applyRosterWire(list) {
+  _applyRosterWire(list, pvp) {
     if (!Array.isArray(list)) return;
+    if (pvp && Array.isArray(pvp.bots)) this.pvp = pvp;
     const seen = new Set();
     for (const w of list) {
       seen.add(w.peerId);
+      const team = w.team || (w.joinOrder % 2 ? 'blue' : 'red');
       const cur = this.members.get(w.peerId);
       if (cur) {
         const hadVoice = !!cur.voice;
+        cur.team = team;
         Object.assign(cur, { pid: w.pid || cur.pid || null, name: w.name, color: w.color, build: w.build, hat: w.hat || null, joinOrder: w.joinOrder, ready: w.ready, vote: w.vote || null, voice: !!w.voice });
         if (hadVoice !== cur.voice && w.peerId !== this.myId) this.emit('voice', w.peerId, cur.voice);
       } else {
-        this.members.set(w.peerId, { ...w, voice: !!w.voice, ping: 0, lastSeen: Date.now(), status: w.status || 'online' });
+        this.members.set(w.peerId, { ...w, team, voice: !!w.voice, ping: 0, lastSeen: Date.now(), status: w.status || 'online' });
         if (w.voice && w.peerId !== this.myId) this.emit('voice', w.peerId, true);
       }
     }
@@ -482,7 +514,7 @@ export class Net {
   }
 
   _broadcastRoster() {
-    if (this.isHost) this.broadcast({ t: 'roster', roster: this._rosterWire() });
+    if (this.isHost) this.broadcast({ t: 'roster', roster: this._rosterWire(), pvp: this.pvp });
   }
 
   setReady(ready) {

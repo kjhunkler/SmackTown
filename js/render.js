@@ -4,6 +4,7 @@
 import { MAPS, DEFAULT_MAP, platsAt, hazardsAt, expansePlats, expanseBiomeAt, bombLaunch, ENEMY_TYPES, BOSS_VARIANTS, BOSS_ATTACKS, HEART_LIFE } from './game.js';
 import { ARENA_ART, arenaImage, drawArenaBackdrop, drawArenaStage } from './arena-art.js';
 import { drawCity } from './city-art.js';
+import { TEAMS } from './pvp.js';
 import { CITY_ROOMS } from './city.js';
 import { hatImage, BOX_X as HAT_X, BOX_Y as HAT_Y, BOX_W as HAT_BW, BOX_H as HAT_BH } from './hat.js';
 import { SFX } from './sfx.js';
@@ -4312,6 +4313,18 @@ export class Renderer {
       ctx.globalAlpha = 0.7;
     } else if (f.invuln && Math.sin(t * 30) > 0) ctx.globalAlpha = 0.45;
 
+    const team = TEAMS[f.team];
+    if (team) {
+      ctx.font = 'bold 16px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#171724';
+      ctx.fillStyle = team.color;
+      const label = team.name.toUpperCase();
+      const y = -F_H / 2 - (isMe ? 43 : 24);
+      ctx.strokeText(label, 0, y);
+      ctx.fillText(label, 0, y);
+    }
     // "you" marker
     if (isMe) {
       ctx.fillStyle = '#ffffff';

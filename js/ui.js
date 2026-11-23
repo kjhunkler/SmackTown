@@ -7,6 +7,7 @@ import {
   HAT_W, HAT_H,
 } from './profile.js';
 import { arenaImage } from './arena-art.js';
+import { MAX_BOTS, TEAMS, hasOpposingTeams } from './pvp.js';
 import { MAPS, MAP_SIZES, LEGACY_MAP_IDS, mapsOfSize } from './game.js';
 import { BOX_X, BOX_Y, BOX_W, BOX_H, hatImage } from './hat.js';
 export { hatImage } from './hat.js';
@@ -634,11 +635,17 @@ function renderMapVotes(roster, myVote, onVote) {
   }
 }
 
-export function renderLobby(net, onVote = null, fightOn = false) {
+export function renderLobby(net, onVote = null, fightOn = false, onSetup = null) {
   $('#lobby-code').textContent = net.roomCode || '····';
   const list = $('#lobby-roster');
   list.innerHTML = '';
-  const roster = net.rosterList();
+  const roster = net.battleRoster();
+  const { teamPlay, bots } = net.pvp;
+  $('#lobby-setup').classList.toggle('hidden', fightOn);
+  $('#lobby-mode').value = teamPlay ? 'teams' : 'ffa';
+  $('#lobby-mode').disabled = !net.isHost;
+  $('#lobby-add-bot').classList.toggle('hidden', !net.isHost);
+  $('#lobby-add-bot').disabled = bots.length >= MAX_BOTS;
   const ROOM_ACT = { ...ACT_DETAIL, fighting: '⚔️ in the fight' };
   for (const m of roster) {
     const li = document.createElement('li');
@@ -657,11 +664,38 @@ export function renderLobby(net, onVote = null, fightOn = false) {
       </span>
       <span class="r-meta">${m.ready ? '<div class="r-ready">READY</div>' : ''}${doing ? `<div class="r-act">${doing}</div>` : ''}${idleTag ? `<div class="r-act">${idleTag}</div>` : ''}${!isMe && m.ping ? m.ping + 'ms' : ''}</span>`;
     li.querySelector('.r-fig').appendChild(lobbyFighter(m));
+    const team = teamPlay && TEAMS[m.team];
+    const editable = net.isHost && !fightOn && m.status !== 'gone';
+    if (team || (editable && m.isBot)) {
+      const actions = document.createElement('div');
+      actions.className = 'battle-actions';
+      li.querySelector('.r-meta').appendChild(actions);
+      if (team) {
+        li.style.borderInlineStartColor = team.color;
+        const badge = document.createElement(editable ? 'button' : 'span');
+        badge.textContent = team.name;
+        badge.style.color = team.color;
+        if (editable) {
+          badge.className = 'battle-control';
+          badge.setAttribute('aria-label', 'Switch team for ' + m.name + ' (currently ' + team.name + ')');
+          badge.addEventListener('click', () => onSetup('team', m.peerId));
+        }
+        actions.appendChild(badge);
+      }
+      if (editable && m.isBot) {
+        const remove = document.createElement('button');
+        remove.className = 'battle-control';
+        remove.textContent = 'Remove';
+        remove.setAttribute('aria-label', 'Remove ' + m.name);
+        remove.addEventListener('click', () => onSetup('remove', m.peerId));
+        actions.appendChild(remove);
+      }
+    }
     list.appendChild(li);
   }
 
   const active = roster.filter(m => m.status !== 'gone');
-  renderMapVotes(active, net.members.get(net.myId)?.vote, onVote);
+  renderMapVotes(active.filter(m => !m.isBot), net.members.get(net.myId)?.vote, onVote);
 
   const me = net.members.get(net.myId);
   const readyBtn = $('#lobby-ready');
@@ -681,9 +715,11 @@ export function renderLobby(net, onVote = null, fightOn = false) {
   const soloReady = active.length === 1 && everyoneReady;   // host alone: practice mode
   const startBtn = $('#lobby-start');
   startBtn.classList.toggle('hidden', !net.isHost);
-  startBtn.disabled = !(allReady || (soloReady && net.isHost));
+  const missingTeam = teamPlay && !hasOpposingTeams(active);
+  startBtn.disabled = missingTeam || !everyoneReady;
   $('#lobby-status').textContent =
-    soloReady ? 'Solo practice ready — hit Start Fight! Friends can join mid-fight.'
+    missingTeam ? 'Both Red and Blue need a fighter. Add a bot or switch a team.'
+      : soloReady ? 'Solo practice ready — hit Start Fight! Friends can join mid-fight.'
       : active.length < 2 ? 'Waiting for challengers — or ready up to practice solo…'
       : allReady ? 'All ready — starting…'
       : 'Waiting for everyone to ready up…';
@@ -705,7 +741,8 @@ export function buildHud(players, { myId = null, onTry = null, onTrySelf = null,
     const tile = document.createElement('div');
     tile.className = 'hud-tile';
     tile.id = 'hud-' + cssId(p.id);
-    tile.style.borderTopColor = p.color;
+    const team = TEAMS[p.team];
+    tile.style.borderTopColor = team?.color || p.color;
     // Co-op tiles trade the percent + stock dots for a health bar.
     tile.innerHTML = coop ? `
       <div class="h-name">${esc(p.name)}</div>
@@ -713,7 +750,7 @@ export function buildHud(players, { myId = null, onTry = null, onTrySelf = null,
       <div class="h-hp-txt"></div>
       <div class="h-cr">💰 —</div>`
     : `
-      <div class="h-name">${esc(p.name)}</div>
+      <div class="h-name">${team ? team.name + ' · ' : ''}${esc(p.name)}</div>
       <div class="h-pct" style="color:${p.color}">0%</div>
       <div class="h-stocks">${infiniteStocks ? '∞' : '●●●●'}</div>
       ${canTry ? `<button class="h-try${isTrying ? ' h-trying' : ''}">${isTrying ? 'Trying' : 'Try'}</button>` : ''}`;
@@ -876,10 +913,12 @@ const RUN_OUTCOMES = {
 };
 
 export function renderResults(players, winnerId, finalFighters, { myId = null, onCopy = null, coop = false, outcome = null, city = false } = {}) {
+  const winner = players.find(p => p.id === winnerId);
+  const winningTeam = TEAMS[winner?.team];
   $('#results-title').textContent = coop
     ? (city ? { cleared: 'Last train caught!', wiped: 'Crew down' }[outcome] : RUN_OUTCOMES[outcome]) || 'Expedition Over'
     : winnerId
-    ? `${esc(players.find(p => p.id === winnerId)?.name || '???')} wins!`
+    ? `${winningTeam ? winningTeam.name + ' team' : winner?.name || '???'} wins!`
     : players.length === 1 ? 'Practice complete!'
     : 'Draw!';
   const list = $('#results-list');
@@ -891,6 +930,7 @@ export function renderResults(players, winnerId, finalFighters, { myId = null, o
   }).sort((a, b) => {
     // Expedition podium ranks the run's contribution; stocks mean nothing
     if (coop) return (b.s.ko - a.s.ko) || ((b.s.cr || 0) - (a.s.cr || 0)) || (b.s.dmg - a.s.dmg);
+    if (winningTeam && a.p.team !== b.p.team) return a.p.team === winner.team ? -1 : 1;
     const fa = a.f || { stocks: 0, pct: 999 };
     const fb = b.f || { stocks: 0, pct: 999 };
     return (fb.stocks - fa.stocks) || (b.s.ko - a.s.ko) || (fa.pct - fb.pct);
@@ -910,10 +950,10 @@ export function renderResults(players, winnerId, finalFighters, { myId = null, o
           <span>👊 ${s.ko} KO${s.ko === 1 ? '' : 's'} · 💥 ${Math.round(s.dmg)} dmg</span>`;
     li.innerHTML = `
       <div class="r-top">
-        <span class="r-score">${p.id === winnerId || (coop && i === 0) ? '🏆' : '#' + (i + 1)}</span>
+        <span class="r-score">${(winningTeam && p.team === winner.team) || p.id === winnerId || (coop && i === 0) ? '🏆' : '#' + (i + 1)}</span>
         <span class="r-fig"></span>
         <span class="r-col">
-          <span class="r-name">${esc(p.name)}</span>
+          <span class="r-name">${TEAMS[p.team] ? TEAMS[p.team].name + ' · ' : ''}${esc(p.name)}</span>
           ${chips ? `<span class="r-awards">${chips}</span>` : ''}
         </span>
         <span class="r-meta">${meta}

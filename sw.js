@@ -38,6 +38,7 @@ const ASSETS = [
   'js/ice.js',
   'js/ui.js',
   'js/net.js',
+  'js/pvp.js',
   'js/presence.js',
   'js/game.js',
   'js/arenas.js',

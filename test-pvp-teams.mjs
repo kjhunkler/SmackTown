@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict';
+import { Game, gameFromSnapshot } from './js/game.js';
+import { Net } from './js/net.js';
+import { emptyBuild } from './js/profile.js';
+import { MAX_BOTS, hasOpposingTeams } from './js/pvp.js';
+
+const host = new Net({ name: 'Host', build: emptyBuild() });
+host.myId = host.hostId = 'host';
+host.members.set('host', host._me(0));
+host.changeBattleSetup('mode', 'teams');
+assert.equal(hasOpposingTeams(host.battleRoster()), false);
+for (let i = 0; i <= MAX_BOTS; i++) host.changeBattleSetup('add');
+assert.equal(host.pvp.bots.length, MAX_BOTS);
+assert.equal(host.members.size, 1);
+assert.equal(hasOpposingTeams(host.battleRoster()), true);
+host.changeBattleSetup('team', 'bot:0');
+assert.equal(host.battleRoster()[1].team, 'red');
+host.changeBattleSetup('remove', 'bot:1');
+host.changeBattleSetup('add');
+assert.equal(new Set(host.battleRoster().map(m => m.peerId)).size, MAX_BOTS + 1);
+const client = new Net({});
+client._applyRosterWire(host._rosterWire(), structuredClone(host.pvp));
+client.changeBattleSetup('remove', 'bot:0');
+assert.deepEqual(client.pvp, host.pvp);
+
+const players = ['red', 'red', 'blue'].map((team, i) => ({
+  id: String(i), team, build: emptyBuild(), isBot: i === 0,
+}));
+const game = new Game(players, 1);
+const [bot, ally, enemy] = game.fighters;
+for (const f of game.fighters) { f.x = 0; f.invuln = 0; }
+bot.x = -20;
+ally.x = -120;
+enemy.x = 150;
+game._botThink(bot);
+assert.ok(game.inputs.get(bot.id).mx > 0, 'bot pursues enemy to the right');
+enemy.parked = true;
+game._botThink(bot);
+assert.equal(game.inputs.get(bot.id).mx, 0);
+enemy.parked = false;
+ally.x = enemy.x = 25;
+const spec = { dmg: 10, kb: 100, ks: 5, rx: 80, ry: 40 };
+const hits = new Set();
+ally.counterT = 1;
+game._meleeHit(bot, spec, hits, -30);
+assert.deepEqual([...hits], [enemy.id]);
+assert.equal(bot.pct, 0, 'friendly counter ignores allied swing');
+assert.ok(enemy.pct > 0);
+game._radialHit(bot, 200, spec, () => 0);
+game._bombBoom({ ...spec, x: 0, y: bot.y, owner: bot.id, bombR: 100 });
+assert.equal(ally.pct, 0);
+assert.ok(bot.vy < 0, 'self bomb jump still works');
+const shot = { ...spec, kind: 'bolt', x: ally.x, y: ally.y, owner: bot.id, ttl: 1, vx: 1, r: 10 };
+enemy.x = 400;
+game.projectiles.push(shot);
+game._resolveAttacks();
+assert.equal(shot.ttl, 1, 'teammate cannot consume or reflect a shot');
+assert.equal(shot.owner, bot.id);
+assert.equal(game._allyTarget({ x: 0, y: bot.y }, bot), enemy);
+const resumed = gameFromSnapshot(players, game.snapshot());
+assert.ok(resumed.fighters[0].isBot && resumed._friendly(bot.id, ally.id));
+resumed.fighters[2].dead = true;
+resumed.step();
+assert.ok(resumed.over && resumed.teams.get(resumed.winner.id) === 'red');
+assert.equal(gameFromSnapshot(players, resumed.snapshot()).winner.id, resumed.winner.id);
+const draw = new Game(players);
+for (const f of draw.fighters) { f.stocks = 1; f.y = draw.stage.blast.b + 100; }
+draw.step();
+assert.ok(draw.over && draw.winner === null, 'simultaneous elimination draws');
+const ffa = new Game(players.map(({ team, ...p }) => p));
+ffa.fighters[2].dead = true;
+ffa.step();
+assert.equal(ffa.over, false, 'two free-for-all survivors keep fighting');
+console.log('PvP room setup, team combat, bot targeting, handoff, and victory passed.');
