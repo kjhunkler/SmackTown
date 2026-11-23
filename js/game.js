@@ -375,6 +375,7 @@ export const NEW_MAP_IDS = MAP_IDS.filter(id => !LEGACY_MAP_IDS.includes(id));
 // one of these, and the two kinds never collide.
 export const MAP_SIZES = ['small', 'medium', 'large'];
 export const mapsOfSize = size => MAP_IDS.filter(id => MAPS[id].size === size);
+export const MAP_RANDOM = { new: 'random-new', legacy: 'random-legacy' };
 
 // Tally the lobby's map votes: most votes wins, ties break randomly among
 // the leaders, and nobody voting means a random map for everyone. A size
@@ -382,13 +383,15 @@ export const mapsOfSize = size => MAP_IDS.filter(id => MAPS[id].size === size);
 // when a size wins, the map is drawn at random from its class.
 export function tallyMapVotes(votes) {
   const pick = pool => pool[(Math.random() * pool.length) | 0];
+  const randomPools = { [MAP_RANDOM.new]: NEW_MAP_IDS, [MAP_RANDOM.legacy]: LEGACY_MAP_IDS };
   const counts = new Map();
   for (const v of votes) {
-    if (v && (MAP_IDS.includes(v) || MAP_SIZES.includes(v))) counts.set(v, (counts.get(v) || 0) + 1);
+    if (v && (MAP_IDS.includes(v) || MAP_SIZES.includes(v) || randomPools[v])) counts.set(v, (counts.get(v) || 0) + 1);
   }
   if (!counts.size) return pick(MAP_IDS);
   const top = Math.max(...counts.values());
   const winner = pick([...counts.entries()].filter(([, n]) => n === top).map(([id]) => id));
+  if (randomPools[winner]) return pick(randomPools[winner]);
   return MAP_SIZES.includes(winner) ? pick(mapsOfSize(winner)) : winner;
 }
 export const EXPANSE_BIOMES = ['battlefield', 'flatlands', 'skyline', 'ruins', 'foundry', 'garden'];

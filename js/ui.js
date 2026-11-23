@@ -9,7 +9,7 @@ import {
 } from './profile.js';
 import { arenaImage } from './arena-art.js';
 import { MAX_BOTS, TEAMS, hasOpposingTeams } from './pvp.js';
-import { MAPS, MAP_SIZES, LEGACY_MAP_IDS, mapsOfSize } from './game.js';
+import { MAPS, MAP_SIZES, LEGACY_MAP_IDS, NEW_MAP_IDS, MAP_RANDOM, mapsOfSize } from './game.js';
 import { BOX_X, BOX_Y, BOX_W, BOX_H, hatImage } from './hat.js';
 export { hatImage } from './hat.js';
 import { Renderer } from './render.js';
@@ -652,6 +652,7 @@ function voteCard(id, label, preview, isSize = false) {
 
 function buildMapCatalog(grid) {
   const sizes = grid.querySelector('#size-votes');
+  sizes.append(voteCard(MAP_RANDOM.new, 'Random Map', '<span class="map-thumb size-thumb"></span>'));
   for (const size of MAP_SIZES) {
     const label = size[0].toUpperCase() + size.slice(1);
     sizes.append(voteCard(size, 'Any ' + label, `<span class="map-thumb size-thumb size-thumb-${size}"></span>`, true));
@@ -679,6 +680,11 @@ function buildMapCatalog(grid) {
         option.setAttribute('aria-pressed', selected);
         document.getElementById(option.getAttribute('aria-controls')).hidden = !selected;
       }
+      const random = sizes.querySelector(`[data-vote="${MAP_RANDOM.new}"], [data-vote="${MAP_RANDOM.legacy}"]`);
+      if (random) {
+        random.dataset.vote = tab.getAttribute('aria-controls') === 'legacy-arenas' ? MAP_RANDOM.legacy : MAP_RANDOM.new;
+        random.classList.toggle('legacy-random', random.dataset.vote === MAP_RANDOM.legacy);
+      }
     });
   }
 }
@@ -698,7 +704,10 @@ function renderMapVotes(roster, myVote, onVote) {
     card.setAttribute('aria-pressed', selected);
     const tally = card.querySelector('.map-votes');
     tally.classList.toggle('none', !votes);
-    tally.textContent = votes ? '🗳️ ' + votes : MAP_SIZES.includes(id) ? mapsOfSize(id).length + ' maps' : '—';
+    tally.textContent = votes ? '🗳️ ' + votes
+      : id === MAP_RANDOM.new ? NEW_MAP_IDS.length + ' maps'
+      : id === MAP_RANDOM.legacy ? LEGACY_MAP_IDS.length + ' maps'
+      : MAP_SIZES.includes(id) ? mapsOfSize(id).length + ' maps' : '—';
   }
 }
 

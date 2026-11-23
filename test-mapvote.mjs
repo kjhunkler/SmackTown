@@ -2,7 +2,7 @@
 // map carries a size, the classes split sensibly by floor width, and
 // tallyMapVotes resolves map votes, size votes, ties, and junk correctly.
 // Run: node test-mapvote.mjs
-import { MAPS, MAP_IDS, MAP_SIZES, mapsOfSize, tallyMapVotes } from './js/game.js';
+import { MAPS, MAP_IDS, MAP_SIZES, LEGACY_MAP_IDS, NEW_MAP_IDS, MAP_RANDOM, mapsOfSize, tallyMapVotes } from './js/game.js';
 
 let n = 0, fails = 0;
 function check(name, ok) {
@@ -34,6 +34,15 @@ function check(name, ok) {
   check('a lone vote decides for everyone', tallyMapVotes([null, 'garden', null]) === 'garden');
   check('no votes at all still lands a real map', MAP_IDS.includes(tallyMapVotes([null, null])));
   check('junk votes are ignored', MAP_IDS.includes(tallyMapVotes(['nonsense', undefined, ''])));
+  check('new random vote stays within the six new maps',
+    Array.from({ length: 100 }, () => NEW_MAP_IDS.includes(tallyMapVotes([MAP_RANDOM.new]))).every(Boolean));
+  check('legacy random vote stays within the six legacy maps',
+    Array.from({ length: 100 }, () => LEGACY_MAP_IDS.includes(tallyMapVotes([MAP_RANDOM.legacy]))).every(Boolean));
+  check('random vote competes as one vote against a named map',
+    Array.from({ length: 100 }, () => {
+      const result = tallyMapVotes([MAP_RANDOM.legacy, 'docks']);
+      return result === 'docks' || LEGACY_MAP_IDS.includes(result);
+    }).every(Boolean));
 }
 
 // --- 3. size votes ---
