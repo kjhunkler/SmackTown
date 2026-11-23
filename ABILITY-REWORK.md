@@ -5,7 +5,7 @@ The Workshop uses a refundable 1,000 CR loadout in both battle and expedition. B
 ## Checkpoints on main
 
 - [x] Map the existing Workshop, profile validation, host simulation, renderer and test entry points.
-- [ ] Ship the catalog and budget validation, all combat variants, the five base buffs, and trait effects. Test legacy builds, family limits, combat and credits.
+- [x] v231 adds 18 ability upgrades across 16 families and four level-2 trait specializations. All five base buffs are in the simulation. `test-specializations.mjs` covers prices, prerequisites, duplicate families, floor/platform bounces and all upgraded casts. The full Node suite passes.
 - [ ] Ship Workshop purchases and refunds, named loadout summaries, accessible controls and accurate in-match buttons.
 - [ ] Ship cast animations for all 16 base abilities and distinct upgraded effects. Verify projectile effects on remote clients and in expedition.
 - [ ] Run the full Node suite and exercise the Workshop and multiplayer game in Chromium. Record results and release version here.

@@ -14,6 +14,14 @@ export const STATS = [
   { id: 'agility', name: 'Agility', desc: '+jump height & air control per level',  cost: 80, max: 5 },
 ];
 
+export const FOCUS_LEVEL = 2;
+export const TRAIT_FOCUS = {
+  power:   { name: 'Haymaker',    cost: 100, desc: 'Deal 14% more knockback.' },
+  speed:   { name: 'Sprinter',    cost: 90,  desc: 'Run 12% faster.' },
+  defense: { name: 'Stone Guard', cost: 100, desc: 'Take 12% less damage.' },
+  agility: { name: 'Air Step',    cost: 120, desc: 'Gain one extra midair jump.' },
+};
+
 export const ABILITIES = [
   { id: 'fireball',  icon: '🔥', name: 'Fireball',    cost: 220, cd: 3.0,
     desc: 'Hurl a projectile that sets foes ablaze — burns over time' },
@@ -31,23 +39,60 @@ export const ABILITIES = [
     desc: 'Loose a fan of three fire bolts' },
   { id: 'gale',      icon: '💨', name: 'Gale Burst',  cost: 220, cd: 5.0,
     desc: 'Blast of wind that flings everyone near you' },
-  { id: 'bubble',    icon: '🫧', name: 'Bubble Shield', cost: 240, cd: 6.0,
-    desc: 'Pop a shield — 1.5s of invulnerability' },
+  { id: 'bubble',    icon: '🫧', name: 'Bubble Shield', cost: 240, cd: 5.5,
+    desc: 'Pop a shield for 1.8s of invulnerability' },
   { id: 'mend',      icon: '💚', name: 'Mend',        cost: 260, cd: 7.0,
     desc: 'Patch yourself up — instantly heal 15%' },
-  { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 240, cd: 4.5,
+  { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 240, cd: 3.8,
     desc: 'Hurl a hook that reels a foe in — harder the further it flew' },
-  { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 6.0,
+  { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 5.0,
     desc: 'Plant spikes that launch and stun whoever steps in' },
   { id: 'anchor',    icon: '⚓', name: 'Second Wind',  cost: 200, cd: 6.0,
-    desc: 'Drop a teleport anchor — hit the button again within 4s to warp back to it' },
-  { id: 'springtrap',icon: '🌀', name: 'Spring Trap',  cost: 210, cd: 6.0,
+    desc: 'Drop a beacon. Press again within 5s to return with 0.65s of protection.' },
+  { id: 'springtrap',icon: '🌀', name: 'Spring Trap',  cost: 210, cd: 4.8,
     desc: 'Plant a coiled spring that launches whoever steps in exactly backwards' },
   { id: 'troop',     icon: '🪖', name: 'Summon Troop', cost: 260, cd: 5.0,
     desc: 'Call in a random ground troop that fights at your side — up to five at a time' },
   { id: 'bird',      icon: '🦅', name: 'Summon Flyer', cost: 240, cd: 4.0,
     desc: 'Call down a flyer that dives your foes — up to five at a time' },
 ];
+
+// Each entry is a replacement for its base in the same action slot.
+// The save and wire format stay arrays of IDs. The lookup always charges
+// the entire family price, including when validating an incoming room build.
+export const ABILITY_UPGRADES = {
+  fireball: [
+    { id: 'cinderskip', name: 'Cinderskip', icon: '☄️', premium: 100, color: '#4ef1d1', desc: 'Bounces back across the fight up to three times off floors and platforms.' },
+    { id: 'sunburst', name: 'Sunburst', icon: '☀️', premium: 120, color: '#ffdc4a', desc: 'A larger fireball with a wider explosion and two extra burn ticks.' },
+  ],
+  dashstrike: [{ id: 'cometdash', name: 'Comet Rush', icon: '🌠', premium: 90, color: '#75edff', desc: 'Carry the strike farther and keep its hitbox active through the lunge.' }],
+  shockwave: [{ id: 'faultline', name: 'Fault Line', icon: '🌋', premium: 110, color: '#ff785a', desc: 'The slam reaches farther and hits harder, including after an airborne drop.' }],
+  uppercut: [{ id: 'skybreaker', name: 'Skybreaker', icon: '🚀', premium: 100, color: '#ffaa52', desc: 'Rise higher with a wider punch and stronger vertical launch.' }],
+  counter: [{ id: 'foresight', name: 'Foresight', icon: '👁️', premium: 90, color: '#dba5ff', desc: 'Hold the parry window open for 0.95s.' }],
+  blink: [{ id: 'longblink', name: 'Riftwalk', icon: '🌌', premium: 100, color: '#fa83d9', desc: 'Cross 235 units in one blink, in any direction.' }],
+  volley: [{ id: 'starfall', name: 'Starfall', icon: '🎆', premium: 120, color: '#c89aff', desc: 'Spread five burning bolts across a wider fan.' }],
+  gale: [{ id: 'cyclone', name: 'Cyclone', icon: '🌪️', premium: 110, color: '#90f5b0', desc: 'Catch enemies in a wider gust with stronger knockback.' }],
+  bubble: [
+    { id: 'prism', name: 'Prism Shell', icon: '💠', premium: 110, color: '#ae9bff', desc: 'Extend the shield to 2.35s.' },
+    { id: 'repulse', name: 'Repulse Shell', icon: '🧿', premium: 100, color: '#55efbb', desc: 'Push nearby foes away when the shield opens.' },
+  ],
+  mend: [{ id: 'renewal', name: 'Renewal', icon: '🌸', premium: 110, color: '#ff9eb6', desc: 'Remove 24 damage in battle or restore 24% of maximum HP in expedition.' }],
+  hook: [{ id: 'harpoon', name: 'Harpoon', icon: '🔱', premium: 95, color: '#ffc869', desc: 'Throw a faster, longer-reaching hook with a stronger reel.' }],
+  trap: [{ id: 'beartrap', name: 'Iron Jaws', icon: '⚙️', premium: 100, color: '#ff9977', desc: 'Lay wider jaws that hold the target in stun for 1.45s.' }],
+  anchor: [{ id: 'lifeline', name: 'Lifeline', icon: '🛟', premium: 110, color: '#77ffc3', desc: 'Heal 10 damage or 10% of maximum HP when you recall.' }],
+  springtrap: [{ id: 'kickback', name: 'Kickback Coil', icon: '🧲', premium: 95, color: '#ff8dc8', desc: 'Plant a wider coil that throws its target farther backwards.' }],
+  troop: [{ id: 'vanguard', name: 'Vanguard', icon: '🏰', premium: 110, color: '#ffca68', desc: 'Always summon a brute with 40% extra health.' }],
+  bird: [{ id: 'twinflight', name: 'Twin Flight', icon: '🪽', premium: 130, color: '#97eaff', desc: 'Call two flyers at once. Up to five can fight for you.' }],
+};
+
+const abilityById = new Map();
+for (const base of ABILITIES) {
+  abilityById.set(base.id, { ...base, family: base.id, premium: 0 });
+  for (const upgrade of ABILITY_UPGRADES[base.id]) {
+    abilityById.set(upgrade.id, { ...base, ...upgrade, family: base.id, cost: base.cost + upgrade.premium });
+  }
+}
+export const abilityDef = id => abilityById.get(id);
 
 // Weapons: what the strong-attack control swings. Every fighter carries
 // exactly one; all weapons are free — each trades the classic smash kit
@@ -128,7 +173,9 @@ export const MAX_BUILD_COST = (() => {
   for (const s of STATS) c += s.max * s.cost;
   c += Math.max(...WEAPONS.map(w => w.cost));
   const top = (arr, n) => arr.map(x => x.cost).sort((a, b) => b - a).slice(0, n).reduce((s, x) => s + x, 0);
-  c += top(ABILITIES, MAX_ABILITIES) + top(AUGMENTS, MAX_AUGMENTS);
+  c += Object.values(TRAIT_FOCUS).reduce((sum, focus) => sum + focus.cost, 0);
+  const families = ABILITIES.map(a => ({ cost: a.cost + Math.max(...ABILITY_UPGRADES[a.id].map(u => u.premium)) }));
+  c += top(families, MAX_ABILITIES) + top(AUGMENTS, MAX_AUGMENTS);
   return c;
 })();
 
@@ -220,6 +267,7 @@ export function deleteHat(id) {
 export function emptyBuild() {
   return {
     stats: { power: 0, speed: 0, defense: 0, agility: 0 },
+    focuses: [],
     weapon: DEFAULT_WEAPON,
     abilities: [],
     augments: [],
@@ -229,9 +277,10 @@ export function emptyBuild() {
 export function buildCost(build) {
   let total = 0;
   for (const s of STATS) total += (build.stats[s.id] || 0) * s.cost;
+  for (const s of STATS) if (build.focuses?.includes(s.id)) total += TRAIT_FOCUS[s.id].cost;
   total += WEAPONS.find(w => w.id === build.weapon)?.cost || 0;
   for (const id of build.abilities) {
-    const a = ABILITIES.find(x => x.id === id);
+    const a = abilityDef(id);
     if (a) total += a.cost;
   }
   for (const id of build.augments) {
@@ -248,12 +297,18 @@ export function sanitizeBuild(raw, cap = TOTAL_CREDITS) {
     for (const s of STATS) {
       const v = raw.stats && raw.stats[s.id];
       b.stats[s.id] = Math.min(s.max, Math.max(0, Math.floor(Number(v) || 0)));
+      if (b.stats[s.id] >= FOCUS_LEVEL && Array.isArray(raw.focuses) && raw.focuses.includes(s.id)) b.focuses.push(s.id);
     }
     if (WEAPONS.some(w => w.id === raw.weapon)) b.weapon = raw.weapon;
     if (Array.isArray(raw.abilities)) {
-      b.abilities = raw.abilities
-        .filter(id => ABILITIES.some(a => a.id === id))
-        .slice(0, MAX_ABILITIES);
+      const families = new Set();
+      for (const id of raw.abilities) {
+        const a = abilityDef(id);
+        if (!a || families.has(a.family)) continue;
+        families.add(a.family);
+        b.abilities.push(id);
+        if (b.abilities.length === MAX_ABILITIES) break;
+      }
     }
     if (Array.isArray(raw.augments)) {
       b.augments = raw.augments
@@ -327,17 +382,17 @@ export function derivedStats(build) {
   const glass = has('glasscannon');
   return {
     dmgMult:   (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
-    kbMult:    (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
-    speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.95 : 1),
+    kbMult:    (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1) * (b.focuses.includes('power') ? 1.14 : 1),
+    speedMult: (1 + 0.06 * b.stats.speed) * (has('heavy') ? 0.95 : 1) * (b.focuses.includes('speed') ? 1.12 : 1),
     kbTaken:   (1 - 0.06 * b.stats.defense) * (has('heavy') ? 0.85 : 1)
       * (has('feather') ? 1.08 : 1) * (glass ? 1.18 : 1),
-    dmgTaken:  (1 - 0.04 * b.stats.defense) * (has('ironclad') ? 0.9 : 1),
+    dmgTaken:  (1 - 0.04 * b.stats.defense) * (has('ironclad') ? 0.9 : 1) * (b.focuses.includes('defense') ? 0.88 : 1),
     jumpMult:  (1 + 0.05 * b.stats.agility) * (has('skyborn') ? 1.15 : 1),
     airMult:   1 + 0.08 * b.stats.agility,
     // Co-op health pool (unused by stock matches): Defense doubles as a
     // toughness stat, so a tank build carries more HP through an expedition.
     maxHp:     100 + 25 * b.stats.defense,
-    maxJumps:  2 + (has('feather') ? 1 : 0),
+    maxJumps:  2 + (has('feather') ? 1 : 0) + (b.focuses.includes('agility') ? 1 : 0),
     cdMult:    has('quickhands') ? 0.8 : 1,
     weapon:    b.weapon,
     abilities: b.abilities,

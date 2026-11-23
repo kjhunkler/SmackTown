@@ -2,7 +2,7 @@
 // everyone's latest inputs and broadcasts snapshots; clients interpolate.
 // All tuning constants live here so host handoff resumes identical rules.
 
-import { derivedStats, buildCost, sanitizeBuild, TOTAL_CREDITS } from './profile.js';
+import { abilityDef, derivedStats, buildCost, sanitizeBuild, TOTAL_CREDITS } from './profile.js';
 
 import { ARENAS } from './arenas.js';
 import { CITY_ROOMS, GATEKEEPER_GRACE, arrive, newCity, stepCity } from './city.js';
@@ -915,6 +915,11 @@ const SLAM_RX = 56, SLAM_RY = 56;    // body-sized box, a little generous
 // floor), and a snag at full stretch pulls with real violence.
 const HOOK_KB0 = 650, HOOK_KB1 = 1250;
 const HOOK_RANGE = 700;              // flight distance for the full-strength pull
+function hookImpact(pr) {
+  const dist = Math.hypot(pr.x - pr.x0, pr.y - pr.y0);
+  const kb = HOOK_KB0 + (HOOK_KB1 - HOOK_KB0) * Math.min(1, dist / HOOK_RANGE);
+  return { ...pr, kb: kb * (pr.variant === 'harpoon' ? 1.25 : 1) };
+}
 const BURST_SPD0 = 520,  BURST_SPD1 = 1150;  // burst speed vs charge
 const BURST_TTL0 = 0.55, BURST_TTL1 = 1.5;   // burst lifetime vs charge
 const BURST_DMG0 = 3.5,  BURST_DMG1 = 8;     // burst damage vs charge
@@ -1041,28 +1046,8 @@ const ROLL_IFRAMES = 0.7;            // leading fraction of the roll with i-fram
 const WAVELAND_TIME = 0.3;
 const WAVELAND_MIN_VX = 160;         // drift needed for a landing to slide
 
-const ABILITY_DEFS = {
-  fireball:  { cd: 3.0 },
-  dashstrike:{ cd: 4.0 },
-  shockwave: { cd: 6.0 },
-  uppercut:  { cd: 5.0 },
-  counter:   { cd: 5.0 },
-  blink:     { cd: 4.0 },
-  volley:    { cd: 5.0 },
-  gale:      { cd: 5.0 },
-  bubble:    { cd: 6.0 },
-  mend:      { cd: 7.0 },
-  hook:      { cd: 4.5 },
-  trap:      { cd: 6.0 },
-  anchor:    { cd: 6.0 },
-  springtrap:{ cd: 6.0 },
-  troop:     { cd: 5.0 },
-  bird:      { cd: 4.0 },
-};
-const COUNTER_WINDOW = 0.6;          // parry stance duration (s)
-const BUBBLE_INVULN = 1.5;           // bubble shield duration (s)
-const ANCHOR_TP_INVULN = 0.35;       // brief invuln on landing at the anchor
-const ANCHOR_TTL = 4.0;              // seconds the beacon stays warpable (< the cooldown)
+const ANCHOR_TP_INVULN = 0.65;
+const ANCHOR_TTL = 5;
 // Summoned allies: a creep that fights FOR its summoner for a spell —
 // creeps in co-op, rival fighters (and their summons) in PvP — then fades.
 // Each summoner fields up to SUMMON_CAP ground and SUMMON_CAP flying
@@ -2161,7 +2146,7 @@ export class Game {
     if (!att) return;
     const R = pr.fireR;
     const spec = { dmg: pr.dmg * 0.5, kb: pr.kb * 0.6, ks: pr.ks, dot: pr.dot };
-    this.events.push({ e: 'burstboom', x: pr.x, y: pr.y, r: R, fire: 1 });
+    this.events.push({ e: 'burstboom', x: pr.x, y: pr.y, r: R, fire: 1, variant: pr.variant });
     if (!this.coop) {
       for (const o of this.fighters) {
         if (this._friendly(att.id, o.id) || o.id === pr.struck || o.dead || o.invuln > 0) continue;
@@ -2258,28 +2243,32 @@ export class Game {
 
   _useAbility(f, slot) {
     const id = f.st.abilities[slot];
-    if (!id) return;
+    const def = abilityDef(id);
+    if (!def) return;
+    const variant = def.premium ? id : undefined;
     // the anchor button stays live through its whole cooldown — pressing it
     // while cooling activates the teleport instead of being blocked like
     // every other ability, so it gets its own gate ahead of the cd check
-    if (id === 'anchor') { this._useAnchor(f, slot); return; }
+    if (def.family === 'anchor') { this._useAnchor(f, slot, def); return; }
     if (f.cds[slot] > 0) return;
-    const def = ABILITY_DEFS[id];
     f.cds[slot] = def.cd * (f.st.cdMult || 1);
     const dir = f.lastDir;
     let evUp = false;
-    switch (id) {
+    const fromX = f.x, fromY = f.y;
+    switch (def.family) {
       case 'fireball': {
         // aimed 8-way by the held stick (facing when neutral); the shell
         // detonates when it dies — flame splash + afterburn around the pop
         const [nx, ny] = this._abilityAim(f);
+        const skips = id === 'cinderskip', sun = id === 'sunburst';
         this.projectiles.push({
-          eid: nextEid++, kind: 'fireball', owner: f.id,
+          eid: nextEid++, kind: 'fireball', owner: f.id, variant,
           x: f.x + nx * 40, y: f.y - 8 + ny * 20,
-          vx: nx * 620, vy: ny * 620, ttl: 1.4,
-          dmg: 6, kb: 170, ks: 13, r: 14,
-          dot: { n: 3, every: 0.5, dmg: 2 },   // afterburn: +6% over 1.5s
-          fireR: 90,
+          vx: nx * 620, vy: ny * 620, ttl: skips ? 3.2 : 1.4,
+          grav: skips ? 710 : 0, skips: skips ? 3 : 0,
+          dmg: 6, kb: 170, ks: 13, r: sun ? 21 : 14,
+          dot: { n: sun ? 5 : 3, every: 0.5, dmg: 2 },
+          fireR: sun ? 145 : 90,
         });
         break;
       }
@@ -2287,31 +2276,35 @@ export class Game {
         // hold up while casting to angle the lunge diagonally skyward
         const up = (this.inputs.get(f.id)?.my ?? 0) < -0.4;
         evUp = up;
-        f.dashT = 0.22;
+        const comet = id === 'cometdash';
+        f.dashT = comet ? 0.34 : 0.22;
         f.vx = f.facing * (up ? 720 : 950);
         f.vy = up ? -640 : 0;
         if (up) { f.grounded = false; f.fastfall = false; }
-        f.melee = { name: 'dash', dmg: 8, kb: 200, ks: 16, rx: 50, ry: 30, ang: up ? -55 : -20, until: this.tick + 14, hit: new Set() };
+        f.melee = { name: 'dash', dmg: 8, kb: 200, ks: 16, rx: 50, ry: 30, ang: up ? -55 : -20, until: this.tick + (comet ? 21 : 14), hit: new Set() };
         break;
       }
       case 'shockwave':
-        if (!f.grounded) { f.vy = FASTFALL; f.fastfall = true; f.pendingShock = true; }
-        else this._shockwave(f);
+        if (!f.grounded) { f.vy = FASTFALL; f.fastfall = true; f.pendingShock = id; }
+        else this._shockwave(f, id);
         break;
-      case 'uppercut':
-        f.vy = -980;
+      case 'uppercut': {
+        const sky = id === 'skybreaker';
+        f.vy = sky ? -1120 : -980;
         f.grounded = false;
-        f.melee = { name: 'upper', dmg: 14.3, kb: 667, ks: 30, rx: 48, ry: 68, ang: -88, until: this.tick + 18, hit: new Set() };
+        f.melee = { name: 'upper', dmg: 14.3, kb: sky ? 785 : 667, ks: 30, rx: sky ? 65 : 48, ry: sky ? 82 : 68, ang: -88, until: this.tick + 18, hit: new Set() };
         break;
+      }
       case 'counter':
-        f.counterT = COUNTER_WINDOW;
+        f.counterT = id === 'foresight' ? 0.95 : 0.6;
         break;
       case 'blink': {
         const len = Math.hypot(dir.x, dir.y) > 0.3 ? 1 : 0;
         const dx = len ? dir.x : f.facing, dy = len ? dir.y : 0;
         const n = Math.hypot(dx, dy) || 1;
-        f.x += (dx / n) * 150;
-        f.y += (dy / n) * 150;
+        const range = id === 'longblink' ? 235 : 150;
+        f.x += (dx / n) * range;
+        f.y += (dy / n) * range;
         f.y = Math.min(f.y, this.stage.main.y - F_H / 2); // never blink into the floor
         f.invuln = Math.max(f.invuln, 0.35);
         f.vy = Math.min(f.vy, 0);
@@ -2322,10 +2315,11 @@ export class Game {
         // a small flame splash when it dies
         const [nx, ny] = this._abilityAim(f);
         const base = Math.atan2(ny, nx);
-        for (const off of [-0.26, 0, 0.26]) {
+        const spread = id === 'starfall' ? [-0.48, -0.24, 0, 0.24, 0.48] : [-0.26, 0, 0.26];
+        for (const off of spread) {
           const ang = base + off;
           this.projectiles.push({
-            eid: nextEid++, kind: 'bolt', owner: f.id,
+            eid: nextEid++, kind: 'bolt', owner: f.id, variant,
             x: f.x + Math.cos(ang) * 40, y: f.y - 8 + Math.sin(ang) * 20,
             vx: Math.cos(ang) * 580, vy: Math.sin(ang) * 580, ttl: 1.1,
             dmg: 5, kb: 140, ks: 10, r: 11,
@@ -2337,39 +2331,39 @@ export class Game {
       }
       case 'gale':
         // radial windbox: modest damage, an enormous shove; works midair
-        this.events.push({ e: 'gale', id: f.id, x: f.x, y: f.y });
-        this._radialHit(f, 200, { dmg: 10, kb: 840, ks: 6 },
+        this.events.push({ e: 'gale', id: f.id, x: f.x, y: f.y, variant });
+        this._radialHit(f, variant ? 260 : 200, { dmg: 10, kb: variant ? 980 : 840, ks: 6 },
           (dx, dy) => Math.atan2(dy, dx) * 0.25 - Math.PI / 6);
         break;
       case 'bubble':
-        f.invuln = Math.max(f.invuln, BUBBLE_INVULN);
+        f.invuln = Math.max(f.invuln, id === 'prism' ? 2.35 : 1.8);
+        if (id === 'repulse') this._radialHit(f, 135, { dmg: 3, kb: 495, ks: 5 }, () => deg(-20));
         break;
       case 'mend':
         // co-op heals real HP; PvP shaves percent
-        if (this.coop) f.hp = Math.min(f.maxHp, f.hp + f.maxHp * 0.15);
-        else f.pct = Math.max(0, f.pct - 15);
-        this.events.push({ e: 'mend', id: f.id, x: f.x, y: f.y });
+        this._healAbility(f, id === 'renewal' ? 24 : 15);
+        this.events.push({ e: 'mend', id: f.id, x: f.x, y: f.y, variant });
         break;
       case 'hook':
         // chain claw: reels the first foe it tags in toward you. The pull
         // scales with the hook's flight distance — a point-blank tag barely
         // tugs, a max-range snag hauls them all the way in (see HOOK_KB0/1)
         this.projectiles.push({
-          eid: nextEid++, kind: 'hook', owner: f.id,
+          eid: nextEid++, kind: 'hook', owner: f.id, variant,
           x: f.x + f.facing * 40, y: f.y - 8,
           x0: f.x + f.facing * 40, y0: f.y - 8,
-          vx: f.facing * 820, vy: 0, ttl: 1.05,
-          dmg: 6, kb: HOOK_KB0, ks: 3, r: 15, pull: true, ang: -20,
+          vx: f.facing * (variant ? 1120 : 940), vy: 0, ttl: variant ? 1.25 : 1.05,
+          dmg: 8, kb: HOOK_KB0, ks: 3, r: 20, pull: true, ang: -20,
         });
         break;
       case 'trap':
         // planted jaws: drop at your feet and sit armed until someone steps
         // in — the snap locks the victim in a long stun
         this.projectiles.push({
-          eid: nextEid++, kind: 'trap', owner: f.id,
+          eid: nextEid++, kind: 'trap', owner: f.id, variant,
           x: f.x + f.facing * 30, y: f.y + F_H / 2 - 12,
-          vx: 0, vy: 0, grav: 1400, ttl: 6,
-          dmg: 8, kb: 330, ks: 16, r: 16, ang: -80, pierce: true, stun: 1.0,
+          vx: 0, vy: 0, grav: 1400, ttl: 8,
+          dmg: 10, kb: 330, ks: 16, r: variant ? 33 : 24, ang: -80, pierce: true, stun: variant ? 1.45 : 1,
         });
         break;
       case 'springtrap':
@@ -2377,21 +2371,28 @@ export class Game {
         // dead flat, reversing the way they were moving (or facing, if
         // they stood still). No stun; the point is the eviction.
         this.projectiles.push({
-          eid: nextEid++, kind: 'spring', owner: f.id,
+          eid: nextEid++, kind: 'spring', owner: f.id, variant,
           x: f.x + f.facing * 30, y: f.y + F_H / 2 - 12,
-          vx: 0, vy: 0, grav: 1400, ttl: 6,
-          dmg: 4, kb: 560, ks: 10, r: 16, ang: 0, pierce: true, spring: true,
+          vx: 0, vy: 0, grav: 1400, ttl: 8,
+          dmg: 6, kb: variant ? 870 : 680, ks: 10, r: variant ? 34 : 24, ang: 0, pierce: true, spring: true,
         });
         break;
       case 'troop':
         // a random pull from the walking roster answers the call
-        this._summonAlly(f, SUMMON_GROUND_KINDS[Math.floor(this.rng() * SUMMON_GROUND_KINDS.length)]);
+        if (id === 'vanguard') this._summonAlly(f, 'brute', 1.4);
+        else this._summonAlly(f, SUMMON_GROUND_KINDS[Math.floor(this.rng() * SUMMON_GROUND_KINDS.length)]);
         break;
       case 'bird':
         this._summonAlly(f, 'flyer');
+        if (id === 'twinflight') this._summonAlly(f, 'flyer', 1, -1);
         break;
     }
-    this.events.push({ e: 'ability', id: f.id, ability: id, x: f.x, y: f.y, dir: f.facing, up: evUp });
+    this.events.push({ e: 'ability', id: f.id, ability: def.family, variant, x: f.x, y: f.y, fromX, fromY, dir: f.facing, up: evUp });
+  }
+
+  _healAbility(f, amount) {
+    if (this.coop) f.hp = Math.min(f.maxHp, f.hp + f.maxHp * amount / 100);
+    else f.pct = Math.max(0, f.pct - amount);
   }
 
   // Teleport anchor: press once to drop a beacon at your feet, armed for
@@ -2400,9 +2401,11 @@ export class Game {
   // fighter — a live one blocks a fresh drop. The beacon expires before the
   // cooldown does, so there's a dead stretch where the warp window has
   // closed but the ability isn't back yet.
-  _useAnchor(f, slot) {
+  _useAnchor(f, slot, def) {
+    const variant = def.premium ? def.id : undefined;
     const anchor = this.projectiles.find(p => p.kind === 'anchor' && p.owner === f.id && p.ttl > 0);
     if (anchor) {
+      const fromX = f.x, fromY = f.y;
       anchor.ttl = 0;
       f.x = anchor.x;
       f.y = anchor.y;
@@ -2411,23 +2414,25 @@ export class Game {
       f.grounded = false;
       f.fastfall = false;
       f.invuln = Math.max(f.invuln, ANCHOR_TP_INVULN);
-      this.events.push({ e: 'ability', id: f.id, ability: 'anchortp', x: f.x, y: f.y, dir: f.facing });
+      if (variant === 'lifeline') this._healAbility(f, 10);
+      this.events.push({ e: 'ability', id: f.id, ability: 'anchortp', variant, x: f.x, y: f.y, fromX, fromY, dir: f.facing });
       return;
     }
     if (f.cds[slot] > 0) return;
-    const cd = ABILITY_DEFS.anchor.cd * (f.st.cdMult || 1);
+    const cd = def.cd * (f.st.cdMult || 1);
     f.cds[slot] = cd;
     this.projectiles.push({
-      eid: nextEid++, kind: 'anchor', owner: f.id,
+      eid: nextEid++, kind: 'anchor', owner: f.id, variant,
       x: f.x, y: f.y, vx: 0, vy: 0, ttl: Math.min(ANCHOR_TTL, cd),
     });
-    this.events.push({ e: 'ability', id: f.id, ability: 'anchor', x: f.x, y: f.y, dir: f.facing });
+    this.events.push({ e: 'ability', id: f.id, ability: 'anchor', variant, x: f.x, y: f.y, dir: f.facing });
   }
 
-  _shockwave(f) {
+  _shockwave(f, id = f.pendingShock) {
+    const fault = id === 'faultline';
     f.pendingShock = false;
-    this.events.push({ e: 'shockwave', id: f.id, x: f.x, y: f.y + F_H / 2 });
-    this._radialHit(f, 190, { dmg: 10, kb: 280, ks: 18 },
+    this.events.push({ e: 'shockwave', id: f.id, x: f.x, y: f.y + F_H / 2, variant: fault ? id : undefined });
+    this._radialHit(f, fault ? 265 : 190, { dmg: fault ? 14 : 10, kb: 280, ks: 18 },
       (dx, dy) => Math.atan2(dy, dx) * 0.3 - Math.PI / 2.4);
   }
 
@@ -2566,7 +2571,7 @@ export class Game {
 
     // projectiles vs fighters
     for (const pr of this.projectiles) {
-      if (pr.kind === 'anchor' || pr.arm > 0) continue;   // warnings are visible but harmless
+      if (pr.ttl <= 0 || pr.kind === 'anchor' || pr.arm > 0) continue;
       // A bomb dropped by an interrupted charge is inert to players — no
       // free contact detonation just because someone (often whoever landed
       // the interrupting hit) is standing right where it fell. It still
@@ -2606,12 +2611,7 @@ export class Game {
             const dirX = pr.pull ? (Math.sign(att.x - pos.x) || 1)
               : pr.spring ? -(Math.sign(o.vx) || o.facing || 1)
               : (Math.sign(pr.vx) || 1);
-            let spec = pr;
-            if (pr.pull && pr.x0 != null) {
-              // grapple pull grows with how far the hook flew before tagging
-              const dist = Math.hypot(pr.x - pr.x0, pr.y - pr.y0);
-              spec = { ...pr, kb: HOOK_KB0 + (HOOK_KB1 - HOOK_KB0) * Math.min(1, dist / HOOK_RANGE) };
-            }
+            const spec = pr.pull ? hookImpact(pr) : pr;
             let hitAng = deg(pr.ang ?? -40), hitDir = dirX;
             if (pr.kind === 'hammerwave') {
               // Hammer knockback blends the wielder's aim with the radial
@@ -2626,7 +2626,7 @@ export class Game {
             this._applyHit(att, o, spec, hitAng, hitDir, false, !!pr.pierce);
           }
           if (pr.thru) pr.hit.add(o.id);   // sail on through
-          else { pr.struck = o.id; pr.ttl = 0; }   // burst AoE skips the direct victim
+          else { pr.struck = o.id; pr.ttl = 0; break; }   // burst AoE skips the direct victim
         }
       }
     }
@@ -2655,8 +2655,9 @@ export class Game {
               // Bombs detonate on touch — the explosion (handled once ttl
               // hits zero, next tick) is the payload, not a direct hit.
               if (pr.kind === 'bomb') { pr.ttl = 0; break; }
-              const dirX = pr.spring ? -(Math.sign(e.vx) || e.facing || 1) : (Math.sign(pr.vx) || 1);
-              this._hitEnemy(att, e, pr, deg(pr.ang ?? -40), dirX, false);
+              const dirX = pr.pull ? Math.sign(att.x - e.x) || 1
+                : pr.spring ? -(Math.sign(e.vx) || e.facing || 1) : (Math.sign(pr.vx) || 1);
+              this._hitEnemy(att, e, pr.pull ? hookImpact(pr) : pr, deg(pr.ang ?? -40), dirX, false);
               if (pr.thru) pr.hit?.add('e' + e.eid);
               else { pr.struck = 'e' + e.eid; pr.ttl = 0; break; }   // burst AoE skips the direct victim
             }
@@ -2931,6 +2932,7 @@ export class Game {
 
   _stepProjectiles() {
     for (const pr of this.projectiles) {
+      if (pr.ttl <= 0) continue;
       const prevX = pr.x, prevY = pr.y;
       if (pr.arm > 0) pr.arm = Math.max(0, pr.arm - TICK);
       if (pr.ret) {
@@ -2964,6 +2966,7 @@ export class Game {
         }
       }
       if (pr.kind === 'bomb') this._settleBomb(pr, prevX, prevY);
+      else if (pr.variant === 'cinderskip') this._skipFireball(pr, prevX, prevY);
       else if (pr.grav) this._settleTrap(pr);
       else if (pr.plat != null) {
         // settled on a platform: ride it (traps on the crane girder sweep too)
@@ -2981,6 +2984,24 @@ export class Game {
       else if (pr.fireR) { pr.boomed = true; this._fireBoom(pr); }
     }
     this.projectiles = this.projectiles.filter(p => p.ttl > 0);
+  }
+
+  _skipFireball(pr, prevX, prevY) {
+    if (pr.vy <= 0 || pr.ttl <= 0) return;
+    let firstTop = Infinity;
+    for (const pl of [this.stage.main, ...this.platsNow()]) {
+      const top = pl.y - pr.r;
+      if (prevY > top || pr.y < top || top >= firstTop) continue;
+      const hitX = prevX + (pr.x - prevX) * (top - prevY) / (pr.y - prevY);
+      if (hitX + pr.r > pl.x && hitX - pr.r < pl.x + pl.w) firstTop = top;
+    }
+    if (!Number.isFinite(firstTop)) return;
+    pr.y = firstTop;
+    if (!pr.skips) { pr.ttl = 0; return; }
+    pr.skips--;
+    pr.vx *= -1;
+    pr.vy = -Math.max(250, Math.min(370, pr.vy * 0.8));
+    this.events.push({ e: 'fireskip', x: pr.x, y: pr.y + pr.r });
   }
 
   _settleBomb(pr, prevX = pr.x, prevY = pr.y) {
@@ -3713,7 +3734,7 @@ export class Game {
   // any creep) but carries `ally` (the summoner's fighter id) and `life`
   // (seconds left). Allies are stepped by _stepAllies in BOTH modes —
   // _stepEnemies skips them — and target creeps in co-op, rivals in PvP.
-  _summonAlly(f, kind) {
+  _summonAlly(f, kind, hpMult = 1, side = 1) {
     const t = ENEMY_TYPES[kind] || ENEMY_TYPES.grunt;
     // per-layer cap: at the limit, the weakest of your summons in that
     // layer is dismissed on the spot to make room for the fresh arrival
@@ -3729,18 +3750,20 @@ export class Game {
       this.enemies.splice(this.enemies.indexOf(weakest), 1);
     }
     const hw = t.w / 2, hh = t.h / 2;
+    const x = f.x + side * f.facing * 70;
+    const hp = Math.round(t.hp * hpMult);
     this.enemies.push({
       eid: nextEid++, kind, hw, hh,
-      x: f.x + f.facing * 70,
+      x,
       y: t.fly ? f.y - 50 : f.y + F_H / 2 - hh,
-      vx: 0, vy: 0, hp: t.hp, maxHp: t.hp, cr: 0,
+      vx: 0, vy: 0, hp, maxHp: hp, cr: 0,
       facing: f.facing, grounded: false, hurt: 0,
       windup: 0, atkCd: 0.6, stagger: 0,
       temperament: 'bold', focusId: null, elite: false,
       variant: 0, rushT: 0, rushHit: null, atkKind: 0, aimX: 0, aimY: 0,
       ally: f.id, life: SUMMON_LIFE,
     });
-    this.events.push({ e: 'summon', x: f.x + f.facing * 70, y: f.y - 20, kind, id: f.id });
+    this.events.push({ e: 'summon', x, y: f.y - 20, kind, id: f.id });
   }
 
   // Who a summon hunts: the nearest live creep in co-op; in PvP the
@@ -4200,7 +4223,7 @@ export class Game {
     }
     e.hp -= dmg;
     e.focusId = att.id;
-    this._staggerEnemy(e);
+    this._staggerEnemy(e, spec.stun);
     e.hurt = 0.14;
     att.score.dmg += dmg;
     if (dmg > att.score.maxHit) att.score.maxHit = dmg;
@@ -4302,9 +4325,9 @@ export class Game {
 
   // Small enemies lose their attack and contact priority when struck. Brutes
   // deliberately power through hits, giving the roster a readable exception.
-  _staggerEnemy(e) {
+  _staggerEnemy(e, duration = 0.32) {
     if (e.kind === 'brute' || ENEMY_TYPES[e.kind]?.boss || e.hp <= 0) return;
-    e.stagger = 0.32;
+    e.stagger = Math.max(e.stagger || 0, duration);
     e.windup = 0;
     e.atkCd = Math.max(e.atkCd || 0, 0.2);
   }

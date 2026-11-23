@@ -114,7 +114,7 @@ const mkGame = (abilities, extra = []) => new Game([
   g._useAbility(a, 0);
   const beacon = g.projectiles.find(p => p.kind === 'anchor');
   check('the button drops a beacon at your feet', beacon && beacon.x === 40 && beacon.y === -100);
-  check('the beacon is armed for 4s while the cooldown runs 6s', beacon.ttl === 4 && a.cds[0] === 6);
+  check('the beacon is armed for 5s while the cooldown runs 6s', beacon.ttl === 5 && a.cds[0] === 6);
 
   // wander off, then activate: the button warps you straight back
   a.x = 500; a.y = -400; a.vx = 300; a.vy = -50;
@@ -149,16 +149,16 @@ const mkGame = (abilities, extra = []) => new Game([
   check('a new beacon can be dropped once the cooldown clears',
     g.projectiles.some(p => p.kind === 'anchor' && p.x === 900));
 
-  // the beacon expires at 4s while the cooldown still has 2s to run: the
+  // the beacon expires at 5s while the cooldown still has 1s to run: the
   // warp window is gone and the button goes dead until the cooldown clears
   const g3 = mkGame(['anchor']);
   const c = g3.fighters[0];
   c.x = 0; c.y = -50;
   g3._useAbility(c, 0);
   g3.inputs.set('A', blankInput()); g3.inputs.set('B', blankInput());
-  for (let i = 0; i < 4.2 / (1 / 60); i++) g3.step();
-  check('the beacon expires after 4s', !g3.projectiles.some(p => p.kind === 'anchor'));
-  check('...while the cooldown is still running', c.cds[0] > 1);
+  for (let i = 0; i < 5.2 / (1 / 60); i++) g3.step();
+  check('the beacon expires after 5s', !g3.projectiles.some(p => p.kind === 'anchor'));
+  check('...while the cooldown is still running', c.cds[0] > 0.5);
   const beforeX = c.x;
   g3._useAbility(c, 0);
   check('pressing in the dead stretch neither warps nor drops',
