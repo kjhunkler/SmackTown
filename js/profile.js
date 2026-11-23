@@ -11,7 +11,7 @@ export const STATS = [
   { id: 'power',   name: 'Power',   desc: '+5% damage & knockback per level',      cost: 80, max: 5 },
   { id: 'speed',   name: 'Speed',   desc: '+6% run speed per level',               cost: 80, max: 5 },
   { id: 'defense', name: 'Defense', desc: '-6% knockback & -4% damage taken per level', cost: 80, max: 5 },
-  { id: 'agility', name: 'Agility', desc: '+jump height & air control per level. Level 5 unlocks Flight: use your second midair jump to steer in any direction for 1.5 seconds.',  cost: 80, max: 5 },
+  { id: 'agility', name: 'Agility', desc: '+jump height & air control per level. Level 5 unlocks Flight: use your second midair jump to steer in any direction for 20 seconds.',  cost: 80, max: 5 },
 ];
 
 export const FOCUS_LEVEL = 2;

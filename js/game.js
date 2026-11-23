@@ -1497,7 +1497,7 @@ export class Game {
 
     // --- jumping / fast fall / drop-through ---
     if (canAct && inp.jump && f.jumps > 0 && !f.flightTicks) {
-      if (f.st.flight && !f.grounded && f.jumps === f.st.maxJumps - 2) f.flightTicks = Math.round(1.5 / TICK);
+      if (f.st.flight && !f.grounded && f.jumps === f.st.maxJumps - 2) f.flightTicks = Math.round(20 / TICK);
       f.vy = -(f.grounded || f.jumps === f.st.maxJumps ? JUMP_V : JUMP2_V) * f.st.jumpMult;
       f.jumps--;
       f.grounded = false;
