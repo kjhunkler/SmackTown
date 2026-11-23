@@ -1546,7 +1546,7 @@ class Session {
         pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
         aim: f.atkDir,
-        mana: f.mana, weapon: f.st.weapon,
+        flightTicks: f.flightTicks, mana: f.mana, weapon: f.st.weapon,
         color: this.meta.get(f.id)?.color, team: this.meta.get(f.id)?.team, hat: this.activeMeta(f.id)?.hat, cds: f.cds,
         score: f.score, parked: f.parked,
         hp: f.hp, maxHp: f.maxHp, downT: f.downT,
@@ -1882,7 +1882,7 @@ class Session {
       hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', blade: r[11] === 'slash', spear: r[11] === 'thrust', hammerThrust: r[11] === 'hthrust', chg: r[14][5] || 0, hammerAir: !!r[14][6] } : null,
       aim: { x: r[26] || 0, y: r[27] || 0 },
       guard: r[28],
-      mana: r[38], weapon: this.activeMeta(r[0])?.build?.weapon,
+      flightTicks: r[52] || 0, mana: r[38], weapon: this.activeMeta(r[0])?.build?.weapon,
       color: this.meta.get(r[0])?.color, team: this.meta.get(r[0])?.team, hat: this.activeMeta(r[0])?.hat,
       score: r[34] ? { ko: r[34][0], fall: r[34][1], sd: r[34][2], dmg: r[34][3], taken: r[34][4], maxHit: r[34][5], cr: r[34][6] || 0, elite: r[34][7] || 0 } : null,
       parked: !!r[37],
@@ -1917,7 +1917,7 @@ class Session {
         pct: mine.pct, stocks: mine.stocks, state: mine.state, dead: mine.dead,
         invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
         aim: mine.atkDir,
-        guard: mine.guard, mana: mine.mana, weapon: mine.st.weapon,
+        flightTicks: mine.flightTicks, guard: mine.guard, mana: mine.mana, weapon: mine.st.weapon,
         cds: mine.cds, color: this.meta.get(mine.id)?.color, team: this.meta.get(mine.id)?.team, hat: this.activeMeta(mine.id)?.hat,
       };
       // HP, downed state and score are authoritative-only (prediction never

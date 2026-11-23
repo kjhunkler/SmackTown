@@ -11,9 +11,10 @@ export const STATS = [
   { id: 'power',   name: 'Power',   desc: '+5% damage & knockback per level',      cost: 80, max: 5 },
   { id: 'speed',   name: 'Speed',   desc: '+6% run speed per level',               cost: 80, max: 5 },
   { id: 'defense', name: 'Defense', desc: '-6% knockback & -4% damage taken per level', cost: 80, max: 5 },
-  { id: 'agility', name: 'Agility', desc: '+jump height & air control per level. Level 5 unlocks Flight: use your second midair jump to steer in any direction for 20 seconds.',  cost: 80, max: 5 },
+  { id: 'agility', name: 'Agility', desc: '+jump height & air control per level',  cost: 80, max: 5 },
 ];
 
+export const FLIGHT = { id: 'flight', name: 'Flight', level: 5, cost: 100, desc: 'Use your second midair jump to fly in any direction for 20 seconds.' };
 export const FOCUS_LEVEL = 2;
 export const TRAIT_FOCUS = {
   power:   { name: 'Haymaker',    cost: 100, desc: 'Deal 14% more knockback.' },
@@ -173,6 +174,7 @@ export const MAX_BUILD_COST = (() => {
   for (const s of STATS) c += s.max * s.cost;
   c += Math.max(...WEAPONS.map(w => w.cost));
   const top = (arr, n) => arr.map(x => x.cost).sort((a, b) => b - a).slice(0, n).reduce((s, x) => s + x, 0);
+  c += FLIGHT.cost;
   c += Object.values(TRAIT_FOCUS).reduce((sum, focus) => sum + focus.cost, 0);
   const families = ABILITIES.map(a => ({ cost: a.cost + Math.max(...ABILITY_UPGRADES[a.id].map(u => u.premium)) }));
   c += top(families, MAX_ABILITIES) + top(AUGMENTS, MAX_AUGMENTS);
@@ -278,6 +280,7 @@ export function buildCost(build) {
   let total = 0;
   for (const s of STATS) total += (build.stats[s.id] || 0) * s.cost;
   for (const s of STATS) if (build.focuses?.includes(s.id)) total += TRAIT_FOCUS[s.id].cost;
+  if (build.focuses?.includes(FLIGHT.id)) total += FLIGHT.cost;
   total += WEAPONS.find(w => w.id === build.weapon)?.cost || 0;
   for (const id of build.abilities) {
     const a = abilityDef(id);
@@ -299,6 +302,7 @@ export function sanitizeBuild(raw, cap = TOTAL_CREDITS) {
       b.stats[s.id] = Math.min(s.max, Math.max(0, Math.floor(Number(v) || 0)));
       if (b.stats[s.id] >= FOCUS_LEVEL && Array.isArray(raw.focuses) && raw.focuses.includes(s.id)) b.focuses.push(s.id);
     }
+    if (b.stats.agility >= FLIGHT.level && Array.isArray(raw.focuses) && raw.focuses.includes(FLIGHT.id)) b.focuses.push(FLIGHT.id);
     if (WEAPONS.some(w => w.id === raw.weapon)) b.weapon = raw.weapon;
     if (Array.isArray(raw.abilities)) {
       const families = new Set();
@@ -381,6 +385,7 @@ export function derivedStats(build) {
   const has = id => b.augments.includes(id);
   const glass = has('glasscannon');
   const armor = (has('ironclad') ? 0.9 : 1) * (b.focuses.includes('defense') ? 0.88 : 1);
+  const flight = b.focuses.includes(FLIGHT.id);
   const jumpCount = 2 + (has('feather') ? 1 : 0) + (b.focuses.includes('agility') ? 1 : 0);
   return {
     dmgMult:   (1 + 0.05 * b.stats.power) * (glass ? 1.2 : 1),
@@ -395,8 +400,8 @@ export function derivedStats(build) {
     // Co-op health pool (unused by stock matches): Defense doubles as a
     // toughness stat, so a tank build carries more HP through an expedition.
     maxHp:     100 + 25 * b.stats.defense,
-    flight: b.stats.agility >= 5,
-    maxJumps:  b.stats.agility >= 5 ? Math.max(3, jumpCount) : jumpCount,
+    flight,
+    maxJumps:  flight ? Math.max(3, jumpCount) : jumpCount,
     cdMult:    has('quickhands') ? 0.8 : 1,
     weapon:    b.weapon,
     abilities: b.abilities,
@@ -598,7 +603,7 @@ export function selectLoadout(name) {
 export function traitLabels(build) {
   return STATS.filter(s => build.stats?.[s.id] > 0).map(s => {
     const focus = build.focuses?.includes(s.id) ? ` (${TRAIT_FOCUS[s.id].name})` : '';
-    return `${s.name} ${build.stats[s.id]}${focus}`;
+    return `${s.name} ${build.stats[s.id]}${focus}${s.id === 'agility' && build.focuses?.includes(FLIGHT.id) ? ' (Flight)' : ''}`;
   });
 }
 

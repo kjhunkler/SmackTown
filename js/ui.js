@@ -3,7 +3,7 @@
 import {
   COLORS, TOTAL_CREDITS, STATS, ABILITIES, AUGMENTS, WEAPONS,
   MAX_ABILITIES, MAX_AUGMENTS, buildCost, buildSummary,
-  ABILITY_UPGRADES, abilityDef, FOCUS_LEVEL, TRAIT_FOCUS, traitLabels, derivedStats,
+  ABILITY_UPGRADES, abilityDef, FLIGHT, FOCUS_LEVEL, TRAIT_FOCUS, traitLabels, derivedStats,
   loadLoadouts, deleteLoadout, hatArt, loadHats, selectedLoadout, selectLoadout,
   HAT_W, HAT_H,
 } from './profile.js';
@@ -109,6 +109,8 @@ export function renderBuilder(work) {
   for (const s of STATS) {
     const lvl = work.build.stats[s.id];
     const focus = TRAIT_FOCUS[s.id];
+    const choices = [{ ...focus, id: s.id, level: FOCUS_LEVEL }];
+    if (s.id === 'agility') choices.push(FLIGHT);
     const focused = work.build.focuses?.includes(s.id);
     const row = document.createElement('div');
     row.className = 'stat-row';
@@ -126,23 +128,28 @@ export function renderBuilder(work) {
         </div>
         <div class="stat-cost">${s.cost} cr / lvl</div>
       </div>
-      <button type="button" id="focus-${s.id}" class="upgrade-choice" aria-pressed="${!!focused}" ${lvl < FOCUS_LEVEL || (!focused && left < focus.cost) ? 'disabled' : ''}>
-        <strong>${focus.name}</strong><span class="choice-cost">${focused ? 'Refund' : lvl < FOCUS_LEVEL ? 'Level ' + FOCUS_LEVEL + ' ·' : 'Buy'} ${focus.cost} cr</span>
-        <span class="choice-desc">${focus.desc}</span>
+      ${choices.map(choice => {
+        const owned = work.build.focuses?.includes(choice.id);
+        return `<button type="button" id="focus-${choice.id}" class="upgrade-choice" aria-pressed="${!!owned}" ${lvl < choice.level || (!owned && left < choice.cost) ? 'disabled' : ''}>
+        <strong>${choice.name}</strong><span class="choice-cost">${owned ? 'Refund' : lvl < choice.level ? 'Level ' + choice.level + ' ·' : 'Buy'} ${choice.cost} cr</span>
+        <span class="choice-desc">${choice.desc}</span>
       </button>`;
+      }).join('')}`;
     row.querySelectorAll('[data-d]').forEach(b =>
       b.addEventListener('click', () => {
         work.build.stats[s.id] = lvl + Number(b.dataset.d);
-        if (focused && work.build.stats[s.id] < FOCUS_LEVEL) {
-          work.build.focuses = work.build.focuses.filter(id => id !== s.id);
-        }
+        work.build.focuses = (work.build.focuses || []).filter(id =>
+          !choices.some(choice => choice.id === id && work.build.stats[s.id] < choice.level));
         refreshShopSelection(work, b);
       }));
-    const focusButton = row.querySelector('.upgrade-choice');
-    focusButton.addEventListener('click', () => {
-      work.build.focuses = focused ? work.build.focuses.filter(id => id !== s.id) : [...(work.build.focuses || []), s.id];
-      refreshShopSelection(work, focusButton);
-    });
+    for (const choice of choices) {
+      const button = row.querySelector('#focus-' + choice.id);
+      button.addEventListener('click', () => {
+        const equipped = work.build.focuses || [];
+        work.build.focuses = equipped.includes(choice.id) ? equipped.filter(id => id !== choice.id) : [...equipped, choice.id];
+        refreshShopSelection(work, button);
+      });
+    }
     statsBox.appendChild(row);
   }
 

@@ -4244,6 +4244,42 @@ export class Renderer {
     this.ambient = this.ambient.filter(e => e.t < e.life);
   }
 
+  static drawFlightWings(ctx, f, t) {
+    const beat = f.vy > 0 ? 0 : Math.sin(t * 12);
+    const flash = f.flightTicks <= 120 && Math.floor(f.flightTicks / 15) % 2 === 0;
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(side * 6, -7);
+      ctx.scale(side, 1);
+      ctx.rotate(-0.13 + beat * 0.46);
+      const plume = ctx.createLinearGradient(0, 10, 55, -25);
+      plume.addColorStop(0, '#53439d');
+      plume.addColorStop(0.55, flash ? '#ffd865' : '#38cce8');
+      plume.addColorStop(1, flash ? '#ffffff' : '#dcffff');
+      ctx.fillStyle = plume;
+      ctx.strokeStyle = '#20253e';
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      for (let i = 4; i >= 0; i--) {
+        const tip = 61 - i * 7;
+        const y = -30 + i * 9;
+        ctx.beginPath();
+        ctx.moveTo(0, 7);
+        ctx.quadraticCurveTo(15, -13, tip, y);
+        ctx.quadraticCurveTo(tip - 12, y + 17, 9, 14);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.moveTo(1, 5);
+      ctx.quadraticCurveTo(16, -14, 41, -19);
+      ctx.strokeStyle = flash ? '#fff' : '#a6ffff';
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   static drawFighter(ctx, f, isMe, t, sq = null, flash = 0) {
     ctx.save();
     ctx.translate(f.x, f.y);
@@ -4283,6 +4319,8 @@ export class Renderer {
       ctx.lineTo(7, -F_H / 2 - 38);
       ctx.closePath(); ctx.fill();
     }
+
+    if (f.flightTicks > 0) Renderer.drawFlightWings(ctx, f, t);
 
     // getup roll: tumble the whole body inward
     if (f.state === 'roll') ctx.rotate(t * 16 * f.facing);
