@@ -1122,7 +1122,7 @@ export class Game {
       atkHit: new Set(),
       atkSpd: 0,                    // speed when the swing began (momentum augment)
       chg: 0,                       // charge fraction baked into the live attack
-      chgAim: null,                 // 8-way aim captured when the charge began
+      chgAim: null,                 // current 8-way charge aim
       chargeMana: MANA_MAX,         // fuel at wind-up start (caps hammer charge)
       invuln: 0, counterT: 0, dashT: 0, slideT: 0,
       guard: GUARD_MAX, standT: 0,  // duck guard meter & stand-up delay
@@ -1527,9 +1527,9 @@ export class Game {
     if (mayAct && inp.ab0) { this._useAbility(f, 0); inp.ab0 = false; }
     if (mayAct && inp.ab1) { this._useAbility(f, 1); inp.ab1 = false; }
 
-    // Hammer aim is live for the whole hold. Both the attack gesture and the
-    // movement stick may redirect it any number of times before release.
-    if (inCharge && f.st.weapon === 'hammer' && inp.chg) {
+    // Magic keeps its starting aim. Other weapons can be redirected by the
+    // held attack input or movement stick throughout the charge.
+    if (inCharge && f.st.weapon !== 'magic' && inp.chg) {
       let dx = inp.chg.dx | 0, dy = inp.chg.dy | 0;
       if (Math.abs(inp.mx) > .3 || Math.abs(inp.my) > .3) {
         dx = Math.abs(inp.mx) > .3 ? Math.sign(inp.mx) : 0;
@@ -1538,6 +1538,7 @@ export class Game {
       if (dx || dy) {
         f.chgAim = { dx, dy };
         f.atkDir = { x: dx, y: dy };
+        f.atk = this._weaponAttack(f, dx, dy);
         if (dx) f.facing = dx;
       }
     }
@@ -2192,9 +2193,8 @@ export class Game {
   }
 
   // Wind up a strong attack: the fighter plants (or drifts, midair) with
-  // the telegraph showing while the strong-attack control stays held. The
-  // aim — and therefore which strike comes out — locks when the charge
-  // begins. Each weapon winds up at its own rate.
+  // the telegraph showing while the strong-attack control stays held.
+  // Each weapon winds up at its own rate.
   _startCharge(f, aim) {
     let dx = aim.dx | 0, dy = aim.dy | 0;
     // no neutral strong attack: neutral charges the side strike, as faced

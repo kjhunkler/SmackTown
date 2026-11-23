@@ -5,7 +5,7 @@
 // a rebound. The hammer leaves one lingering hex that poisons on contact but
 // never catches anyone. Run: node test-weapons.mjs
 import { Game, gameFromSnapshot, blankInput, TICK } from './js/game.js';
-import { sanitizeBuild, buildCost, derivedStats } from './js/profile.js';
+import { sanitizeBuild, buildCost, derivedStats, WEAPONS } from './js/profile.js';
 
 let n = 0, fails = 0;
 function check(name, ok) {
@@ -45,7 +45,36 @@ const mkGame = (wA = 'unarmed', wB = 'unarmed') => new Game([
   const g2 = mkGame();
   const a2 = g2.fighters[0];
   g2._startCharge(a2, { dx: 0, dy: 0 });
-  check('neutral charge locks the facing aim', a2.state === 'charge' && a2.chgAim.dx === a2.facing);
+  check('neutral charge starts in the facing direction', a2.state === 'charge' && a2.chgAim.dx === a2.facing);
+}
+
+// --- charge aim follows movement through the normal input path, except for magic ---
+for (const { id: weapon } of WEAPONS) {
+  const g = mkGame(weapon);
+  const f = g.fighters[0];
+  const start = { dx: 1, dy: 0 };
+  g.setInput(f.id, { ...blankInput(), chg: start, mx: 1 });
+  g.step();
+
+  for (const [mx, my] of [[-1, -1], [0, -1]]) {
+    g.setInput(f.id, { ...blankInput(), chg: start, mx, my });
+    g.step();
+    const { dx, dy } = weapon === 'magic' ? start : { dx: mx, dy: my };
+    check(`${weapon} winds up toward ${dx},${dy} with movement at ${mx},${my}`,
+      f.state === 'charge' && f.chgAim.dx === dx && f.chgAim.dy === dy
+      && f.atkDir.x === dx && f.atkDir.y === dy && f.stateT > 0);
+  }
+  if (weapon === 'unarmed') {
+    const hb = g.hitboxFor(f);
+    check('redirecting a side smash upward shows the up-smash telegraph',
+      f.atk === 'usmash' && !hb.active && hb.dy < 0 && hb.chg > 0);
+  }
+
+  g.setInput(f.id, { ...blankInput(), atk: { kind: 'swipe', ...start } });
+  g.step();
+  const { dx, dy } = weapon === 'magic' ? start : { dx: 0, dy: -1 };
+  check(`${weapon} releases its charged attack toward ${dx},${dy}`,
+    f.state === 'attack' && f.atkDir.x === dx && f.atkDir.y === dy && f.chg > 0);
 }
 
 // --- 3. unarmed keeps the classic smash kit ---

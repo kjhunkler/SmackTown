@@ -29,9 +29,9 @@
 // X / LB / RB = ability 1 · LT / RT = ability 2 · right stick = instant
 // smash in the tilt direction (no charging — hold B for that).
 //
-// Charging is reported to the sim as a level field (`chg`, the locked 8-way
-// aim while the control is held); the release ALSO queues the classic swipe
-// attack edge so a press-and-release faster than one poll still attacks.
+// `chg` sends the starting 8-way aim while the attack control is held.
+// The simulation reads live movement to redirect eligible charges. Release
+// also queues a swipe so a press-and-release faster than one poll still attacks.
 
 import { settings } from './settings.js';
 
