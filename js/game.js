@@ -2225,7 +2225,8 @@ export class Game {
     f.chargeMana = f.mana;
     f.atkHit.clear();
     if (f.grounded && f.slideT <= 0) f.vx *= 0.35;   // charging mid-waveland glides
-    this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y });
+    this.events.push({ e: 'charge', id: f.id, x: f.x, y: f.y,
+      weapon: f.st.weapon, span: this._chargeMax(f), over: this._chargeKMax(f) });
   }
 
   _releaseCharge(f) {
@@ -2979,9 +2980,12 @@ export class Game {
         pr.vy -= pr.ret * pr.lny * TICK;
         // piercing rangs re-arm at the turnaround: out and back both
         // connect, but the return leg carries only a fraction of the bite
-        if (pr.thru && was > 0 && pr.vx * pr.lnx + pr.vy * pr.lny <= 0) {
-          pr.hit.clear();
-          pr.dmg *= RANG_RET_DMG;
+        if (was > 0 && pr.vx * pr.lnx + pr.vy * pr.lny <= 0) {
+          this.events.push({ e: 'rangreturn', x: pr.x, y: pr.y });
+          if (pr.thru) {
+            pr.hit.clear();
+            pr.dmg *= RANG_RET_DMG;
+          }
         }
       }
       if (pr.grav) pr.vy = Math.min(pr.vy + pr.grav * TICK, 1150);  // traps drop until they settle
@@ -3002,8 +3006,12 @@ export class Game {
           this.events.push({ e: 'catch', id: own.id, x: pr.x, y: pr.y });
         }
       }
-      if (pr.kind === 'bomb') this._settleBomb(pr, prevX, prevY);
-      else if (pr.variant === 'cinderskip') this._skipFireball(pr, prevX, prevY);
+      if (pr.kind === 'bomb') {
+        this._settleBomb(pr, prevX, prevY);
+        if (pr.ttl > 0 && pr.ttl <= .28 && pr.ttl + TICK > .28) {
+          this.events.push({ e: 'fuse', x: pr.x, y: pr.y });
+        }
+      } else if (pr.variant === 'cinderskip') this._skipFireball(pr, prevX, prevY);
       else if (pr.grav) this._settleTrap(pr);
       else if (pr.plat != null) {
         // settled on a platform: ride it (traps on the crane girder sweep too)

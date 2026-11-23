@@ -1083,9 +1083,9 @@ export function renderSettings({ active = 'sound', capture = null,
 
 function renderSoundPane(box, onAudio) {
   const a = settings.getAudio();
-  box.innerHTML = `<p class="settings-hint">Master scales everything; music and effects mix on top.</p>`;
+  box.innerHTML = `<p class="settings-hint">Ambience adjusts the scenery within the effects mix.</p>`;
   const rows = [
-    ['master', '🔈 Master'], ['music', '🎵 Music'], ['sfx', '💥 Effects'],
+    ['master', '🔈 Master'], ['music', '🎵 Music'], ['sfx', '💥 Effects'], ['ambience', '🍃 Ambience'],
   ];
   for (const [id, name] of rows) {
     const row = document.createElement('label');

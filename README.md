@@ -21,6 +21,9 @@ Add it to your home screen when the browser offers — it installs as a
 fullscreen landscape app and keeps working offline (practice mode; multiplayer
 naturally needs a connection).
 
+The original theme moves from electric keys in the menus to deep kicks and a
+reed lead in battle. [Listen to “Sugar on the Wire”](music/sugar-on-the-wire.mp3).
+
 ## How it works
 
 | Piece | Where | What it does |

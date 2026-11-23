@@ -617,10 +617,12 @@ export class Renderer {
 
     // --- background (themed per map) ---
     const t = performance.now() / 1000;
+    const biomeTheme = this.mapId === 'expanse' ? expanseBiomeAt(this.expanseSeed, this.cam.x) : null;
+    const soundMap = view.city?.room ?? (biomeTheme?.blend > .5 ? biomeTheme.next : biomeTheme?.id) ?? this.mapId;
+    SFX.setStage(soundMap, this.cam.x, W / (2 * this.cam.zoom));
     if (this.panorama) {
       drawArenaBackdrop(ctx, this.panorama, this.arenaArt, W, H, this.cam);
     } else if (!view.city) {
-      const biomeTheme = this.mapId === 'expanse' ? expanseBiomeAt(this.expanseSeed, this.cam.x) : null;
       const th = biomeTheme?.blend ? blendTheme(THEMES[biomeTheme.id], THEMES[biomeTheme.next], biomeTheme.blend)
         : biomeTheme ? THEMES[biomeTheme.id] : this.theme;
       const grd = ctx.createLinearGradient(0, 0, 0, H);

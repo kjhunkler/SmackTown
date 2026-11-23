@@ -11,7 +11,7 @@
 const KEY = 'smacktown.settings.v1';
 
 // 0..1 multipliers. Master scales everything; music/sfx scale their bus.
-export const AUDIO_DEFAULTS = { master: 1, music: 1, sfx: 1 };
+export const AUDIO_DEFAULTS = { master: 1, music: 1, sfx: 1, ambience: 1 };
 
 // Logical actions and their default keyboard keys (lowercased `event.key`).
 // Movement keys are read as held state; the rest edge-trigger on press.
