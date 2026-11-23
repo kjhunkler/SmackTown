@@ -1,66 +1,34 @@
-// Sugar on the Wire • 108 BPM, 4/4. A thumb-piano pickup climbs F♯–A–B,
-// then an electric reed answers it. The same five notes turn up in the UI,
-// spell releases and the little exchange of bells after a win.
+// Sugar on the Wire • 108 BPM, 4/4. One two-bar call and answer throughout.
+// The band changes its touch and density around the player's familiar hook.
 export const STEP = 60 / 108 / 4;
 const BARS = 32;
-const CHORDS = {
-  Bm9:  [35, 57, 62, 66, 73],
-  G9:   [31, 59, 62, 66, 69],
-  D69:  [38, 57, 64, 66, 71],
-  A6:   [33, 57, 61, 66, 71],
-  Em9:  [40, 55, 62, 66, 71],
-  Fsm7: [30, 57, 61, 64, 68],
-};
+// Bm9, Gmaj9, D6/9, A6. Bass followed by the four keyboard voices.
 const CHANGES = [
-  'Bm9','G9','D69','A6', 'Bm9','G9','Em9','A6',
-  'D69','A6','Bm9','G9', 'D69','Fsm7','G9','A6',
-  'Em9','Bm9','G9','D69', 'Em9','Fsm7','G9','A6',
-  'D69','A6','Bm9','G9', 'D69','G9','Em9','A6',
+  [35, 57, 62, 66, 73],
+  [31, 59, 62, 66, 69],
+  [38, 57, 64, 66, 71],
+  [33, 57, 61, 66, 71],
 ];
-// Each line is a bar of [sixteenth, pitch, length in sixteenths].
+// [sixteenth, pitch, length]. F♯–A–B on beats one, two and three,
+// then A–F♯ on one and three. Beat four of the answer is a breath.
 const HOOK = [
-  [[0,66,3],[3,69,1],[6,71,5],[13,74,2]],
-  [[2,73,2],[4,71,3],[9,69,5]],
-  [[0,66,3],[3,69,1],[6,71,3],[10,76,4]],
-  [[1,73,4],[7,69,3],[13,64,2]],
-  [[0,66,3],[3,69,1],[6,71,5],[12,78,3]],
-  [[2,76,3],[6,74,4],[12,71,2]],
-  [[0,67,4],[6,71,3],[10,74,4]],
-  [[0,73,5],[8,69,3],[14,64,1]],
-];
-const REFRAIN = [
-  [[0,78,5],[6,76,2],[9,74,4],[14,69,2]],
-  [[1,73,4],[7,71,3],[12,69,3]],
-  [[0,66,3],[3,69,1],[6,71,4],[12,74,3]],
-  [[2,78,3],[6,76,2],[10,74,5]],
-  [[0,81,5],[7,78,3],[12,76,3]],
-  [[2,73,4],[8,69,5]],
-  [[0,71,4],[6,74,3],[10,78,4]],
-  [[0,76,5],[8,73,3],[13,69,2]],
-];
-const BRIDGE = [
-  [[2,67,7],[12,71,3]], [[4,66,7]],
-  [[1,62,5],[9,69,4]], [[2,66,8]],
-  [[0,64,5],[8,67,4]], [[3,69,3],[9,73,4]],
-  [[0,71,6],[10,74,4]], [[0,73,6],[12,66,2],[14,69,2]],
+  [[0, 66, 3], [4, 69, 3], [8, 71, 6]],
+  [[0, 69, 6], [8, 66, 3]],
 ];
 
 export function scoreStep(synth, step, time, fight) {
   const bar = Math.floor(step / 16) % BARS, beat = step % 16;
   const section = Math.floor(bar / 8), bridge = section === 2;
   const chorus = section === 1 || section === 3;
-  const [root, ...keys] = CHORDS[CHANGES[bar]];
+  const [root, ...keys] = CHANGES[bar % CHANGES.length];
   const v = synth.voice('music', time + (beat % 2 ? STEP * .105 : 0));
-  const notes = (bridge ? BRIDGE : chorus ? REFRAIN : HOOK)[bar % 8];
-  for (const [on, pitch, length] of notes) {
+  for (const [on, pitch, length] of HOOK[bar % HOOK.length]) {
     if (beat !== on) continue;
     const dur = length * STEP;
-    v.note(pitch, dur + .18, chorus ? .20 : .18, {
-      shape: chorus ? 'reed' : 'felt', attack: chorus ? .034 : .009,
-      hold: chorus || bridge ? .47 : .2, fm: chorus ? .12 : .7, pan: -.18,
+    v.note(pitch, dur, bridge ? .15 : .18, {
+      shape: 'felt', attack: .014, hold: .48, fm: .48, pan: -.18,
     });
-    // A quiet answering reflection sits across the stereo field.
-    v.note(pitch, dur + .09, .037, { delay: STEP * 3, shape: 'felt', pan: .65 });
+    if (chorus) v.note(pitch, dur, .052, { shape: 'reed', attack: .065, hold: .46, pan: .28 });
   }
 
   // Thumbed electric bass. The upper partials keep the line on small speakers.
@@ -77,18 +45,9 @@ export function scoreStep(synth, step, time, fight) {
       bridge ? .041 : .066, { shape: 'felt', delay: i * .014,
         attack: bridge ? .23 : .013, hold: bridge ? .45 : .08, pan: i % 2 ? .59 : -.59 }));
   }
-  // The upper register answers only in the gaps left by the lead.
-  if (bar % 4 === 1 && beat === 14) {
-    v.note(keys[2] + 12, .48, .065, { fm: 1.2, ratio: 3, pan: .68 });
-  }
-  // In the last chorus a low marimba answers the lead's held syllables.
-  if (section === 3 && bar % 2 === 0 && (beat === 4 || beat === 8 || beat === 11)) {
-    const reply = beat === 4 ? keys[0] : beat === 8 ? keys[1] : keys[2];
-    v.note(reply, .26, .106, { shape: 'hollow', fm: .75, ratio: 3, pan: .43 });
-  }
-  if ((bar === 15 || bar === 30) && beat === 12) {
-    [78,81,78,76].forEach((m,i) => v.note(m, .26, .071 - i * .009,
-      { delay: i * STEP * .58, fm: .95, pan: .58 - i * .32 }));
+  // A single high tine marks the same turnaround on every fourth bar.
+  if (bar % 4 === 3 && beat === 12) {
+    v.note(78, .38, .040, { fm: .8, ratio: 3, pan: .50 });
   }
   if (!fight) {
     if (!bridge && (beat === 4 || beat === 12)) v.air(1600, 950, .075, .062, { q: 1.1, pan: .28 });

@@ -760,6 +760,7 @@ const WEAPON_DEFS = {
   hammer:  { chargeMax: 2.4, overcharge: 1.5 }, // slow wind-up, long potential charge
   bombs:   { chargeMax: 1.5 },       // charge buys throw distance and blast power
 };
+export const weaponChargeTime = weapon => (WEAPON_DEFS[weapon] || WEAPON_DEFS.unarmed).chargeMax;
 const SWORD_LUNGE = 640;             // release lunge speed along the aim
 const SWORD_LUNGE_CHG = 0.75;        // +75% lunge speed at full charge
 const SWORD_LUNGE_H = 0.7;           // horizontal lunge component trimmed 30%
@@ -2038,7 +2039,7 @@ export class Game {
   }
 
   _chargeMax(f) {
-    return (WEAPON_DEFS[f.st.weapon] || WEAPON_DEFS.unarmed).chargeMax;
+    return weaponChargeTime(f.st.weapon);
   }
 
   // How far a weapon's charge fraction (k) is allowed to run: 1 for a

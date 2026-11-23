@@ -1543,7 +1543,7 @@ class Session {
       tick: this.game.tick, city: this.game.cityRun,
       fighters: this.game.fighters.map(f => ({
         id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, facing: f.facing,
-        pct: f.pct, stocks: f.stocks, state: f.state, dead: f.dead,
+        pct: f.pct, stocks: f.stocks, state: f.state, stateT: f.stateT, dead: f.dead,
         invuln: f.invuln > 0, atk: f.atk, hb: this.game.hitboxFor(f), guard: f.guard,
         aim: f.atkDir,
         flightTicks: f.flightTicks, mana: f.mana, weapon: f.st.weapon,
@@ -1877,7 +1877,7 @@ class Session {
   rowsToFighters(rows) {
     return (rows || []).map(r => ({
       id: r[0], x: r[1], y: r[2], vx: r[3], vy: r[4], facing: r[5],
-      pct: r[6], stocks: r[7], state: r[8], dead: !!r[9],
+      pct: r[6], stocks: r[7], state: r[8], stateT: r[17], dead: !!r[9],
       invuln: !!r[10], atk: r[11] || null, cds: [r[12], r[13]],
       hb: r[14] ? { dx: r[14][0], dy: r[14][1], hw: r[14][2], hh: r[14][3], active: !!r[14][4], round: r[11] === 'nspin', blade: r[11] === 'slash', spear: r[11] === 'thrust', hammerThrust: r[11] === 'hthrust', chg: r[14][5] || 0, hammerAir: !!r[14][6] } : null,
       aim: { x: r[26] || 0, y: r[27] || 0 },
@@ -1914,7 +1914,7 @@ class Session {
       const pv = {
         id: mine.id, x: mine.x + this.corr.x, y: mine.y + this.corr.y,
         vx: mine.vx, vy: mine.vy, facing: mine.facing,
-        pct: mine.pct, stocks: mine.stocks, state: mine.state, dead: mine.dead,
+        pct: mine.pct, stocks: mine.stocks, state: mine.state, stateT: mine.stateT, dead: mine.dead,
         invuln: mine.invuln > 0, atk: mine.atk, hb: this.pred.hitboxFor(mine),
         aim: mine.atkDir,
         flightTicks: mine.flightTicks, guard: mine.guard, mana: mine.mana, weapon: mine.st.weapon,

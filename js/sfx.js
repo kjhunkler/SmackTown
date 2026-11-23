@@ -1,6 +1,7 @@
 import { Synth } from './audio-synth.js';
 import { scoreStep, STEP } from './audio-score.js';
-import { playEffect } from './audio-effects.js';
+import { ChargeVoice, playEffect } from './audio-effects.js';
+import { weaponChargeTime } from './game.js';
 import { landscape, Scenery } from './audio-scenery.js';
 
 const MUTE_KEY = 'smacktown.muted';
@@ -10,7 +11,6 @@ const BIG = new Set(['ko', 'boss', 'bosssig', 'bossdown', 'gameover', 'runend', 
 const CROWD = { telegraph: .19, strike: .095, foefire: .13, enemyko: .11, burn: .12, heart: .13, augment: .18 };
 // The dedicated simulation event supplies the actual sound in each case.
 const CAST_EVENTS = new Set(['shockwave', 'gale', 'mend', 'bird', 'troop']);
-const CHARGE_PITCH = { unarmed: 47, sword: 62, magic: 66, spear: 57, boomerang: 59, shield: 50, hammer: 35, bombs: 42 };
 
 class Sfx {
   constructor() {
@@ -71,6 +71,7 @@ class Sfx {
     this.musicBus.gain.setTargetAtTime(this.muted ? 0 : this.vol.music * MUSIC, t, .025);
     this.fxBus.gain.setTargetAtTime(this.vol.sfx * FX, t, .018);
     this.ambientBus.gain.setTargetAtTime(this.vol.ambience, t, .06);
+    if (!this.vol.master || !this.vol.sfx) this._clearCharges();
     this._syncScenery();
   }
 
@@ -122,9 +123,6 @@ class Sfx {
       this.next += STEP; this.step++;
     }
     this.scenery?.tick(now);
-    for (const [id, charge] of this.charges) {
-      if (charge.until <= now) { charge.gate.disconnect(); this.charges.delete(id); }
-    }
   }
 
   play(cue, ev = {}) {
@@ -149,53 +147,44 @@ class Sfx {
     playEffect(this.synth.voice('fx', t, pan, BIG.has(cue) ? Math.max(.65, level) : level), cue, ev);
   }
 
-  _startCharge(ev) {
-    this._stopCharge(ev.id);
-    if (!this.ac || !this.vol.master || !this.vol.sfx) return;
-    const t = this.ac.currentTime;
-    const pitch = CHARGE_PITCH[ev.weapon] ?? 47;
-    const span = ev.span || 1.2;
-    const pos = ((ev.x ?? this.center) - this.center) / this.halfWidth;
-    const gate = this.ac.createGain();
-    gate.connect(this.synth.lane('fx', pos * .76));
-    const v = this.synth.voice('fx', t, 0, 1 / (1 + Math.abs(pos) * .35), gate);
-    // A breath, a fifth, then a soft upper partial. Leave space between
-    // them, including complete silence after the last possible milestone.
-    v.note(pitch, Math.min(.29, span * .43), .085, { attack: .045, shape: 'felt' });
-    v.note(pitch + 7, .24, .073, { delay: span * .48, attack: .031, shape: 'felt' });
-    v.note(pitch + 12, .25, .067, { delay: span * .83, attack: .024, fm: .5 });
-    if (ev.over > 1) v.note(pitch + 19, .34, .061, { delay: span * (ev.over - .17), fm: .7 });
-    this.charges.set(ev.id, { gate, until: t + span * (ev.over || 1) + .4 });
+  syncCharges(fighters) {
+    if (!this.synth || this.mode !== 'fight' || document.hidden || !this.vol.master || !this.vol.sfx) return;
+    // A charge is a held state. Local prediction, late joins and interrupted
+    // holds all use the same fighter view that drives the on-screen wind-up.
+    for (const [id, voice] of this.charges) {
+      const f = fighters.find(f => f.id === id);
+      if (!f || f.state !== 'charge' || f.dead || f.parked || f.weapon !== voice.weapon) {
+        voice.stop();
+        this.charges.delete(id);
+      }
+    }
+    for (const f of fighters) {
+      if (f.state !== 'charge' || f.dead || f.parked) continue;
+      let voice = this.charges.get(f.id);
+      if (!voice) {
+        voice = new ChargeVoice(this.synth, f.weapon);
+        this.charges.set(f.id, voice);
+      }
+      voice.update((f.stateT || 0) / weaponChargeTime(f.weapon), (f.x - this.center) / this.halfWidth);
+    }
   }
 
-  _stopCharge(id) {
-    const charge = this.charges.get(id);
-    if (!charge) return;
-    const t = this.ac.currentTime;
-    charge.gate.gain.setTargetAtTime(0, t, .009);
-    // The voices may still have scheduled starts. Disconnect the gate once
-    // the short release is over, including when the audio clock is suspended.
-    setTimeout(() => charge.gate.disconnect(), 70);
-    this.charges.delete(id);
+  _clearCharges() {
+    for (const voice of this.charges.values()) voice.stop();
+    this.charges.clear();
   }
-
-  _clearCharges() { for (const id of this.charges.keys()) this._stopCharge(id); }
 
   event(ev) {
     if (this.mode !== 'fight' || document.hidden) return;
     let cue = ev.e;
     switch (ev.e) {
-      case 'charge': this._startCharge(ev); return;
+      case 'charge': return; // syncCharges follows the held state
       case 'swing':
-        this._stopCharge(ev.id);
         // A successful hammer cast emits hammerslam; an empty one fizzles.
         if (ev.atk === 'hthrust') return;
         cue = ev.atk || 'jab'; break;
       case 'hit':
-        this._stopCharge(ev.vic);
         cue = ev.spike ? 'spike' : ev.heavy ? 'hitheavy' : 'hit'; break;
-      case 'block': case 'burn': this._stopCharge(ev.vic); break;
-      case 'ko': case 'crush': case 'fizzle': case 'ledge': this._stopCharge(ev.id); break;
       case 'ability':
         if (CAST_EVENTS.has(ev.ability)) return;
         cue = ev.ability; break;

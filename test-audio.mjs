@@ -54,6 +54,44 @@ assert.equal(signatures.size, WEAPONS.length, 'distinct arrangement for every we
 const calls = Object.keys(ENEMY_TYPES).map(kind => hear([{ e: 'telegraph', kind }])[0].notes);
 assert.equal(new Set(calls.map(call => JSON.stringify(call))).size, calls.length, 'distinct enemy calls');
 assert.equal(hear([{ e: 'mend' }, { e: 'ability', ability: 'mend' }]).length, 1);
+
+// A joining client can first see a charge halfway through. A burn tick can
+// also land while the fighter keeps charging. Exercise both without sending
+// a charge-start event, and verify that dropping the fighter stops each source.
+let running = 0;
+const param = () => ({ value: 0, setTargetAtTime(value) { this.value = value; } });
+const node = () => ({ connect(to) { return to; }, disconnect() {} });
+const ac = {
+  currentTime: 0,
+  createGain: () => ({ ...node(), gain: param() }),
+  createStereoPanner: () => ({ ...node(), pan: param() }),
+  createOscillator: () => ({ ...node(), frequency: param(), setPeriodicWave() {},
+    start() { running++; }, stop() { running--; } }),
+};
+let chimes = 0;
+SFX.synth = { ac, waves: {}, lane: node, voice: () => ({ note() { chimes++; } }) };
+for (const { id } of WEAPONS) {
+  const fighter = { id: 'p', x: 0, weapon: id, state: 'charge', stateT: .2 };
+  SFX.syncCharges([fighter]);
+  const voice = SFX.charges.get('p');
+  assert.ok(running > 0 && voice.body.value > 0, id + ' has an audible held voice');
+  SFX.event({ e: 'burn', vic: 'p' });
+  SFX.syncCharges([fighter]);
+  assert.equal(SFX.charges.get('p'), voice, 'a continuing hold keeps the same voice');
+  if (id === 'magic') {
+    assert.equal(voice.sub.value, 0);
+    fighter.stateT = 1.8;
+    SFX.syncCharges([fighter]);
+    assert.ok(voice.sub.value > 0 && chimes > 0, 'overcharge adds its low register and chime');
+    const once = chimes;
+    fighter.stateT += .1;
+    SFX.syncCharges([fighter]);
+    assert.equal(chimes, once, 'the threshold rings once per hold');
+  }
+  SFX.syncCharges([]);
+  assert.equal(running, 0);
+  assert.equal(SFX.charges.size, 0);
+}
 SFX.setMode('menu');
 assert.equal(hear([{ e: 'strike', kind: 'brute' }]).length, 0, 'background combat stays quiet');
-console.log('PASS  Weapon releases, projectile cues, enemy voices and paired events');
+console.log('PASS  Held charges, Magic overcharge, weapon releases, projectile cues, enemy voices and paired events');

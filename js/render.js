@@ -620,6 +620,7 @@ export class Renderer {
     const biomeTheme = this.mapId === 'expanse' ? expanseBiomeAt(this.expanseSeed, this.cam.x) : null;
     const soundMap = view.city?.room ?? (biomeTheme?.blend > .5 ? biomeTheme.next : biomeTheme?.id) ?? this.mapId;
     SFX.setStage(soundMap, this.cam.x, W / (2 * this.cam.zoom));
+    SFX.syncCharges(view.fighters);
     if (this.panorama) {
       drawArenaBackdrop(ctx, this.panorama, this.arenaArt, W, H, this.cam);
     } else if (!view.city) {

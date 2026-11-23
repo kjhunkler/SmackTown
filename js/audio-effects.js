@@ -1,3 +1,5 @@
+import { hz } from './audio-synth.js';
+
 // Pitched tails borrow D-major / B-minor notes from the score. The noise
 // attacks carry timing and material, so impacts still read inside a chord.
 const COMBO = { jab: 50, cross: 47, knee: 42, roundh: 35, dash: 40 };
@@ -17,6 +19,90 @@ const CREATURES = {
 function bells(v, notes, gap = .064, gain = .14, length = .32) {
   notes.forEach((m, i) => v.note(m, length * (i === notes.length - 1 ? 1.4 : 1), gain,
     { delay: i * gap, fm: .95, ratio: 3, pan: (i % 2 ? .16 : -.16) }));
+}
+
+// [body pitch, material, upper interval, pulses per second at the start].
+// Even the heavy weapons have a fundamental that carries on a phone speaker.
+const WINDUPS = {
+  unarmed:   [50, 'hollow', 12, 2.5],
+  sword:     [66, 'metal',   7, 3.0],
+  magic:     [59, 'felt',   19, 1.7],
+  spear:     [57, 'hollow', 12, 2.1],
+  boomerang: [62, 'felt',    7, 3.6],
+  shield:    [54, 'metal',  12, 2.0],
+  hammer:    [47, 'bass',   19, 1.6],
+  bombs:     [52, 'reed',   12, 2.8],
+};
+
+export class ChargeVoice {
+  constructor(synth, weapon) {
+    this.synth = synth;
+    this.weapon = weapon;
+    const [pitch, shape, interval, rate] = WINDUPS[weapon] || WINDUPS.unarmed;
+    this.rate = rate;
+    this.progress = -1;
+    this.position = null;
+    const { ac } = synth;
+    this.gate = ac.createGain();
+    this.gate.gain.value = 0;
+    this.pan = ac.createStereoPanner();
+    this.gate.connect(this.pan).connect(synth.lane('fx', 0));
+    const pulse = ac.createGain(), depth = ac.createGain();
+    pulse.gain.value = .78;
+    depth.gain.value = .22;
+    pulse.connect(this.gate);
+    this.lfo = ac.createOscillator();
+    this.lfo.frequency.value = rate;
+    this.lfo.connect(depth).connect(pulse.gain);
+    this.sources = [this.lfo];
+    const partial = (note, wave, volume) => {
+      const osc = ac.createOscillator(), gain = ac.createGain();
+      osc.frequency.value = hz(note);
+      if (wave) osc.setPeriodicWave(synth.waves[wave]);
+      gain.gain.value = volume;
+      osc.connect(gain).connect(pulse);
+      this.sources.push(osc);
+      return gain.gain;
+    };
+    this.body = partial(pitch, shape, .16);
+    this.overtone = partial(pitch + interval, null, .018);
+    if (weapon === 'magic') this.sub = partial(pitch - 12, 'bass', 0);
+    for (const source of this.sources) source.start();
+  }
+
+  update(progress, offset) {
+    const t = this.synth.ac.currentTime;
+    // Smooth the small simulation steps and coarser remote snapshots.
+    const k = Math.floor(Math.max(0, Math.min(2, progress)) * 40) / 40;
+    if (k !== this.progress) {
+      const full = Math.min(1, k), over = Math.max(0, k - 1);
+      this.body.setTargetAtTime(.16 + .055 * full, t, .035);
+      this.overtone.setTargetAtTime(.018 + .045 * full + .035 * over, t, .05);
+      this.lfo.frequency.setTargetAtTime(this.rate + 1.65 * k, t, .05);
+      if (this.sub) {
+        this.sub.setTargetAtTime(.13 * over, t, .06);
+        if (k >= 1 && !this.rang) {
+          this.rang = true;
+          const v = this.synth.voice('fx', t, 0, 1, this.gate);
+          bells(v, [71, 78], .075, .14, .28);
+        }
+      }
+      this.progress = k;
+    }
+    const pos = Math.round(offset * 20) / 20;
+    if (this.position !== pos) {
+      this.position = pos;
+      this.pan.pan.setTargetAtTime(Math.max(-.86, Math.min(.86, pos * .76)), t, .025);
+      this.gate.gain.setTargetAtTime(1 / (1 + Math.max(0, Math.abs(pos) - .5) * .85), t, .012);
+    }
+  }
+
+  stop() {
+    const t = this.synth.ac.currentTime;
+    this.gate.gain.setTargetAtTime(0, t, .009);
+    this.lfo.onended = () => this.gate.disconnect();
+    for (const source of this.sources) source.stop(t + .065);
+  }
 }
 
 function thump(v, pitch, volume, dur = .23) {
