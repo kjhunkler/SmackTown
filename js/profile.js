@@ -43,7 +43,7 @@ export const ABILITIES = [
     desc: 'Pop a shield for 1.8s of invulnerability' },
   { id: 'mend',      icon: '💚', name: 'Mend',        cost: 260, cd: 7.0,
     desc: 'Patch yourself up — instantly heal 15%' },
-  { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 240, cd: 3.8,
+  { id: 'hook',      icon: '🪝', name: 'Grapple Hook', cost: 200, cd: 3.8,
     desc: 'Hurl a hook that reels a foe in — harder the further it flew' },
   { id: 'trap',      icon: '🪤', name: 'Spike Trap',   cost: 230, cd: 5.0,
     desc: 'Plant spikes that launch and stun whoever steps in' },

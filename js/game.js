@@ -803,7 +803,8 @@ const MANA_COST = 35;                // mana at a standard (k=1) burst; scales w
 // recovery mobility (no lunge, no climb, no rocket jump), so the blade
 // itself carries the compensation.
 const RANG_SPD0 = 520, RANG_SPD1 = 920;    // launch speed vs charge
-const RANG_TTL0 = 1.05, RANG_TTL1 = 1.6;   // flight time vs charge
+const RANG_CHG_RANGE_BONUS = 0.5;          // extra outbound range at full charge
+const RANG_TTL0 = 1.05, RANG_TTL1 = 1.9;   // allow the longer charged return
 const RANG_DMG0 = 7,   RANG_DMG1 = 13;     // damage vs charge
 const RANG_KB0  = 340, RANG_KB1  = 520;    // knockback vs charge
 const RANG_RET = 1400;               // return pull back along the launch axis
@@ -2130,7 +2131,8 @@ export class Game {
     if (f.grounded && dy > 0) { dy = 0; dx = dx || f.facing; } // not into the floor
     const n = Math.hypot(dx, dy) || 1;
     const nx = dx / n, ny = dy / n;
-    const spd = RANG_SPD0 + (RANG_SPD1 - RANG_SPD0) * k;
+    // With constant return acceleration, outbound range scales with speed squared.
+    const spd = (RANG_SPD0 + (RANG_SPD1 - RANG_SPD0) * k) * Math.sqrt(1 + RANG_CHG_RANGE_BONUS * k);
     this.projectiles.push({
       eid: nextEid++, kind: 'boomerang', owner: f.id,
       x: f.x + nx * 40, y: f.y - 8 + ny * 20,

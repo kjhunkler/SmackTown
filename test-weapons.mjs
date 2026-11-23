@@ -425,11 +425,22 @@ for (const { id: weapon } of WEAPONS) {
   const at = k => {
     const g2 = mkGame('boomerang');
     g2._startAttack(g2.fighters[0], { kind: 'swipe', dx: 1, dy: 0 }, false, k);
-    return g2.projectiles[0];
+    const blade = g2.projectiles[0];
+    const { x: startX, vx, dmg, kb, ttl } = blade;
+    let range = 0;
+    for (let i = 0; i < 120 && g2.projectiles.includes(blade); i++) {
+      g2._stepProjectiles();
+      range = Math.max(range, blade.x - startX);
+    }
+    return { vx, dmg, kb, ttl, range, caught: g2.events.some(ev => ev.e === 'catch') };
   };
   const soft = at(0), hard = at(1);
   check('a charged throw flies faster and bites harder',
     hard.vx > soft.vx && hard.dmg > soft.dmg && hard.kb > soft.kb && hard.ttl > soft.ttl);
+  // Pre-change outbound distances measured in the fixed-tick simulation.
+  check('an uncharged throw keeps its range', Math.abs(soft.range - 92.28) < 0.01);
+  check('a full-charge throw travels about 50% farther', Math.abs(hard.range / 294.67 - 1.5) < 0.015);
+  check('a full-charge throw returns in time to be caught', hard.caught);
 
   // an aimed throw returns along its own axis: thrown up, it comes back down
   const g3 = mkGame('boomerang');
